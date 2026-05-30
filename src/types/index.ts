@@ -25,7 +25,11 @@ export interface Category {
 export interface Project {
   id: string
   name: string
-  status: 'active' | 'inactive'
+  status: 'active' | 'inactive' | 'archived'
+  contract_amount?: number | null
+  contract_currency?: string
+  received_before_app?: number | null
+  archived_at?: string | null
   created_at: string
 }
 

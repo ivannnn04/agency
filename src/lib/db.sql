@@ -24,9 +24,21 @@ create table if not exists categories (
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  status text not null default 'active' check (status in ('active', 'inactive')),
+  status text not null default 'active' check (status in ('active', 'inactive', 'archived')),
+  contract_amount numeric(15,2),
+  contract_currency text default 'USD',
+  received_before_app numeric(15,2) default 0,
+  archived_at timestamptz,
   created_at timestamptz default now()
 );
+-- If projects table already exists, add new columns:
+alter table projects add column if not exists contract_amount numeric(15,2);
+alter table projects add column if not exists contract_currency text default 'USD';
+alter table projects add column if not exists received_before_app numeric(15,2) default 0;
+alter table projects add column if not exists archived_at timestamptz;
+-- Update status check to allow 'archived':
+alter table projects drop constraint if exists projects_status_check;
+alter table projects add constraint projects_status_check check (status in ('active', 'inactive', 'archived'));
 
 create table if not exists counterparties (
   id uuid primary key default gen_random_uuid(),

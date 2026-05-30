@@ -13,10 +13,14 @@ import {
 interface ProjectStats {
   id: string
   name: string
+  status: string
   income: number
   expense: number
   planned_income: number
   planned_expense: number
+  received_before_app: number
+  contract_amount: number | null
+  contract_currency: string
   profit: number
   margin: number
   roi: number
@@ -59,7 +63,9 @@ export default function ProjectsPage() {
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
   async function fetchSummary() {
-    const { data: projs } = await supabase.from('projects').select('id, name')
+    const { data: projs } = await supabase
+      .from('projects')
+      .select('id, name, status, contract_amount, contract_currency, received_before_app')
     const { data: txs }   = await supabase
       .from('transactions')
       .select('type, amount, currency, project_id, is_planned')
@@ -73,10 +79,13 @@ export default function ProjectsPage() {
       const actual  = ptxs.filter(t => !t.is_planned)
       const planned = ptxs.filter(t => t.is_planned)
 
-      const income          = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
+      const txIncome        = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
       const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
       const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
       const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+
+      const received_before_app = toUSD(p.received_before_app ?? 0, p.contract_currency ?? 'USD')
+      const income = txIncome + received_before_app
 
       const totalIncome  = income + planned_income
       const totalExpense = expense + planned_expense
@@ -84,7 +93,17 @@ export default function ProjectsPage() {
       const margin = totalIncome > 0 ? Math.round((profit / totalIncome) * 100) : 0
       const roi    = totalExpense > 0 ? Math.round((profit / totalExpense) * 100) : 0
 
-      return { id: p.id, name: p.name, income, expense, planned_income, planned_expense, profit, margin, roi }
+      const contract_amount = p.contract_amount
+        ? toUSD(p.contract_amount, p.contract_currency ?? 'USD')
+        : null
+
+      return {
+        id: p.id, name: p.name, status: p.status,
+        income, expense, planned_income, planned_expense,
+        received_before_app, contract_amount,
+        contract_currency: p.contract_currency ?? 'USD',
+        profit, margin, roi,
+      }
     })
 
     setProjects(stats.sort((a, b) => b.profit - a.profit))
@@ -195,6 +214,7 @@ export default function ProjectsPage() {
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="text-left py-3 px-4 text-gray-500 font-medium w-8"></th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Назва</th>
+              <th className="text-right py-3 px-4 text-gray-500 font-medium">Контракт</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Доходи</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Витрати</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Прибуток</th>
@@ -204,7 +224,7 @@ export default function ProjectsPage() {
           </thead>
           <tbody>
             {projects.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
             )}
             {projects.map(p => {
               const totalInc = p.income + (showPlanned ? p.planned_income : 0)
@@ -214,18 +234,34 @@ export default function ProjectsPage() {
               const roi      = totalExp > 0 ? Math.round((profit / totalExp) * 100) : 0
               const isOpen   = expanded === p.id
               const det      = details[p.id]
+              const isArchived = p.status === 'archived'
 
               return (
                 <>
                   <tr
                     key={p.id}
                     onClick={() => toggle(p.id)}
-                    className="border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer"
+                    className={`border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer ${isArchived ? 'opacity-60' : ''}`}
                   >
                     <td className="py-3 px-4 text-gray-400">
                       {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
-                    <td className="py-3 px-4 font-medium text-gray-800">{p.name}</td>
+                    <td className="py-3 px-4 font-medium text-gray-800">
+                      <div className="flex items-center gap-2">
+                        {p.name}
+                        {isArchived && (
+                          <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">архів</span>
+                        )}
+                        {p.received_before_app > 0 && (
+                          <span className="text-[10px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full" title="Є сума отримана до старту програми">
+                            +до старту
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-right text-gray-400 text-xs">
+                      {p.contract_amount ? fmt(p.contract_amount) : '—'}
+                    </td>
                     <td className="py-3 px-4 text-right text-teal-600">{fmt(totalInc)}</td>
                     <td className="py-3 px-4 text-right text-red-500">{fmt(totalExp)}</td>
                     <td className={`py-3 px-4 text-right font-semibold ${profit >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
@@ -241,23 +277,34 @@ export default function ProjectsPage() {
 
                   {isOpen && (
                     <tr key={`${p.id}-detail`} className="bg-gray-50/50 border-b border-gray-100">
-                      <td colSpan={7} className="px-6 py-5">
+                      <td colSpan={8} className="px-6 py-5">
                         {loading === p.id ? (
                           <p className="text-sm text-gray-400 text-center py-4">Завантаження...</p>
                         ) : det ? (
                           <div className="flex flex-col gap-6">
 
                             {/* KPI strip */}
-                            <div className="grid grid-cols-4 gap-3">
+                            <div className={`grid gap-3 ${p.contract_amount ? 'grid-cols-5' : 'grid-cols-4'}`}>
+                              {p.contract_amount && (
+                                <div className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+                                  <p className="text-xs text-gray-400 mb-1">Контракт</p>
+                                  <p className="text-lg font-bold text-gray-700">{fmt(p.contract_amount)}</p>
+                                  <p className="text-[10px] text-gray-400 mt-0.5">
+                                    {Math.round((totalInc / p.contract_amount) * 100)}% отримано
+                                  </p>
+                                </div>
+                              )}
                               {[
-                                { label: 'Дохід',   val: fmt(totalInc), color: 'text-teal-600' },
-                                { label: 'Витрати', val: fmt(totalExp), color: 'text-red-500'  },
-                                { label: 'Маржа',   val: margin + '%',  color: margin >= 0 ? 'text-teal-600' : 'text-red-500' },
-                                { label: 'ROI',     val: roi + '%',     color: roi >= 0 ? 'text-teal-600' : 'text-red-500' },
+                                { label: 'Отримано',  val: fmt(totalInc), color: 'text-teal-600',
+                                  sub: p.received_before_app > 0 ? `до старту: ${fmt(p.received_before_app)}` : undefined },
+                                { label: 'Витрати',   val: fmt(totalExp), color: 'text-red-500', sub: undefined },
+                                { label: 'Маржа',     val: margin + '%',  color: margin >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
+                                { label: 'ROI',       val: roi + '%',     color: roi >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
                               ].map(k => (
                                 <div key={k.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
                                   <p className="text-xs text-gray-400 mb-1">{k.label}</p>
                                   <p className={`text-lg font-bold ${k.color}`}>{k.val}</p>
+                                  {k.sub && <p className="text-[10px] text-blue-400 mt-0.5">{k.sub}</p>}
                                 </div>
                               ))}
                             </div>

@@ -10,7 +10,8 @@ const handler = NextAuth({
   ],
   callbacks: {
     async signIn({ user }) {
-      return user.email === process.env.ALLOWED_EMAIL
+      const allowed = (process.env.ALLOWED_EMAIL ?? '').split(',').map(e => e.trim())
+      return allowed.includes(user.email ?? '')
     },
     async session({ session, token }) {
       return session

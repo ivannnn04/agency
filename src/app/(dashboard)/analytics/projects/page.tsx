@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
-import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, Edit2, X } from 'lucide-react'
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -19,8 +19,13 @@ interface ProjectStats {
   planned_income: number
   planned_expense: number
   received_before_app: number
+  spent_before_app: number
   contract_amount: number | null
   contract_currency: string
+  // raw values for edit modal
+  raw_contract_amount: number | null
+  raw_received_before_app: number
+  raw_spent_before_app: number
   profit: number
   margin: number
   roi: number
@@ -34,7 +39,6 @@ interface TxRow {
   counterparty?: { name: string } | null
   category?: { name: string } | null
 }
-
 interface Detail {
   monthly: MonthPoint[]
   byPerson: ByPerson[]
@@ -42,31 +46,29 @@ interface Detail {
 }
 
 const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру']
+const SYM: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 function fmt(n: number) {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-function usdLabel(tx: TxRow) {
-  return tx.currency !== 'UAH' ? ` (${tx.currency})` : ''
-}
-
-export default function ProjectsPage() {
-  const [projects, setProjects]   = useState<ProjectStats[]>([])
-  const [year, setYear]           = useState(new Date().getFullYear())
-  const [expanded, setExpanded]   = useState<string | null>(null)
-  const [details, setDetails]     = useState<Record<string, Detail>>({})
-  const [loading, setLoading]     = useState<string | null>(null)
+export default function AnalyticsProjectsPage() {
+  const [projects, setProjects]       = useState<ProjectStats[]>([])
+  const [year, setYear]               = useState(new Date().getFullYear())
+  const [expanded, setExpanded]       = useState<string | null>(null)
+  const [details, setDetails]         = useState<Record<string, Detail>>({})
+  const [loadingId, setLoadingId]     = useState<string | null>(null)
   const [showPlanned, setShowPlanned] = useState(true)
-  const { toUSD, fmtUSD, rates, loading: ratesLoading } = useRates()
+  const [editProject, setEditProject] = useState<ProjectStats | null>(null)
+  const { toUSD, loading: ratesLoading } = useRates()
 
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
   async function fetchSummary() {
     const { data: projs } = await supabase
       .from('projects')
-      .select('id, name, status, contract_amount, contract_currency, received_before_app')
-    const { data: txs }   = await supabase
+      .select('id, name, status, contract_amount, contract_currency, received_before_app, spent_before_app')
+    const { data: txs } = await supabase
       .from('transactions')
       .select('type, amount, currency, project_id, is_planned')
       .gte('date', `${year}-01-01`)
@@ -79,29 +81,35 @@ export default function ProjectsPage() {
       const actual  = ptxs.filter(t => !t.is_planned)
       const planned = ptxs.filter(t => t.is_planned)
 
+      const cur = p.contract_currency ?? 'USD'
+
       const txIncome        = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const txExpense       = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
       const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
       const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
 
-      const received_before_app = toUSD(p.received_before_app ?? 0, p.contract_currency ?? 'USD')
-      const income = txIncome + received_before_app
+      const received_before_app = toUSD(p.received_before_app ?? 0, cur)
+      const spent_before_app    = toUSD(p.spent_before_app    ?? 0, cur)
+
+      const income  = txIncome  + received_before_app
+      const expense = txExpense + spent_before_app
 
       const totalIncome  = income + planned_income
       const totalExpense = expense + planned_expense
       const profit = totalIncome - totalExpense
-      const margin = totalIncome > 0 ? Math.round((profit / totalIncome) * 100) : 0
+      const margin = totalIncome  > 0 ? Math.round((profit / totalIncome)  * 100) : 0
       const roi    = totalExpense > 0 ? Math.round((profit / totalExpense) * 100) : 0
 
-      const contract_amount = p.contract_amount
-        ? toUSD(p.contract_amount, p.contract_currency ?? 'USD')
-        : null
+      const contract_amount = p.contract_amount ? toUSD(p.contract_amount, cur) : null
 
       return {
         id: p.id, name: p.name, status: p.status,
         income, expense, planned_income, planned_expense,
-        received_before_app, contract_amount,
-        contract_currency: p.contract_currency ?? 'USD',
+        received_before_app, spent_before_app,
+        contract_amount, contract_currency: cur,
+        raw_contract_amount: p.contract_amount,
+        raw_received_before_app: p.received_before_app ?? 0,
+        raw_spent_before_app: p.spent_before_app ?? 0,
         profit, margin, roi,
       }
     })
@@ -111,7 +119,7 @@ export default function ProjectsPage() {
 
   async function fetchDetail(projectId: string) {
     if (details[projectId]) return
-    setLoading(projectId)
+    setLoadingId(projectId)
 
     const { data: txs } = await supabase
       .from('transactions')
@@ -123,9 +131,8 @@ export default function ProjectsPage() {
       .lte('date', `${year}-12-31`)
       .order('date', { ascending: true })
 
-    if (!txs) { setLoading(null); return }
+    if (!txs) { setLoadingId(null); return }
 
-    // Monthly chart data (amounts in USD)
     const monthly: MonthPoint[] = MONTHS.map((m, i) => {
       const mo = txs.filter(t => new Date(t.date).getMonth() === i)
       return {
@@ -135,7 +142,6 @@ export default function ProjectsPage() {
       }
     }).filter(m => m.income > 0 || m.expense > 0)
 
-    // By person (counterparty or extracted from comment) — amounts in USD
     const personMap: Record<string, ByPerson> = {}
     for (const t of txs) {
       const raw = (t.counterparty as any)?.name
@@ -157,7 +163,7 @@ export default function ProjectsPage() {
       byPerson: Object.values(personMap).sort((a, b) => b.expense - a.expense),
       transactions: txs as unknown as TxRow[],
     }}))
-    setLoading(null)
+    setLoadingId(null)
   }
 
   function toggle(id: string) {
@@ -179,8 +185,7 @@ export default function ProjectsPage() {
         <h1 className="text-xl font-bold text-gray-800">Проекти</h1>
         <div className="ml-auto flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-sm text-gray-500 cursor-pointer">
-            <input type="checkbox" checked={showPlanned} onChange={e => setShowPlanned(e.target.checked)}
-              className="rounded" />
+            <input type="checkbox" checked={showPlanned} onChange={e => setShowPlanned(e.target.checked)} className="rounded" />
             Планові
           </label>
           <select value={year} onChange={e => setYear(Number(e.target.value))}
@@ -220,21 +225,23 @@ export default function ProjectsPage() {
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Прибуток</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Маржа %</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">ROI %</th>
+              <th className="w-8 py-3 px-2"></th>
             </tr>
           </thead>
           <tbody>
             {projects.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
+              <tr><td colSpan={9} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
             )}
             {projects.map(p => {
               const totalInc = p.income + (showPlanned ? p.planned_income : 0)
               const totalExp = p.expense + (showPlanned ? p.planned_expense : 0)
               const profit   = totalInc - totalExp
-              const margin   = totalInc > 0 ? Math.round((profit / totalInc) * 100) : 0
-              const roi      = totalExp > 0 ? Math.round((profit / totalExp) * 100) : 0
+              const margin   = totalInc  > 0 ? Math.round((profit / totalInc)  * 100) : 0
+              const roi      = totalExp  > 0 ? Math.round((profit / totalExp)  * 100) : 0
               const isOpen   = expanded === p.id
               const det      = details[p.id]
               const isArchived = p.status === 'archived'
+              const hasPreApp  = p.received_before_app > 0 || p.spent_before_app > 0
 
               return (
                 <>
@@ -247,16 +254,10 @@ export default function ProjectsPage() {
                       {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
                     <td className="py-3 px-4 font-medium text-gray-800">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {p.name}
-                        {isArchived && (
-                          <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">архів</span>
-                        )}
-                        {p.received_before_app > 0 && (
-                          <span className="text-[10px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full" title="Є сума отримана до старту програми">
-                            +до старту
-                          </span>
-                        )}
+                        {isArchived && <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">архів</span>}
+                        {hasPreApp && <span className="text-[10px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">до старту</span>}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right text-gray-400 text-xs">
@@ -264,21 +265,24 @@ export default function ProjectsPage() {
                     </td>
                     <td className="py-3 px-4 text-right text-teal-600">{fmt(totalInc)}</td>
                     <td className="py-3 px-4 text-right text-red-500">{fmt(totalExp)}</td>
-                    <td className={`py-3 px-4 text-right font-semibold ${profit >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
-                      {fmt(profit)}
-                    </td>
-                    <td className={`py-3 px-4 text-right ${margin >= 0 ? 'text-gray-700' : 'text-red-400'}`}>
-                      {margin}%
-                    </td>
-                    <td className={`py-3 px-4 text-right ${roi >= 0 ? 'text-gray-700' : 'text-red-400'}`}>
-                      {roi}%
+                    <td className={`py-3 px-4 text-right font-semibold ${profit >= 0 ? 'text-teal-600' : 'text-red-500'}`}>{fmt(profit)}</td>
+                    <td className={`py-3 px-4 text-right ${margin >= 0 ? 'text-gray-700' : 'text-red-400'}`}>{margin}%</td>
+                    <td className={`py-3 px-4 text-right ${roi >= 0 ? 'text-gray-700' : 'text-red-400'}`}>{roi}%</td>
+                    <td className="py-3 px-2">
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditProject(p) }}
+                        className="text-gray-300 hover:text-gray-600 p-1 rounded transition-colors"
+                        title="Редагувати фінансові дані"
+                      >
+                        <Edit2 size={13} />
+                      </button>
                     </td>
                   </tr>
 
                   {isOpen && (
                     <tr key={`${p.id}-detail`} className="bg-gray-50/50 border-b border-gray-100">
-                      <td colSpan={8} className="px-6 py-5">
-                        {loading === p.id ? (
+                      <td colSpan={9} className="px-6 py-5">
+                        {loadingId === p.id ? (
                           <p className="text-sm text-gray-400 text-center py-4">Завантаження...</p>
                         ) : det ? (
                           <div className="flex flex-col gap-6">
@@ -295,16 +299,21 @@ export default function ProjectsPage() {
                                 </div>
                               )}
                               {[
-                                { label: 'Отримано',  val: fmt(totalInc), color: 'text-teal-600',
-                                  sub: p.received_before_app > 0 ? `до старту: ${fmt(p.received_before_app)}` : undefined },
-                                { label: 'Витрати',   val: fmt(totalExp), color: 'text-red-500', sub: undefined },
-                                { label: 'Маржа',     val: margin + '%',  color: margin >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
-                                { label: 'ROI',       val: roi + '%',     color: roi >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
+                                {
+                                  label: 'Отримано', val: fmt(totalInc), color: 'text-teal-600',
+                                  sub: p.received_before_app > 0 ? `до старту: ${fmt(p.received_before_app)}` : undefined,
+                                },
+                                {
+                                  label: 'Витрати', val: fmt(totalExp), color: 'text-red-500',
+                                  sub: p.spent_before_app > 0 ? `до старту: ${fmt(p.spent_before_app)}` : undefined,
+                                },
+                                { label: 'Маржа', val: margin + '%', color: margin >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
+                                { label: 'ROI',   val: roi   + '%', color: roi   >= 0 ? 'text-teal-600' : 'text-red-500', sub: undefined },
                               ].map(k => (
                                 <div key={k.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
                                   <p className="text-xs text-gray-400 mb-1">{k.label}</p>
                                   <p className={`text-lg font-bold ${k.color}`}>{k.val}</p>
-                                  {k.sub && <p className="text-[10px] text-blue-400 mt-0.5">{k.sub}</p>}
+                                  {k.sub && <p className="text-[10px] text-orange-400 mt-0.5">{k.sub}</p>}
                                 </div>
                               ))}
                             </div>
@@ -318,10 +327,10 @@ export default function ProjectsPage() {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                                     <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                                    <Tooltip formatter={(v) => fmt(Number(v)) + ' ₴'} />
+                                    <Tooltip formatter={(v) => fmt(Number(v))} />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                                    <Bar dataKey="income"  name="Дохід"    fill="#14b8a6" radius={[4,4,0,0]} />
-                                    <Bar dataKey="expense" name="Витрати"  fill="#f87171" radius={[4,4,0,0]} />
+                                    <Bar dataKey="income"  name="Дохід"   fill="#14b8a6" radius={[4,4,0,0]} />
+                                    <Bar dataKey="expense" name="Витрати" fill="#f87171" radius={[4,4,0,0]} />
                                   </BarChart>
                                 </ResponsiveContainer>
                               </div>
@@ -358,9 +367,9 @@ export default function ProjectsPage() {
                               </div>
                             )}
 
-                            {/* Transactions list */}
+                            {/* Transactions */}
                             <div>
-                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Всі транзакції</p>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Транзакції за {year}</p>
                               <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
                                 <table className="w-full text-sm">
                                   <thead>
@@ -373,17 +382,19 @@ export default function ProjectsPage() {
                                     </tr>
                                   </thead>
                                   <tbody>
+                                    {det.transactions.length === 0 && (
+                                      <tr><td colSpan={5} className="text-center py-6 text-gray-400 text-xs">
+                                        Немає транзакцій за {year}
+                                        {(p.received_before_app > 0 || p.spent_before_app > 0) && ' (дані до старту не відображаються тут)'}
+                                      </td></tr>
+                                    )}
                                     {det.transactions.map(t => (
                                       <tr key={t.id} className="border-b border-gray-50">
                                         <td className="py-2 px-4 text-gray-500 whitespace-nowrap">
                                           {new Date(t.date).toLocaleDateString('uk-UA')}
                                         </td>
-                                        <td className="py-2 px-4 text-gray-700 max-w-xs truncate">
-                                          {t.comment || '—'}
-                                        </td>
-                                        <td className="py-2 px-4 text-gray-500">
-                                          {(t.category as any)?.name || '—'}
-                                        </td>
+                                        <td className="py-2 px-4 text-gray-700 max-w-xs truncate">{t.comment || '—'}</td>
+                                        <td className="py-2 px-4 text-gray-500">{(t.category as any)?.name || '—'}</td>
                                         <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
                                           {t.type === 'income' ? '+' : '−'}{fmt(toUSD(t.amount, t.currency))}
                                           {t.currency !== 'USD' && <span className="text-xs text-gray-400 ml-1">({t.currency})</span>}
@@ -410,6 +421,148 @@ export default function ProjectsPage() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {editProject && (
+        <EditFinancialsModal
+          project={editProject}
+          onClose={() => setEditProject(null)}
+          onSuccess={() => {
+            setEditProject(null)
+            setDetails({}) // clear cached details so they reload with new data
+            fetchSummary()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Edit Financials Modal ──────────────────────────────────────────────────────
+
+function EditFinancialsModal({ project: p, onClose, onSuccess }: {
+  project: ProjectStats
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const sym = SYM[p.contract_currency] ?? '$'
+
+  const [contractAmount,    setContractAmount]    = useState(p.raw_contract_amount != null ? String(p.raw_contract_amount) : '')
+  const [contractCurrency,  setContractCurrency]  = useState(p.contract_currency)
+  const [receivedBeforeApp, setReceivedBeforeApp] = useState(p.raw_received_before_app > 0 ? String(p.raw_received_before_app) : '')
+  const [spentBeforeApp,    setSpentBeforeApp]    = useState(p.raw_spent_before_app    > 0 ? String(p.raw_spent_before_app)    : '')
+  const [error, setError]  = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const curSym = SYM[contractCurrency] ?? '$'
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    const { error: err } = await supabase.from('projects').update({
+      contract_amount:    contractAmount    ? Number(contractAmount)    : null,
+      contract_currency:  contractCurrency,
+      received_before_app: receivedBeforeApp ? Number(receivedBeforeApp) : 0,
+      spent_before_app:    spentBeforeApp    ? Number(spentBeforeApp)    : 0,
+    }).eq('id', p.id)
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Фінансові дані проекту</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{p.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={submit} className="p-5 flex flex-col gap-5">
+
+          {/* Contract */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Контракт</p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Сума контракту</label>
+                <input type="number" step="0.01" min="0"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  placeholder="0.00" value={contractAmount} onChange={e => setContractAmount(e.target.value)} />
+              </div>
+              <div className="w-24">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Валюта</label>
+                <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+                  value={contractCurrency} onChange={e => setContractCurrency(e.target.value)}>
+                  <option>USD</option><option>EUR</option><option>UAH</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Pre-app amounts */}
+          <div className="bg-blue-50 rounded-xl p-4 flex flex-col gap-4 border border-blue-100">
+            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+              Дані до старту програми
+            </p>
+            <p className="text-[11px] text-blue-500 -mt-2">
+              Ці суми враховуються в аналітиці але не впливають на рахунки
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Вже отримано від клієнта</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{curSym}</span>
+                <input type="number" step="0.01" min="0"
+                  className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                  placeholder="0.00" value={receivedBeforeApp} onChange={e => setReceivedBeforeApp(e.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Вже витрачено по проекту</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{curSym}</span>
+                <input type="number" step="0.01" min="0"
+                  className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                  placeholder="0.00" value={spentBeforeApp} onChange={e => setSpentBeforeApp(e.target.value)} autoFocus />
+              </div>
+            </div>
+
+            {/* Live preview */}
+            {(receivedBeforeApp || spentBeforeApp || contractAmount) && (
+              <div className="bg-white rounded-lg border border-blue-100 px-3 py-2 text-xs flex flex-col gap-1">
+                {contractAmount && <div className="flex justify-between text-gray-500"><span>Контракт</span><span className="font-medium text-gray-700">{curSym}{Number(contractAmount).toLocaleString('en-US')}</span></div>}
+                {receivedBeforeApp && <div className="flex justify-between text-gray-500"><span>Отримано</span><span className="font-medium text-teal-600">+{curSym}{Number(receivedBeforeApp).toLocaleString('en-US')}</span></div>}
+                {spentBeforeApp && <div className="flex justify-between text-gray-500"><span>Витрачено</span><span className="font-medium text-red-500">−{curSym}{Number(spentBeforeApp).toLocaleString('en-US')}</span></div>}
+                {receivedBeforeApp && spentBeforeApp && (
+                  <div className="flex justify-between border-t border-gray-100 pt-1 mt-0.5">
+                    <span className="text-gray-500">Прибуток</span>
+                    <span className={`font-semibold ${Number(receivedBeforeApp) - Number(spentBeforeApp) >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
+                      {Number(receivedBeforeApp) - Number(spentBeforeApp) >= 0 ? '+' : ''}{curSym}{(Number(receivedBeforeApp) - Number(spentBeforeApp)).toLocaleString('en-US')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && <p className="text-red-500 text-xs">{error}</p>}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+              Скасувати
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 bg-gray-900 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
+              {saving ? 'Збереження...' : 'Зберегти'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )

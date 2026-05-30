@@ -35,8 +35,9 @@ create table if not exists projects (
 alter table projects add column if not exists contract_amount numeric(15,2);
 alter table projects add column if not exists contract_currency text default 'USD';
 alter table projects add column if not exists received_before_app numeric(15,2) default 0;
-alter table projects add column if not exists archived_at timestamptz;
+alter table projects add column if not exists spent_before_app numeric(15,2) default 0;
 -- Update status check to allow 'archived':
+alter table projects add column if not exists archived_at timestamptz;
 alter table projects drop constraint if exists projects_status_check;
 alter table projects add constraint projects_status_check check (status in ('active', 'inactive', 'archived'));
 

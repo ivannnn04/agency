@@ -24,6 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const tabs = [
     { label: 'Платежі', href: '/' },
     { label: 'Аналітика', href: '/analytics' },
+    { label: 'Проекти', href: '/projects' },
   ]
 
   return (
@@ -81,7 +82,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               key={tab.href}
               onClick={() => router.push(tab.href)}
               className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                pathname === tab.href || (tab.href === '/analytics' && pathname.startsWith('/analytics'))
+                pathname === tab.href || (tab.href !== '/' && pathname.startsWith(tab.href))
                   ? 'border-gray-900 text-gray-900'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}

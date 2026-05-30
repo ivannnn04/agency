@@ -62,6 +62,22 @@ create table if not exists budgets (
   unique(category_id, year, month)
 );
 
+create table if not exists invoices (
+  id uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  project_id uuid references projects(id) on delete set null,
+  amount numeric(15,2) not null,
+  currency text not null check (currency in ('UAH', 'USD', 'EUR')),
+  invoice_date date not null default current_date,
+  due_date date not null,
+  status text not null default 'unpaid' check (status in ('unpaid', 'overdue', 'paid')),
+  account_id uuid references accounts(id) on delete set null,
+  notes text,
+  paid_at timestamptz,
+  transaction_id uuid references transactions(id) on delete set null,
+  created_at timestamptz default now()
+);
+
 -- Disable Row Level Security so the anon key can read/write
 alter table accounts disable row level security;
 alter table categories disable row level security;
@@ -69,6 +85,7 @@ alter table projects disable row level security;
 alter table counterparties disable row level security;
 alter table transactions disable row level security;
 alter table budgets disable row level security;
+alter table invoices disable row level security;
 
 -- Function to update account balance
 create or replace function update_account_balance(p_account_id uuid, p_delta numeric)

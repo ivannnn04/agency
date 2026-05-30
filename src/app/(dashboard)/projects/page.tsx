@@ -11,23 +11,27 @@ export default function ProjectsPage() {
   const [newName, setNewName] = useState('')
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { fetchProjects() }, [])
 
   async function fetchProjects() {
     setLoading(true)
-    const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
-    if (data) setProjects(data)
+    const { data, error: err } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
+    if (err) setError(err.message)
+    else if (data) setProjects(data)
     setLoading(false)
   }
 
   async function addProject() {
     if (!newName.trim()) return
     setSaving(true)
-    await supabase.from('projects').insert({ name: newName.trim(), status: 'active' })
+    setError(null)
+    const { error: err } = await supabase.from('projects').insert({ name: newName.trim(), status: 'active' })
+    setSaving(false)
+    if (err) { setError(err.message); return }
     setNewName('')
     setShowForm(false)
-    setSaving(false)
     fetchProjects()
   }
 
@@ -54,6 +58,12 @@ export default function ProjectsPage() {
           <Plus size={14} /> Новий проект
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       {showForm && (
         <div className="mb-4 p-4 border border-gray-200 rounded-xl bg-gray-50 flex items-center gap-3">

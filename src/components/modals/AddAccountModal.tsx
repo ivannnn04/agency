@@ -20,13 +20,15 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
   const [balance, setBalance] = useState('')
   const [color, setColor] = useState('#14b8a6')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
 
   async function save() {
     if (!name.trim()) return
     setSaving(true)
-    await supabase.from('accounts').insert({
+    setError(null)
+    const { error: err } = await supabase.from('accounts').insert({
       name: name.trim(),
       type,
       currency,
@@ -34,6 +36,10 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
       color,
     })
     setSaving(false)
+    if (err) {
+      setError(err.message)
+      return
+    }
     setName('')
     setType('bank')
     setCurrency('UAH')
@@ -118,6 +124,12 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
             </div>
           </div>
         </div>
+
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+            {error}
+          </div>
+        )}
 
         <div className="flex gap-3 mt-6">
           <button

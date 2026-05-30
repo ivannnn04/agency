@@ -67,15 +67,14 @@ export default function Sidebar() {
 
   async function fetchPlanned() {
     const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString()
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
     const { data } = await supabase
       .from('transactions')
       .select('type, amount, currency')
       .eq('is_planned', true)
-      .gte('date', startOfMonth)
-      .lte('date', endOfMonth)
+      .gte('date', now.toISOString())
+      .lte('date', in30Days.toISOString())
 
     if (data) {
       const income = data.filter(t => t.type === 'income').reduce((s, t) => s + toUAH(t.amount, t.currency, rates), 0)
@@ -179,7 +178,7 @@ export default function Sidebar() {
         <div className="border-t border-white/10 pt-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Планові платежі</p>
-            <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">1 міс</span>
+            <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">30 днів</span>
           </div>
           <div className="flex flex-col gap-1.5 text-sm">
             <div className="flex justify-between">

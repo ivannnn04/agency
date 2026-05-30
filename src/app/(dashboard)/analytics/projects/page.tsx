@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, Percent } from 'lucide-react'
+import { useRates } from '@/lib/use-rates'
+import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Cell, PieChart, Pie,
+  Legend, ResponsiveContainer,
 } from 'recharts'
 
 interface ProjectStats {
@@ -39,7 +40,7 @@ interface Detail {
 const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру']
 
 function fmt(n: number) {
-  return n.toLocaleString('uk-UA', { maximumFractionDigits: 0 })
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
 function usdLabel(tx: TxRow) {
@@ -53,8 +54,9 @@ export default function ProjectsPage() {
   const [details, setDetails]     = useState<Record<string, Detail>>({})
   const [loading, setLoading]     = useState<string | null>(null)
   const [showPlanned, setShowPlanned] = useState(true)
+  const { toUSD, fmtUSD, rates, loading: ratesLoading } = useRates()
 
-  useEffect(() => { fetchSummary() }, [year])
+  useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
   async function fetchSummary() {
     const { data: projs } = await supabase.from('projects').select('id, name')
@@ -68,13 +70,13 @@ export default function ProjectsPage() {
 
     const stats = projs.map(p => {
       const ptxs = txs.filter(t => t.project_id === p.id)
-      const actual   = ptxs.filter(t => !t.is_planned)
-      const planned  = ptxs.filter(t => t.is_planned)
+      const actual  = ptxs.filter(t => !t.is_planned)
+      const planned = ptxs.filter(t => t.is_planned)
 
-      const income          = actual.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+      const income          = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
+      const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
+      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
 
       const totalIncome  = income + planned_income
       const totalExpense = expense + planned_expense
@@ -104,30 +106,30 @@ export default function ProjectsPage() {
 
     if (!txs) { setLoading(null); return }
 
-    // Monthly chart data
+    // Monthly chart data (amounts in USD)
     const monthly: MonthPoint[] = MONTHS.map((m, i) => {
       const mo = txs.filter(t => new Date(t.date).getMonth() === i)
       return {
         month: m,
-        income:  mo.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
-        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+        income:  mo.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0),
+        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0),
       }
     }).filter(m => m.income > 0 || m.expense > 0)
 
-    // By person (counterparty or extracted from comment)
+    // By person (counterparty or extracted from comment) — amounts in USD
     const personMap: Record<string, ByPerson> = {}
     for (const t of txs) {
       const raw = (t.counterparty as any)?.name
       let name = raw ?? ''
       if (!name && t.comment) {
-        // Extract employee name from "ЗП Ольга Липецька — ..." pattern
         const match = t.comment.match(/ЗП\s+(.+?)\s*—/)
         name = match ? match[1] : t.comment.slice(0, 30)
       }
       if (!name) name = 'Без контрагента'
       if (!personMap[name]) personMap[name] = { name, income: 0, expense: 0, profit: 0 }
-      if (t.type === 'income')  personMap[name].income  += t.amount
-      if (t.type === 'expense') personMap[name].expense += t.amount
+      const amtUSD = toUSD(t.amount, t.currency)
+      if (t.type === 'income')  personMap[name].income  += amtUSD
+      if (t.type === 'expense') personMap[name].expense += amtUSD
     }
     Object.values(personMap).forEach(p => { p.profit = p.income - p.expense })
 
@@ -172,7 +174,7 @@ export default function ProjectsPage() {
       {/* Summary KPIs */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: 'Загальний дохід', value: totalIncome,  color: 'text-teal-600',  icon: TrendingUp },
+          { label: 'Загальний дохід',  value: totalIncome,  color: 'text-teal-600',  icon: TrendingUp },
           { label: 'Загальні витрати', value: totalExpense, color: 'text-red-500',   icon: TrendingDown },
           { label: 'Прибуток',         value: totalProfit,  color: totalProfit >= 0 ? 'text-teal-600' : 'text-red-500', icon: DollarSign },
         ].map(k => (
@@ -181,7 +183,7 @@ export default function ProjectsPage() {
               <k.icon size={15} className="text-gray-400" />
               <p className="text-xs text-gray-400">{k.label}</p>
             </div>
-            <p className={`text-xl font-bold ${k.color}`}>{fmt(k.value)} ₴</p>
+            <p className={`text-xl font-bold ${k.color}`}>{fmt(k.value)}</p>
           </div>
         ))}
       </div>
@@ -248,10 +250,10 @@ export default function ProjectsPage() {
                             {/* KPI strip */}
                             <div className="grid grid-cols-4 gap-3">
                               {[
-                                { label: 'Дохід',    val: fmt(totalInc) + ' ₴', color: 'text-teal-600' },
-                                { label: 'Витрати',  val: fmt(totalExp) + ' ₴', color: 'text-red-500'  },
-                                { label: 'Маржа',    val: margin + '%',          color: margin >= 0 ? 'text-teal-600' : 'text-red-500' },
-                                { label: 'ROI',      val: roi + '%',             color: roi >= 0 ? 'text-teal-600' : 'text-red-500' },
+                                { label: 'Дохід',   val: fmt(totalInc), color: 'text-teal-600' },
+                                { label: 'Витрати', val: fmt(totalExp), color: 'text-red-500'  },
+                                { label: 'Маржа',   val: margin + '%',  color: margin >= 0 ? 'text-teal-600' : 'text-red-500' },
+                                { label: 'ROI',     val: roi + '%',     color: roi >= 0 ? 'text-teal-600' : 'text-red-500' },
                               ].map(k => (
                                 <div key={k.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
                                   <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -336,7 +338,8 @@ export default function ProjectsPage() {
                                           {(t.category as any)?.name || '—'}
                                         </td>
                                         <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
-                                          {t.type === 'income' ? '+' : '−'}{fmt(t.amount)}{usdLabel(t)}
+                                          {t.type === 'income' ? '+' : '−'}{fmt(toUSD(t.amount, t.currency))}
+                                          {t.currency !== 'USD' && <span className="text-xs text-gray-400 ml-1">({t.currency})</span>}
                                         </td>
                                         <td className="py-2 px-4 text-right">
                                           <span className={`text-xs px-2 py-0.5 rounded-full ${t.is_planned ? 'bg-amber-50 text-amber-600' : 'bg-teal-50 text-teal-600'}`}>

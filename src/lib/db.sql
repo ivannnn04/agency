@@ -73,10 +73,13 @@ create table if not exists invoices (
   status text not null default 'unpaid' check (status in ('unpaid', 'overdue', 'paid')),
   account_id uuid references accounts(id) on delete set null,
   notes text,
+  paid_amount numeric(15,2) not null default 0,
   paid_at timestamptz,
   transaction_id uuid references transactions(id) on delete set null,
   created_at timestamptz default now()
 );
+-- If invoices table already exists, add the column:
+alter table invoices add column if not exists paid_amount numeric(15,2) not null default 0;
 
 -- Disable Row Level Security so the anon key can read/write
 alter table accounts disable row level security;

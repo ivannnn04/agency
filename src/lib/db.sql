@@ -1,6 +1,7 @@
 -- Run this in Supabase SQL Editor
+-- If tables already exist, run the "drop" block first (optional)
 
-create table accounts (
+create table if not exists accounts (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   type text not null check (type in ('bank', 'cash', 'card', 'safe')),
@@ -11,7 +12,7 @@ create table accounts (
   created_at timestamptz default now()
 );
 
-create table categories (
+create table if not exists categories (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   type text not null check (type in ('income', 'expense')),
@@ -20,20 +21,20 @@ create table categories (
   created_at timestamptz default now()
 );
 
-create table projects (
+create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   status text not null default 'active' check (status in ('active', 'inactive')),
   created_at timestamptz default now()
 );
 
-create table counterparties (
+create table if not exists counterparties (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   created_at timestamptz default now()
 );
 
-create table transactions (
+create table if not exists transactions (
   id uuid primary key default gen_random_uuid(),
   type text not null check (type in ('income', 'expense', 'transfer')),
   amount numeric(15,2) not null,
@@ -50,7 +51,7 @@ create table transactions (
   created_at timestamptz default now()
 );
 
-create table budgets (
+create table if not exists budgets (
   id uuid primary key default gen_random_uuid(),
   category_id uuid not null references categories(id) on delete cascade,
   year int not null,
@@ -61,6 +62,14 @@ create table budgets (
   unique(category_id, year, month)
 );
 
+-- Disable Row Level Security so the anon key can read/write
+alter table accounts disable row level security;
+alter table categories disable row level security;
+alter table projects disable row level security;
+alter table counterparties disable row level security;
+alter table transactions disable row level security;
+alter table budgets disable row level security;
+
 -- Function to update account balance
 create or replace function update_account_balance(p_account_id uuid, p_delta numeric)
 returns void language plpgsql as $$
@@ -69,8 +78,9 @@ begin
 end;
 $$;
 
--- Default categories
-insert into categories (name, type) values
+-- Default categories (skip if already exist)
+insert into categories (name, type)
+select name, type from (values
   ('Оплата послуг', 'income'),
   ('Оплата за товар', 'income'),
   ('Повернення позики', 'income'),
@@ -81,4 +91,6 @@ insert into categories (name, type) values
   ('Матеріали', 'expense'),
   ('Адміністративні витрати', 'expense'),
   ('Податки', 'expense'),
-  ('Видача позики', 'expense');
+  ('Видача позики', 'expense')
+) as v(name, type)
+where not exists (select 1 from categories limit 1);

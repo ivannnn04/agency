@@ -61,13 +61,20 @@ interface PayrollItemRow {
 function parseTime(raw: string): number {
   if (!raw) return 0
   const s = String(raw).trim()
+  // milliseconds (large integer)
   if (/^\d{6,}$/.test(s)) return Number(s) / 3600000
+  // HH:MM:SS or H:MM:SS
   const hms = s.match(/^(\d+):(\d+):(\d+)$/)
   if (hms) return Number(hms[1]) + Number(hms[2]) / 60 + Number(hms[3]) / 3600
+  // HH:MM or H:MM
   const hm = s.match(/^(\d+):(\d+)$/)
   if (hm) return Number(hm[1]) + Number(hm[2]) / 60
-  const hm2 = s.match(/(\d+)h(?:\s+(\d+)m)?/)
+  // "X h Y m" or "Xh Ym" (ClickUp style — space between digit and unit is optional)
+  const hm2 = s.match(/(\d+)\s*h(?:\s*(\d+)\s*m)?/)
   if (hm2) return Number(hm2[1]) + (Number(hm2[2] ?? 0) / 60)
+  // "X m" — minutes only
+  const mOnly = s.match(/^(\d+)\s*m$/)
+  if (mOnly) return Number(mOnly[1]) / 60
   const n = parseFloat(s)
   return isNaN(n) ? 0 : n
 }
@@ -110,7 +117,13 @@ function parseFile(
         if (rows.length < 2) { resolve([]); return }
 
         const headers = rows[0].map(h => String(h).toLowerCase().trim())
+
+        // Exact match takes priority over substring to avoid e.g. "user id" matching before "username"
         const findCol = (...names: string[]) => {
+          for (const n of names) {
+            const i = headers.findIndex(h => h === n)
+            if (i >= 0) return i
+          }
           for (const n of names) {
             const i = headers.findIndex(h => h.includes(n))
             if (i >= 0) return i
@@ -118,9 +131,10 @@ function parseFile(
           return -1
         }
 
-        const empCol  = findCol('user', 'assignee', 'employee', 'name', 'виконавець', "ім'я")
-        const projCol = findCol('task', 'project', 'проект', 'завдання')
-        const timeCol = findCol('logged', 'time', 'duration', 'tracked', 'час', 'тривалість')
+        // ClickUp exports: Username / List Name / User Period Time Spent
+        const empCol  = findCol('username', 'user', 'assignee', 'employee', 'name', 'виконавець', "ім'я")
+        const projCol = findCol('list name', 'project', 'list', 'проект', 'завдання')
+        const timeCol = findCol('user period time spent', 'time spent', 'logged', 'time tracked', 'tracked', 'time', 'duration', 'час', 'тривалість')
         const rateCol = findCol('rate', 'ставка')
 
         if (empCol < 0 || timeCol < 0) {
@@ -128,7 +142,7 @@ function parseFile(
           return
         }
 
-        const items: PayrollItem[] = []
+        const rawItems: PayrollItem[] = []
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i]
           const employee   = String(row[empCol] ?? '').trim()
@@ -149,19 +163,32 @@ function parseFile(
           const rate = (!isNaN(rateRaw) && rateRaw > 0) ? rateRaw
             : (projectRate ?? empDefault ?? defaultRate)
 
-          const amount = Math.round(hours * rate * 100) / 100
-
-          items.push({
-            key: `${i}-${employee}-${projectRaw}`,
+          rawItems.push({
+            key: `${employee}||${projectRaw}`,
             employee, projectRaw,
             projectId:   matched?.id   ?? '',
             projectName: matched?.name ?? '',
             hoursDecimal: Math.round(hours * 100) / 100,
-            rate, amount,
+            rate, amount: 0,
             matched: !!matched,
             isManual: false,
           })
         }
+
+        // Aggregate rows by employee + project (multiple tasks → one preview line)
+        const grouped: Record<string, PayrollItem> = {}
+        for (const item of rawItems) {
+          if (grouped[item.key]) {
+            const g = grouped[item.key]
+            g.hoursDecimal = Math.round((g.hoursDecimal + item.hoursDecimal) * 100) / 100
+          } else {
+            grouped[item.key] = { ...item }
+          }
+        }
+        const items = Object.values(grouped).map(item => ({
+          ...item,
+          amount: Math.round(item.hoursDecimal * item.rate * 100) / 100,
+        }))
         resolve(items)
       } catch (err: any) {
         reject(new Error('Помилка парсингу файлу: ' + err.message))

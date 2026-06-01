@@ -258,16 +258,17 @@ export default function PayrollPage() {
       supabase.from('employees').select('*').order('name'),
       supabase.from('employee_project_rates').select('*, projects(name)'),
       supabase.from('lead_managers').select('id,name,email,is_active').order('name'),
-      supabase.from('leads').select('manager_id,phase_sent,phase_reply,phase_call,phase_sale').eq('is_earnings_paid', false),
+      supabase.from('leads').select('manager_id,phase_sent,phase_reply,phase_call,phase_sale,is_earnings_paid'),
     ])
     if (r)  setRuns(r as PayrollRun[])
     if (a)  setAccounts(a)
     if (p)  setProjects(p)
     if (e)  setEmployees(e)
     if (pr) setProjectRates(pr as EmployeeProjectRate[])
-    if (mgrs && unpaidLeads) {
+    if (mgrs) {
       const earningsMap: Record<string, number> = {}
-      for (const lead of unpaidLeads as any[]) {
+      for (const lead of (unpaidLeads ?? []) as any[]) {
+        if (lead.is_earnings_paid) continue
         const amt = (lead.phase_sent ? PHASE_AMOUNTS.sent : 0)
           + (lead.phase_reply ? PHASE_AMOUNTS.reply : 0)
           + (lead.phase_call  ? PHASE_AMOUNTS.call  : 0)

@@ -94,6 +94,13 @@ create table if not exists invoices (
 -- If invoices table already exists, add the column:
 alter table invoices add column if not exists paid_amount numeric(15,2) not null default 0;
 
+create table if not exists employees (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  rate_usd numeric(8,2) not null default 0,
+  created_at timestamptz default now()
+);
+
 create table if not exists payroll_runs (
   id uuid primary key default gen_random_uuid(),
   label text not null,
@@ -126,6 +133,7 @@ alter table counterparties disable row level security;
 alter table transactions disable row level security;
 alter table budgets disable row level security;
 alter table invoices disable row level security;
+alter table employees disable row level security;
 alter table payroll_runs disable row level security;
 alter table payroll_items disable row level security;
 

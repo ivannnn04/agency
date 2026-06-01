@@ -2,25 +2,26 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRates } from '@/lib/use-rates'
-import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign } from 'lucide-react'
+import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Project  { id: string; name: string }
 interface Account  { id: string; name: string; currency: string }
+interface Employee { id: string; name: string; rate_usd: number }
 
 interface PayrollItem {
-  key: string          // temp id for UI
+  key: string
   employee: string
-  projectRaw: string   // original project name from file
-  projectId: string    // matched project id (or '')
-  projectName: string  // matched project name (or '')
+  projectRaw: string
+  projectId: string
+  projectName: string
   hoursDecimal: number
   rate: number
   amount: number
   matched: boolean
+  isManual: boolean
 }
 
 interface PayrollRun {
@@ -39,7 +40,7 @@ interface PayrollRun {
 interface PayrollItemRow {
   id: string
   employee_name: string
-  project_name_raw: string
+  project_name_raw: string | null
   hours_decimal: number
   rate_usd: number
   amount: number
@@ -52,18 +53,13 @@ interface PayrollItemRow {
 function parseTime(raw: string): number {
   if (!raw) return 0
   const s = String(raw).trim()
-  // milliseconds (large number)
   if (/^\d{6,}$/.test(s)) return Number(s) / 3600000
-  // HH:MM:SS or H:MM:SS
   const hms = s.match(/^(\d+):(\d+):(\d+)$/)
   if (hms) return Number(hms[1]) + Number(hms[2]) / 60 + Number(hms[3]) / 3600
-  // HH:MM or H:MM
   const hm = s.match(/^(\d+):(\d+)$/)
   if (hm) return Number(hm[1]) + Number(hm[2]) / 60
-  // "Xh Ym"
   const hm2 = s.match(/(\d+)h(?:\s+(\d+)m)?/)
   if (hm2) return Number(hm2[1]) + (Number(hm2[2] ?? 0) / 60)
-  // plain decimal
   const n = parseFloat(s)
   return isNaN(n) ? 0 : n
 }
@@ -74,13 +70,10 @@ function normalize(s: string) {
 
 function fuzzyMatch(raw: string, projects: Project[]): Project | null {
   const n = normalize(raw)
-  // exact
   let m = projects.find(p => normalize(p.name) === n)
   if (m) return m
-  // starts with or contains
   m = projects.find(p => n.startsWith(normalize(p.name)) || normalize(p.name).startsWith(n))
   if (m) return m
-  // any word overlap
   const words = n.split(' ').filter(w => w.length > 2)
   m = projects.find(p => {
     const pn = normalize(p.name)
@@ -89,7 +82,12 @@ function fuzzyMatch(raw: string, projects: Project[]): Project | null {
   return m ?? null
 }
 
-function parseFile(file: File, projects: Project[], defaultRate: number): Promise<PayrollItem[]> {
+function parseFile(
+  file: File,
+  projects: Project[],
+  defaultRate: number,
+  employeeRates: Record<string, number>,
+): Promise<PayrollItem[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -102,8 +100,6 @@ function parseFile(file: File, projects: Project[], defaultRate: number): Promis
         if (rows.length < 2) { resolve([]); return }
 
         const headers = rows[0].map(h => String(h).toLowerCase().trim())
-
-        // Auto-detect columns
         const findCol = (...names: string[]) => {
           for (const n of names) {
             const i = headers.findIndex(h => h.includes(n))
@@ -125,31 +121,30 @@ function parseFile(file: File, projects: Project[], defaultRate: number): Promis
         const items: PayrollItem[] = []
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i]
-          const employee = String(row[empCol] ?? '').trim()
+          const employee   = String(row[empCol] ?? '').trim()
           const projectRaw = projCol >= 0 ? String(row[projCol] ?? '').trim() : ''
           const timeRaw    = String(row[timeCol] ?? '').trim()
           const rateRaw    = rateCol >= 0 ? parseFloat(String(row[rateCol])) : NaN
 
           if (!employee || !timeRaw) continue
-
-          const hours  = parseTime(timeRaw)
+          const hours = parseTime(timeRaw)
           if (hours <= 0) continue
 
-          const rate   = (!isNaN(rateRaw) && rateRaw > 0) ? rateRaw : defaultRate
+          // Priority: per-row rate > saved employee rate > global default
+          const savedRate = employeeRates[normalize(employee)]
+          const rate = (!isNaN(rateRaw) && rateRaw > 0) ? rateRaw : (savedRate ?? defaultRate)
           const amount = Math.round(hours * rate * 100) / 100
-
           const matched = projectRaw ? fuzzyMatch(projectRaw, projects) : null
 
           items.push({
             key: `${i}-${employee}-${projectRaw}`,
-            employee,
-            projectRaw,
+            employee, projectRaw,
             projectId:   matched?.id   ?? '',
             projectName: matched?.name ?? '',
             hoursDecimal: Math.round(hours * 100) / 100,
-            rate,
-            amount,
+            rate, amount,
             matched: !!matched,
+            isManual: false,
           })
         }
         resolve(items)
@@ -165,48 +160,50 @@ function parseFile(file: File, projects: Project[], defaultRate: number): Promis
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function PayrollPage() {
-  const [runs, setRuns]         = useState<PayrollRun[]>([])
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [runs, setRuns]           = useState<PayrollRun[]>([])
+  const [accounts, setAccounts]   = useState<Account[]>([])
+  const [projects, setProjects]   = useState<Project[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loading, setLoading]     = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const { fmtUSD }              = useRates()
+  const [manualOpen, setManualOpen] = useState(false)
+  const [expanded, setExpanded]   = useState<string | null>(null)
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: r }, { data: a }, { data: p }] = await Promise.all([
+    const [{ data: r }, { data: a }, { data: p }, { data: e }] = await Promise.all([
       supabase.from('payroll_runs')
         .select('*, payroll_items(*, projects(name)), accounts(name)')
         .order('created_at', { ascending: false }),
       supabase.from('accounts').select('id,name,currency').order('created_at'),
       supabase.from('projects').select('id,name').neq('status', 'archived').order('name'),
+      supabase.from('employees').select('*').order('name'),
     ])
     if (r) setRuns(r as PayrollRun[])
     if (a) setAccounts(a)
     if (p) setProjects(p)
+    if (e) setEmployees(e)
     setLoading(false)
   }
 
   async function payRun(run: PayrollRun) {
     if (!run.account_id) { alert('Оберіть рахунок для списання'); return }
     const items = run.payroll_items ?? []
-
     for (const item of items) {
+      const commentParts = [`ЗП ${item.employee_name} — ${run.label}`]
+      if (item.hours_decimal > 0) commentParts.push(`${item.hours_decimal}h × $${item.rate_usd}`)
       const { data: tx } = await supabase.from('transactions').insert({
         type: 'expense', amount: item.amount, currency: run.currency,
         account_id: run.account_id, project_id: item.project_id,
         date: new Date().toISOString(),
-        comment: `ЗП ${item.employee_name} — ${run.label}, ${item.hours_decimal}h × $${item.rate_usd}`,
+        comment: commentParts.join(', '),
         is_planned: false,
       }).select('id').single()
-
       await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -item.amount })
       if (tx) await supabase.from('payroll_items').update({ transaction_id: tx.id }).eq('id', item.id)
     }
-
     await supabase.from('payroll_runs').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', run.id)
     fetchAll()
   }
@@ -216,8 +213,8 @@ export default function PayrollPage() {
     fetchAll()
   }
 
-  const drafts = runs.filter(r => r.status === 'draft')
-  const paid   = runs.filter(r => r.status === 'paid')
+  const drafts    = runs.filter(r => r.status === 'draft')
+  const paid      = runs.filter(r => r.status === 'paid')
   const totalPaid = paid.reduce((s, r) => s + r.total_amount, 0)
 
   return (
@@ -228,11 +225,20 @@ export default function PayrollPage() {
           <h1 className="text-xl font-bold text-gray-900">Зарплата команді</h1>
           <p className="text-sm text-gray-500 mt-0.5">Виплати по проектах</p>
         </div>
-        <button onClick={() => setUploadOpen(true)}
-          className="flex items-center gap-2 bg-gray-900 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          <Upload size={14} /> Завантажити CSV / Excel
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setManualOpen(true)}
+            className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Plus size={14} /> Нарахувати вручну
+          </button>
+          <button onClick={() => setUploadOpen(true)}
+            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Upload size={14} /> Завантажити CSV / Excel
+          </button>
+        </div>
       </div>
+
+      {/* Employees panel */}
+      <EmployeesPanel employees={employees} onRefresh={fetchAll} />
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
@@ -255,7 +261,6 @@ export default function PayrollPage() {
         <p className="text-center py-12 text-gray-400">Завантаження...</p>
       ) : (
         <>
-          {/* Draft runs */}
           {drafts.length > 0 && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Очікують оплати</h2>
@@ -268,8 +273,6 @@ export default function PayrollPage() {
               </div>
             </div>
           )}
-
-          {/* Paid runs */}
           {paid.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Виплачені</h2>
@@ -282,12 +285,11 @@ export default function PayrollPage() {
               </div>
             </div>
           )}
-
           {runs.length === 0 && (
             <div className="text-center py-20 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
               <DollarSign size={40} className="mx-auto mb-3 opacity-30" />
               <p className="font-medium text-gray-500">Немає розрахунків</p>
-              <p className="text-sm mt-1">Завантажте CSV або Excel з трекером команди</p>
+              <p className="text-sm mt-1">Завантажте CSV або Excel, або додайте вручну</p>
             </div>
           )}
         </>
@@ -295,10 +297,140 @@ export default function PayrollPage() {
 
       {uploadOpen && (
         <UploadModal
-          projects={projects} accounts={accounts}
+          projects={projects} accounts={accounts} employees={employees}
           onClose={() => setUploadOpen(false)}
           onSuccess={() => { setUploadOpen(false); fetchAll() }}
         />
+      )}
+      {manualOpen && (
+        <ManualPayrollModal
+          employees={employees} projects={projects} accounts={accounts}
+          onClose={() => setManualOpen(false)}
+          onSuccess={() => { setManualOpen(false); fetchAll() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Employees Panel ────────────────────────────────────────────────────────────
+
+function EmployeesPanel({ employees, onRefresh }: { employees: Employee[]; onRefresh: () => void }) {
+  const [open, setOpen]         = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editRate, setEditRate] = useState('')
+  const [addName, setAddName]   = useState('')
+  const [addRate, setAddRate]   = useState('')
+  const [saving, setSaving]     = useState(false)
+
+  function startEdit(emp: Employee) {
+    setEditingId(emp.id)
+    setEditName(emp.name)
+    setEditRate(String(emp.rate_usd))
+  }
+
+  async function saveEdit(id: string) {
+    if (!editName.trim()) return
+    setSaving(true)
+    await supabase.from('employees').update({ name: editName.trim(), rate_usd: parseFloat(editRate) || 0 }).eq('id', id)
+    setEditingId(null)
+    setSaving(false)
+    onRefresh()
+  }
+
+  async function addEmployee() {
+    if (!addName.trim()) return
+    setSaving(true)
+    await supabase.from('employees').insert({ name: addName.trim(), rate_usd: parseFloat(addRate) || 0 })
+    setAddName(''); setAddRate('')
+    setSaving(false)
+    onRefresh()
+  }
+
+  async function deleteEmployee(id: string) {
+    await supabase.from('employees').delete().eq('id', id)
+    onRefresh()
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl mb-6 overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+        <div className="flex items-center gap-2 text-sm">
+          <Users size={15} className="text-gray-500" />
+          <span className="font-medium text-gray-800">Команда</span>
+          <span className="text-gray-400">{employees.length} співробітників</span>
+        </div>
+        {open ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-100 p-4">
+          {employees.length > 0 && (
+            <table className="w-full text-sm mb-4">
+              <thead>
+                <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <th className="text-left pb-2 font-medium">Ім'я</th>
+                  <th className="text-right pb-2 font-medium">$/год</th>
+                  <th className="w-20 pb-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {employees.map(emp => (
+                  <tr key={emp.id}>
+                    {editingId === emp.id ? (
+                      <>
+                        <td className="py-2 pr-2">
+                          <input value={editName} onChange={e => setEditName(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        </td>
+                        <td className="py-2 pr-2 text-right">
+                          <input type="number" step="0.5" min="0" value={editRate} onChange={e => setEditRate(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-24 text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        </td>
+                        <td className="py-2 text-right">
+                          <button onClick={() => saveEdit(emp.id)} disabled={saving}
+                            className="text-teal-600 text-xs font-medium mr-3 hover:text-teal-700">Зберегти</button>
+                          <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs hover:text-gray-600">✕</button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2.5 text-gray-800 font-medium">{emp.name}</td>
+                        <td className="py-2.5 text-right text-gray-500">${emp.rate_usd}/год</td>
+                        <td className="py-2.5 text-right">
+                          <button onClick={() => startEdit(emp)}
+                            className="text-gray-300 hover:text-gray-600 p-1 transition-colors mr-1">
+                            <Edit2 size={13} />
+                          </button>
+                          <button onClick={() => deleteEmployee(emp.id)}
+                            className="text-gray-300 hover:text-red-500 p-1 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {/* Add employee */}
+          <div className="flex gap-2 items-center">
+            <input placeholder="Ім'я співробітника" value={addName} onChange={e => setAddName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addEmployee() }}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <input type="number" step="0.5" min="0" placeholder="$/год" value={addRate} onChange={e => setAddRate(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addEmployee() }}
+              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <button onClick={addEmployee} disabled={saving || !addName.trim()}
+              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-3 py-2 text-sm font-medium transition-colors">
+              <Plus size={14} /> Додати
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -313,7 +445,6 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
   const isDraft = run.status === 'draft'
   const items   = run.payroll_items ?? []
 
-  // Group items by project
   const byProject: Record<string, { name: string; items: PayrollItemRow[]; total: number }> = {}
   for (const item of items) {
     const key   = item.project_id ?? '__none__'
@@ -325,7 +456,6 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
 
   return (
     <div className={`border rounded-xl overflow-hidden ${isDraft ? 'border-amber-200' : 'border-gray-200'}`}>
-      {/* Run header */}
       <div className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isDraft ? 'bg-amber-50' : 'bg-gray-50'}`}
         onClick={onToggle}>
         <div className="flex items-center gap-3">
@@ -357,7 +487,6 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
         </div>
       </div>
 
-      {/* Accordion body */}
       {expanded && (
         <div className="p-4 bg-white flex flex-col gap-4">
           {Object.entries(byProject).map(([key, group]) => (
@@ -380,8 +509,12 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
                     {group.items.map(item => (
                       <tr key={item.id} className="border-b border-gray-100 last:border-0">
                         <td className="py-2 px-3 text-gray-700 font-medium">{item.employee_name}</td>
-                        <td className="py-2 px-3 text-right text-gray-600">{item.hours_decimal}h</td>
-                        <td className="py-2 px-3 text-right text-gray-500">${item.rate_usd}/h</td>
+                        <td className="py-2 px-3 text-right text-gray-500">
+                          {item.hours_decimal > 0 ? `${item.hours_decimal}h` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-500">
+                          {item.rate_usd > 0 ? `$${item.rate_usd}/h` : 'фікс.'}
+                        </td>
                         <td className="py-2 px-3 text-right font-semibold text-red-500">${item.amount.toFixed(2)}</td>
                       </tr>
                     ))}
@@ -396,27 +529,192 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
   )
 }
 
+// ── Manual Payroll Modal ───────────────────────────────────────────────────────
+
+interface ManualEntry { id: string; employee: string; projectId: string; amount: string; comment: string }
+
+function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess }: {
+  employees: Employee[]; projects: Project[]; accounts: Account[]
+  onClose: () => void; onSuccess: () => void
+}) {
+  const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
+  const [label, setLabel]       = useState(defaultLabel)
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [entries, setEntries]   = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', amount: '', comment: '' }])
+  const [saving, setSaving]     = useState(false)
+
+  function addRow() {
+    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', amount: '', comment: '' }])
+  }
+
+  function updateRow(id: string, patch: Partial<ManualEntry>) {
+    setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e))
+  }
+
+  function removeRow(id: string) {
+    setEntries(prev => prev.filter(e => e.id !== id))
+  }
+
+  async function save() {
+    const valid = entries.filter(e => e.employee.trim() && parseFloat(e.amount) > 0)
+    if (valid.length === 0) return
+    setSaving(true)
+
+    const total = valid.reduce((s, e) => s + parseFloat(e.amount), 0)
+    const { data: run } = await supabase.from('payroll_runs').insert({
+      label: label.trim() || defaultLabel,
+      status: 'draft',
+      total_amount: Math.round(total * 100) / 100,
+      currency: 'USD',
+      account_id: accountId || null,
+    }).select('id').single()
+
+    if (!run) { setSaving(false); return }
+
+    await supabase.from('payroll_items').insert(
+      valid.map(e => ({
+        run_id: run.id,
+        employee_name: e.employee.trim(),
+        project_id: e.projectId || null,
+        project_name_raw: projects.find(p => p.id === e.projectId)?.name ?? null,
+        hours_decimal: 0,
+        rate_usd: 0,
+        amount: parseFloat(e.amount),
+      }))
+    )
+    onSuccess()
+  }
+
+  const total = entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+          <h2 className="text-base font-semibold text-gray-900">Нарахувати вручну</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {/* Settings */}
+        <div className="px-5 py-4 border-b border-gray-100 flex gap-4 flex-shrink-0 bg-gray-50">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 mb-1">Назва виплати</label>
+            <input value={label} onChange={e => setLabel(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          </div>
+          <div className="w-52">
+            <label className="block text-xs text-gray-500 mb-1">Рахунок для списання</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Entries table */}
+        <div className="flex-1 overflow-y-auto p-5">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-400 border-b border-gray-100">
+                <th className="text-left pb-2 font-medium">Співробітник</th>
+                <th className="text-left pb-2 font-medium">Проект</th>
+                <th className="text-right pb-2 font-medium w-28">Сума ($)</th>
+                <th className="w-6 pb-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {entries.map(entry => (
+                <tr key={entry.id}>
+                  <td className="py-2 pr-2">
+                    <input
+                      list={`emp-list-${entry.id}`}
+                      placeholder="Ім'я"
+                      value={entry.employee}
+                      onChange={e => updateRow(entry.id, { employee: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    />
+                    <datalist id={`emp-list-${entry.id}`}>
+                      {employees.map(e => <option key={e.id} value={e.name} />)}
+                    </datalist>
+                  </td>
+                  <td className="py-2 pr-2">
+                    <select value={entry.projectId} onChange={e => updateRow(entry.id, { projectId: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white">
+                      <option value="">— без проекту —</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="py-2 pr-2 text-right">
+                    <input type="number" step="0.01" min="0" placeholder="0.00"
+                      value={entry.amount}
+                      onChange={e => updateRow(entry.id, { amount: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                  </td>
+                  <td className="py-2 text-center">
+                    {entries.length > 1 && (
+                      <button onClick={() => removeRow(entry.id)} className="text-gray-300 hover:text-red-400 transition-colors p-1">
+                        <X size={13} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button onClick={addRow}
+            className="mt-3 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors">
+            <Plus size={14} /> Додати рядок
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
+          <div className="text-sm">
+            <span className="text-gray-500">Всього: </span>
+            <span className="font-bold text-gray-900">${total.toFixed(2)}</span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose}
+              className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+              Скасувати
+            </button>
+            <button onClick={save} disabled={saving || total === 0}
+              className="bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+              {saving ? 'Збереження...' : 'Зберегти чернетку'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Upload Modal ───────────────────────────────────────────────────────────────
 
-function UploadModal({ projects, accounts, onClose, onSuccess }: {
-  projects: Project[]; accounts: Account[]
+function UploadModal({ projects, accounts, employees, onClose, onSuccess }: {
+  projects: Project[]; accounts: Account[]; employees: Employee[]
   onClose: () => void; onSuccess: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [step, setStep]         = useState<'upload' | 'preview'>('upload')
-  const [items, setItems]       = useState<PayrollItem[]>([])
+  const [step, setStep]             = useState<'upload' | 'preview'>('upload')
+  const [items, setItems]           = useState<PayrollItem[]>([])
   const [parseError, setParseError] = useState('')
-  const [label, setLabel]       = useState(`ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`)
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [label, setLabel]           = useState(`ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`)
+  const [accountId, setAccountId]   = useState(accounts[0]?.id ?? '')
   const [globalRate, setGlobalRate] = useState('7')
-  const [currency] = useState('USD')
-  const [saving, setSaving]     = useState(false)
-  const [dragging, setDragging] = useState(false)
+  const [saving, setSaving]         = useState(false)
+  const [dragging, setDragging]     = useState(false)
+
+  const employeeRates: Record<string, number> = {}
+  for (const emp of employees) {
+    employeeRates[normalize(emp.name)] = emp.rate_usd
+  }
 
   async function handleFile(file: File) {
     setParseError('')
     try {
-      const parsed = await parseFile(file, projects, Number(globalRate) || 7)
+      const parsed = await parseFile(file, projects, Number(globalRate) || 7, employeeRates)
       if (parsed.length === 0) { setParseError('Файл порожній або не вдалося розпізнати рядки'); return }
       setItems(parsed)
       setStep('preview')
@@ -443,7 +741,7 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
     const { data: run, error } = await supabase.from('payroll_runs').insert({
       label: label.trim(), status: 'draft',
       total_amount: Math.round(total * 100) / 100,
-      currency, account_id: accountId || null,
+      currency: 'USD', account_id: accountId || null,
     }).select('id').single()
 
     if (error || !run) { setSaving(false); return }
@@ -462,13 +760,12 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
     onSuccess()
   }
 
-  const total    = items.reduce((s, i) => s + i.amount, 0)
+  const total     = items.reduce((s, i) => s + i.amount, 0)
   const unmatched = items.filter(i => i.projectRaw && !i.projectId).length
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="text-base font-semibold text-gray-900">
@@ -483,7 +780,6 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
 
         {step === 'upload' && (
           <div className="p-6 flex flex-col gap-5">
-            {/* Drop zone */}
             <div
               onDragOver={e => { e.preventDefault(); setDragging(true) }}
               onDragLeave={() => setDragging(false)}
@@ -511,7 +807,10 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Ставка за замовчуванням ($/год)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Ставка за замовчуванням ($/год)
+                  {employees.length > 0 && <span className="font-normal text-gray-400 ml-1">— для тих, у кого не вказано</span>}
+                </label>
                 <input type="number" step="0.5" min="0"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={globalRate} onChange={e => setGlobalRate(e.target.value)} />
@@ -524,12 +823,17 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
                 </select>
               </div>
             </div>
+
+            {employees.length > 0 && (
+              <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 text-xs text-teal-700">
+                Автоматично застосуються індивідуальні ставки для: {employees.filter(e => e.rate_usd > 0).map(e => `${e.name} ($${e.rate_usd}/год)`).join(', ') || '—'}
+              </div>
+            )}
           </div>
         )}
 
         {step === 'preview' && (
           <>
-            {/* Settings bar */}
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4 flex-shrink-0 bg-gray-50">
               <div className="flex-1">
                 <label className="block text-xs text-gray-500 mb-0.5">Назва виплати</label>
@@ -551,7 +855,6 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
               )}
             </div>
 
-            {/* Preview table */}
             <div className="flex-1 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
@@ -604,7 +907,6 @@ function UploadModal({ projects, accounts, onClose, onSuccess }: {
               </table>
             </div>
 
-            {/* Footer */}
             <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
               <div className="text-sm">
                 <span className="text-gray-500">Всього: </span>

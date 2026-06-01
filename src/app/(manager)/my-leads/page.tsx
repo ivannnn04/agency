@@ -167,48 +167,48 @@ export default function MyLeadsPage() {
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Назва ліда *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Назва ліда *</label>
               <input required value={form.lead_name}
                 onChange={e => setForm(f => ({ ...f, lead_name: e.target.value }))}
                 placeholder="Ім'я / компанія"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Дата</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Дата</label>
               <input type="date" value={form.date}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Країна</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Країна</label>
               <input value={form.country}
                 onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
                 placeholder="США, Велика Британія..."
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Акаунт *</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Акаунт *</label>
               <select required value={form.account}
                 onChange={e => setForm(f => ({ ...f, account: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white focus:ring-2 focus:ring-gray-900">
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white focus:ring-2 focus:ring-gray-900">
                 <option value="">Обрати...</option>
                 {accounts.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
           </div>
           <div className="mb-3">
-            <label className="block text-xs text-gray-500 mb-1">Запит / клієнт</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Запит / клієнт</label>
             <textarea rows={3} value={form.request_text}
               onChange={e => setForm(f => ({ ...f, request_text: e.target.value }))}
               placeholder="Опис ліда, що шукає, бюджет..."
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
           </div>
           <div className="mb-4">
-            <label className="block text-xs text-gray-500 mb-1">Листа (Cover Letter)</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Листа (Cover Letter)</label>
             <textarea rows={4} value={form.cover_letter}
               onChange={e => setForm(f => ({ ...f, cover_letter: e.target.value }))}
               placeholder="Текст відправленого листа..."
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
           </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setFormOpen(false)}

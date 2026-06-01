@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -56,6 +57,16 @@ interface PayrollItemRow {
   transaction_id: string | null
   projects?: { name: string } | null
 }
+
+interface LeadManager {
+  id: string
+  name: string
+  email: string
+  is_active: boolean
+  unpaid_usd: number
+}
+
+const PHASE_AMOUNTS: Record<string, number> = { sent: 0.5, reply: 2, call: 3, sale: 10 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -230,12 +241,15 @@ export default function PayrollPage() {
   const [uploadOpen, setUploadOpen]         = useState(false)
   const [manualOpen, setManualOpen]         = useState(false)
   const [expanded, setExpanded]             = useState<string | null>(null)
+  const [leadManagers, setLeadManagers]     = useState<LeadManager[]>([])
+  const [payingManager, setPayingManager]   = useState<LeadManager | null>(null)
+  const { rates }                           = useRates()
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: r }, { data: a }, { data: p }, { data: e }, { data: pr }] = await Promise.all([
+    const [{ data: r }, { data: a }, { data: p }, { data: e }, { data: pr }, { data: mgrs }, { data: unpaidLeads }] = await Promise.all([
       supabase.from('payroll_runs')
         .select('*, payroll_items(*, projects(name)), accounts(name)')
         .order('created_at', { ascending: false }),
@@ -243,12 +257,25 @@ export default function PayrollPage() {
       supabase.from('projects').select('id,name').neq('status', 'archived').order('name'),
       supabase.from('employees').select('*').order('name'),
       supabase.from('employee_project_rates').select('*, projects(name)'),
+      supabase.from('lead_managers').select('id,name,email,is_active').order('name'),
+      supabase.from('leads').select('manager_id,phase_sent,phase_reply,phase_call,phase_sale').eq('is_earnings_paid', false),
     ])
     if (r)  setRuns(r as PayrollRun[])
     if (a)  setAccounts(a)
     if (p)  setProjects(p)
     if (e)  setEmployees(e)
     if (pr) setProjectRates(pr as EmployeeProjectRate[])
+    if (mgrs && unpaidLeads) {
+      const earningsMap: Record<string, number> = {}
+      for (const lead of unpaidLeads as any[]) {
+        const amt = (lead.phase_sent ? PHASE_AMOUNTS.sent : 0)
+          + (lead.phase_reply ? PHASE_AMOUNTS.reply : 0)
+          + (lead.phase_call  ? PHASE_AMOUNTS.call  : 0)
+          + (lead.phase_sale  ? PHASE_AMOUNTS.sale  : 0)
+        earningsMap[lead.manager_id] = (earningsMap[lead.manager_id] ?? 0) + amt
+      }
+      setLeadManagers((mgrs as any[]).map(m => ({ ...m, unpaid_usd: earningsMap[m.id] ?? 0 })))
+    }
     setLoading(false)
   }
 
@@ -285,6 +312,12 @@ export default function PayrollPage() {
         projects={projects}
         projectRates={projectRates}
         onRefresh={fetchAll}
+      />
+
+      <LeadManagersSection
+        managers={leadManagers}
+        usdRate={rates.USD}
+        onPay={mgr => setPayingManager(mgr)}
       />
 
       <div className="grid grid-cols-3 gap-4 mb-8">
@@ -356,6 +389,15 @@ export default function PayrollPage() {
           employees={employees} projects={projects} accounts={accounts}
           onClose={() => setManualOpen(false)}
           onSuccess={() => { setManualOpen(false); fetchAll() }}
+        />
+      )}
+      {payingManager && (
+        <LeadManagerPayModal
+          manager={payingManager}
+          accounts={accounts}
+          usdRate={rates.USD}
+          onClose={() => setPayingManager(null)}
+          onSuccess={() => { setPayingManager(null); fetchAll() }}
         />
       )}
     </div>
@@ -1271,6 +1313,183 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
             </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Lead Managers Section ─────────────────────────────────────────────────────
+
+function LeadManagersSection({ managers, usdRate, onPay }: {
+  managers: LeadManager[]
+  usdRate: number
+  onPay: (mgr: LeadManager) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const totalUnpaid = managers.reduce((s, m) => s + m.unpaid_usd, 0)
+
+  return (
+    <div className="border border-gray-100 rounded-xl mb-6 overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <Users size={16} className="text-gray-500" />
+          <span className="font-semibold text-gray-800 text-sm">Лідогени</span>
+          <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded font-medium">
+            {managers.length} менеджерів
+          </span>
+          {totalUnpaid > 0 && (
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">
+              Нараховано: ${totalUnpaid.toFixed(2)}
+            </span>
+          )}
+        </div>
+        {open ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-100">
+          {managers.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Менеджерів немає</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Менеджер</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500">Email</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-gray-500">Нараховано ($)</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-gray-500">≈ UAH</th>
+                  <th className="py-3 px-4" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {managers.map(mgr => (
+                  <tr key={mgr.id} className="hover:bg-gray-50/50">
+                    <td className="py-3 px-5 font-medium text-gray-800">{mgr.name}</td>
+                    <td className="py-3 px-4 text-gray-500 text-xs">{mgr.email}</td>
+                    <td className="py-3 px-4 text-right font-semibold text-gray-700">
+                      ${mgr.unpaid_usd.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right text-gray-500 text-xs">
+                      {usdRate > 0 ? `₴${(mgr.unpaid_usd * usdRate).toFixed(0)}` : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => onPay(mgr)}
+                        disabled={mgr.unpaid_usd === 0}
+                        className="flex items-center gap-1.5 bg-teal-500 hover:bg-teal-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ml-auto"
+                      >
+                        <CheckCircle size={12} /> Виплатити
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Lead Manager Pay Modal ────────────────────────────────────────────────────
+
+function LeadManagerPayModal({ manager, accounts, usdRate, onClose, onSuccess }: {
+  manager: LeadManager
+  accounts: Account[]
+  usdRate: number
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const recommended = usdRate > 0 ? Math.round(manager.unpaid_usd * usdRate * 100) / 100 : 0
+  const [accountId, setAccountId]   = useState(accounts[0]?.id ?? '')
+  const [uahAmount, setUahAmount]   = useState(recommended.toFixed(2))
+  const [saving, setSaving]         = useState(false)
+
+  async function pay() {
+    if (!accountId || !parseFloat(uahAmount)) return
+    setSaving(true)
+    const amount = parseFloat(uahAmount)
+
+    // 1. Create expense transaction
+    const { data: tx } = await supabase.from('transactions').insert({
+      type: 'expense',
+      amount,
+      currency: 'UAH',
+      account_id: accountId,
+      date: new Date().toISOString(),
+      comment: `Зарплата лідогена: ${manager.name} ($${manager.unpaid_usd.toFixed(2)})`,
+    }).select('id').single()
+
+    // 2. Deduct from account balance
+    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -amount })
+
+    // 3. Mark all unpaid leads of this manager as paid
+    await supabase.from('leads')
+      .update({ is_earnings_paid: true })
+      .eq('manager_id', manager.id)
+      .eq('is_earnings_paid', false)
+
+    setSaving(false)
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">Виплата лідогену</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="bg-gray-50 rounded-xl px-4 py-3 flex justify-between items-center">
+            <div>
+              <p className="text-xs text-gray-500">Менеджер</p>
+              <p className="font-semibold text-gray-800">{manager.name}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Нараховано</p>
+              <p className="font-bold text-gray-900 text-lg">${manager.unpaid_usd.toFixed(2)}</p>
+            </div>
+          </div>
+
+          {usdRate > 0 && (
+            <p className="text-xs text-gray-500 text-center">
+              Курс НБУ: 1 USD = ₴{usdRate.toFixed(2)} &nbsp;·&nbsp; Рекомендована сума: ₴{recommended.toFixed(2)}
+            </p>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок списання</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Сума виплати (UAH)</label>
+            <input
+              type="number" step="0.01" min="0"
+              value={uahAmount}
+              onChange={e => setUahAmount(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={onClose}
+            className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            Скасувати
+          </button>
+          <button onClick={pay} disabled={saving || !accountId || !parseFloat(uahAmount)}
+            className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+            {saving ? 'Виплата...' : 'Підтвердити виплату'}
+          </button>
+        </div>
       </div>
     </div>
   )

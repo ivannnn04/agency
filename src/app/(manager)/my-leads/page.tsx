@@ -66,6 +66,7 @@ export default function MyLeadsPage() {
       supabase.from('leads')
         .select('*')
         .eq('manager_id', managerId)
+        .eq('is_earnings_paid', false)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('outreach_accounts').select('name').order('name'),

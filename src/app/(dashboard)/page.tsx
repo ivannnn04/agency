@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Transaction } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Search, Download, Edit2 } from 'lucide-react'
+import { Search, Download, Edit2, Trash2 } from 'lucide-react'
 import EditTransactionModal from '@/components/modals/EditTransactionModal'
 
 export default function PaymentsPage() {
@@ -14,6 +14,8 @@ export default function PaymentsPage() {
   const [dateFrom, setDateFrom]         = useState('')
   const [dateTo, setDateTo]             = useState('')
   const [editTx, setEditTx]             = useState<Transaction | null>(null)
+  const [deleteTx, setDeleteTx]         = useState<Transaction | null>(null)
+  const [deleting, setDeleting]         = useState(false)
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -64,6 +66,25 @@ export default function PaymentsPage() {
     a.click(); URL.revokeObjectURL(url)
   }
 
+  async function confirmDelete() {
+    if (!deleteTx) return
+    setDeleting(true)
+    const t = deleteTx
+    // Reverse balance effect
+    if (t.type === 'income') {
+      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: -t.amount })
+    } else if (t.type === 'expense') {
+      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: t.amount })
+    } else if (t.type === 'transfer') {
+      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: t.amount })
+      if (t.to_account_id) await supabase.rpc('update_account_balance', { p_account_id: t.to_account_id, p_delta: -t.amount })
+    }
+    await supabase.from('transactions').delete().eq('id', t.id)
+    setDeleting(false)
+    setDeleteTx(null)
+    fetchTransactions()
+  }
+
   const planned = transactions.filter(t => t.is_planned)
   const actual  = transactions.filter(t => !t.is_planned)
 
@@ -99,7 +120,7 @@ export default function PaymentsPage() {
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Категорія</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Проект</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Коментар</th>
-              <th className="w-8 py-3 px-2" />
+              <th className="w-16 py-3 px-2" />
             </tr>
           </thead>
           <tbody>
@@ -110,10 +131,10 @@ export default function PaymentsPage() {
                     Планові платежі • {planned.length}
                   </td>
                 </tr>
-                {planned.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} />)}
+                {planned.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} onDelete={() => setDeleteTx(t)} />)}
               </>
             )}
-            {actual.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} />)}
+            {actual.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} onDelete={() => setDeleteTx(t)} />)}
             {transactions.length === 0 && !loading && (
               <tr><td colSpan={8} className="text-center py-16 text-gray-400">
                 <p className="text-4xl mb-3">💸</p><p>Немає операцій</p>
@@ -130,11 +151,36 @@ export default function PaymentsPage() {
           onSuccess={() => { setEditTx(null); fetchTransactions() }}
         />
       )}
+
+      {deleteTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 flex flex-col gap-5">
+            <div>
+              <p className="font-semibold text-gray-900 text-base">Видалити транзакцію?</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {deleteTx.type === 'income' ? '+' : deleteTx.type === 'transfer' ? '⇄' : '−'}{' '}
+                {deleteTx.amount.toLocaleString('uk-UA')} {deleteTx.currency} · {formatDate(deleteTx.date)}
+              </p>
+              <p className="text-xs text-gray-400 mt-2">Баланс рахунку буде скориговано автоматично. Цю дію не можна скасувати.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTx(null)} disabled={deleting}
+                className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Скасувати
+              </button>
+              <button onClick={confirmDelete} disabled={deleting}
+                className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
+                {deleting ? 'Видалення...' : 'Видалити'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function TransactionRow({ transaction: t, onEdit }: { transaction: Transaction; onEdit: () => void }) {
+function TransactionRow({ transaction: t, onEdit, onDelete }: { transaction: Transaction; onEdit: () => void; onDelete: () => void }) {
   const isIncome   = t.type === 'income'
   const isTransfer = t.type === 'transfer'
 
@@ -161,11 +207,18 @@ function TransactionRow({ transaction: t, onEdit }: { transaction: Transaction; 
       <td className="py-3 px-4 text-gray-600">{t.project?.name ?? '—'}</td>
       <td className="py-3 px-4 text-gray-500 text-xs max-w-xs truncate">{t.comment ?? ''}</td>
       <td className="py-3 px-2">
-        <button onClick={onEdit}
-          className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700 p-1 rounded transition-all"
-          title="Редагувати">
-          <Edit2 size={13} />
-        </button>
+        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-all">
+          <button onClick={onEdit}
+            className="text-gray-400 hover:text-gray-700 p-1 rounded transition-colors"
+            title="Редагувати">
+            <Edit2 size={13} />
+          </button>
+          <button onClick={onDelete}
+            className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors"
+            title="Видалити">
+            <Trash2 size={13} />
+          </button>
+        </div>
       </td>
     </tr>
   )

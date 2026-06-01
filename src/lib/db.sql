@@ -170,3 +170,46 @@ select name, type from (values
   ('Видача позики', 'expense')
 ) as v(name, type)
 where not exists (select 1 from categories limit 1);
+
+-- ── Lead generation tables ───────────────────────────────────────────────────
+
+create table if not exists lead_managers (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  email         text not null unique,
+  password_hash text not null,
+  is_active     boolean not null default true,
+  created_at    timestamptz default now()
+);
+alter table lead_managers disable row level security;
+
+-- Outreach accounts (IVAN, GUDRIX AGENCY, etc.) — configurable by admin
+create table if not exists outreach_accounts (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null unique,
+  created_at timestamptz default now()
+);
+alter table outreach_accounts disable row level security;
+
+insert into outreach_accounts (name) values ('IVAN'), ('GUDRIX AGENCY')
+on conflict (name) do nothing;
+
+create table if not exists leads (
+  id            uuid primary key default gen_random_uuid(),
+  lead_name     text not null,
+  date          date not null default current_date,
+  country       text,
+  request_text  text,
+  cover_letter  text,
+  account       text not null,
+  status        text not null default 'sent' check (status in ('sent', 'reply', 'call', 'sale')),
+  manager_id    uuid not null references lead_managers(id) on delete cascade,
+  -- Phase flags: set when status reaches that level, never cleared (earnings are cumulative)
+  phase_sent    boolean not null default true,
+  phase_reply   boolean not null default false,
+  phase_call    boolean not null default false,
+  phase_sale    boolean not null default false,
+  validated     boolean not null default false,
+  created_at    timestamptz default now()
+);
+alter table leads disable row level security;

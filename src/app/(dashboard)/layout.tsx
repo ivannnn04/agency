@@ -26,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { label: 'Аналітика', href: '/analytics' },
     { label: 'Проекти', href: '/projects' },
     { label: 'Дебіторка', href: '/receivables' },
+    { label: 'Ліди', href: '/leads' },
     { label: 'Зарплата команді', href: '/payroll' },
   ]
 

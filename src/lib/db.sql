@@ -94,6 +94,30 @@ create table if not exists invoices (
 -- If invoices table already exists, add the column:
 alter table invoices add column if not exists paid_amount numeric(15,2) not null default 0;
 
+create table if not exists payroll_runs (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  status text not null default 'draft' check (status in ('draft', 'paid')),
+  total_amount numeric(15,2) not null default 0,
+  currency text not null default 'USD',
+  account_id uuid references accounts(id) on delete set null,
+  paid_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create table if not exists payroll_items (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references payroll_runs(id) on delete cascade,
+  employee_name text not null,
+  project_id uuid references projects(id) on delete set null,
+  project_name_raw text,
+  hours_decimal numeric(10,2) not null default 0,
+  rate_usd numeric(8,2) not null,
+  amount numeric(15,2) not null,
+  transaction_id uuid references transactions(id) on delete set null,
+  created_at timestamptz default now()
+);
+
 -- Disable Row Level Security so the anon key can read/write
 alter table accounts disable row level security;
 alter table categories disable row level security;
@@ -102,6 +126,8 @@ alter table counterparties disable row level security;
 alter table transactions disable row level security;
 alter table budgets disable row level security;
 alter table invoices disable row level security;
+alter table payroll_runs disable row level security;
+alter table payroll_items disable row level security;
 
 -- Function to update account balance
 create or replace function update_account_balance(p_account_id uuid, p_delta numeric)

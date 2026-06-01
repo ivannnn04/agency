@@ -4,31 +4,30 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Transaction } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Search, Download, Filter } from 'lucide-react'
+import { Search, Download, Edit2 } from 'lucide-react'
+import EditTransactionModal from '@/components/modals/EditTransactionModal'
 
 export default function PaymentsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [loading, setLoading]           = useState(true)
+  const [search, setSearch]             = useState('')
+  const [dateFrom, setDateFrom]         = useState('')
+  const [dateTo, setDateTo]             = useState('')
+  const [editTx, setEditTx]             = useState<Transaction | null>(null)
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
     let query = supabase
       .from('transactions')
-      .select(`
-        *,
-        account:accounts!account_id(id, name, currency, color),
-        to_account:accounts!to_account_id(id, name, currency),
-        category:categories(id, name, type),
-        project:projects(id, name),
-        counterparty:counterparties(id, name)
-      `)
+      .select(`*, account:accounts!account_id(id,name,currency,color),
+        to_account:accounts!to_account_id(id,name,currency),
+        category:categories(id,name,type),
+        project:projects(id,name),
+        counterparty:counterparties(id,name)`)
       .order('date', { ascending: false })
 
     if (dateFrom) query = query.gte('date', dateFrom)
-    if (dateTo) query = query.lte('date', dateTo)
+    if (dateTo)   query = query.lte('date', dateTo)
 
     const { data } = await query
     if (data) {
@@ -44,37 +43,29 @@ export default function PaymentsPage() {
     setLoading(false)
   }, [search, dateFrom, dateTo])
 
-  useEffect(() => {
-    fetchTransactions()
-  }, [fetchTransactions])
+  useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
   async function exportCSV() {
     const rows = [
-      ['Дата', 'Тип', 'Сума', 'Валюта', 'Рахунок', 'Контрагент', 'Категорія', 'Проект', 'Коментар'],
+      ['Дата','Тип','Сума','Валюта','Рахунок','Контрагент','Категорія','Проект','Коментар'],
       ...transactions.map(t => [
         formatDate(t.date),
         t.type === 'income' ? 'Дохід' : t.type === 'expense' ? 'Витрата' : 'Переказ',
-        t.amount.toString(),
-        t.currency,
-        t.account?.name ?? '',
-        t.counterparty?.name ?? '',
-        t.category?.name ?? '',
-        t.project?.name ?? '',
-        t.comment ?? '',
+        t.amount.toString(), t.currency,
+        t.account?.name ?? '', t.counterparty?.name ?? '',
+        t.category?.name ?? '', t.project?.name ?? '', t.comment ?? '',
       ])
     ]
     const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
+    const a = document.createElement('a'); a.href = url
     a.download = `платежі_${new Date().toLocaleDateString('uk-UA')}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.click(); URL.revokeObjectURL(url)
   }
 
   const planned = transactions.filter(t => t.is_planned)
-  const actual = transactions.filter(t => !t.is_planned)
+  const actual  = transactions.filter(t => !t.is_planned)
 
   return (
     <div className="p-6">
@@ -82,32 +73,16 @@ export default function PaymentsPage() {
       <div className="flex items-center gap-3 mb-6">
         <div className="relative flex-1 max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Пошук по рахунках, клієнтах, коментарях"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-          />
+          <input type="text" placeholder="Пошук по рахунках, клієнтах, коментарях"
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
         </div>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={e => setDateFrom(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none"
-          placeholder="Від"
-        />
-        <input
-          type="date"
-          value={dateTo}
-          onChange={e => setDateTo(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none"
-          placeholder="До"
-        />
-        <button
-          onClick={exportCSV}
-          className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors"
-        >
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none" />
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none" />
+        <button onClick={exportCSV}
+          className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors">
           <Download size={16} />
         </button>
       </div>
@@ -119,50 +94,52 @@ export default function PaymentsPage() {
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Дата</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Сума</th>
-              <th className="text-left py-3 px-4 text-gray-500 font-medium">Рахунок / залишок</th>
+              <th className="text-left py-3 px-4 text-gray-500 font-medium">Рахунок</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Контрагент</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Категорія</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Проект</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Коментар</th>
+              <th className="w-8 py-3 px-2" />
             </tr>
           </thead>
           <tbody>
             {planned.length > 0 && (
               <>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <td colSpan={7} className="py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <td colSpan={8} className="py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     Планові платежі • {planned.length}
                   </td>
                 </tr>
-                {planned.map(t => (
-                  <TransactionRow key={t.id} transaction={t} />
-                ))}
+                {planned.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} />)}
               </>
             )}
-            {actual.map(t => (
-              <TransactionRow key={t.id} transaction={t} />
-            ))}
+            {actual.map(t => <TransactionRow key={t.id} transaction={t} onEdit={() => setEditTx(t)} />)}
             {transactions.length === 0 && !loading && (
-              <tr>
-                <td colSpan={7} className="text-center py-16 text-gray-400">
-                  <p className="text-4xl mb-3">💸</p>
-                  <p>Немає операцій</p>
-                </td>
-              </tr>
+              <tr><td colSpan={8} className="text-center py-16 text-gray-400">
+                <p className="text-4xl mb-3">💸</p><p>Немає операцій</p>
+              </td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {editTx && (
+        <EditTransactionModal
+          transaction={editTx}
+          onClose={() => setEditTx(null)}
+          onSuccess={() => { setEditTx(null); fetchTransactions() }}
+        />
+      )}
     </div>
   )
 }
 
-function TransactionRow({ transaction: t }: { transaction: Transaction }) {
-  const isIncome = t.type === 'income'
+function TransactionRow({ transaction: t, onEdit }: { transaction: Transaction; onEdit: () => void }) {
+  const isIncome   = t.type === 'income'
   const isTransfer = t.type === 'transfer'
 
   return (
-    <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+    <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors group">
       <td className="py-3 px-4 text-gray-600">{formatDate(t.date)}</td>
       <td className="py-3 px-4 font-medium">
         <span className={isIncome ? 'text-teal-600' : isTransfer ? 'text-gray-600' : 'text-red-500'}>
@@ -177,14 +154,19 @@ function TransactionRow({ transaction: t }: { transaction: Transaction }) {
       </td>
       <td className="py-3 px-4 text-gray-600">{t.counterparty?.name ?? '—'}</td>
       <td className="py-3 px-4">
-        {t.category ? (
-          <span className="bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full text-xs">{t.category.name}</span>
-        ) : (
-          <span className="bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full text-xs">—</span>
-        )}
+        {t.category
+          ? <span className="bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full text-xs">{t.category.name}</span>
+          : <span className="bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full text-xs">—</span>}
       </td>
       <td className="py-3 px-4 text-gray-600">{t.project?.name ?? '—'}</td>
-      <td className="py-3 px-4 text-gray-500 text-xs">{t.comment ?? ''}</td>
+      <td className="py-3 px-4 text-gray-500 text-xs max-w-xs truncate">{t.comment ?? ''}</td>
+      <td className="py-3 px-2">
+        <button onClick={onEdit}
+          className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700 p-1 rounded transition-all"
+          title="Редагувати">
+          <Edit2 size={13} />
+        </button>
+      </td>
     </tr>
   )
 }

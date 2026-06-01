@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, X, ChevronDown, ChevronUp, Edit2, Trash2, Users, Settings, Check } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp, Edit2, Trash2, Users, Settings, Check, Download } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -113,6 +113,34 @@ export default function LeadsPage() {
     fetchAll()
   }
 
+  function exportCSV() {
+    const rows = [
+      ['Дата', 'Лід', 'Країна', 'Акаунт', 'Менеджер', 'Статус', 'Запит / клієнт', 'Листа (Cover Letter)', 'Заробіток ($)', 'Валідовано'],
+      ...filtered.map(l => [
+        l.date,
+        l.lead_name,
+        l.country ?? '',
+        l.account,
+        l.lead_managers?.name ?? '',
+        STATUS_LABELS[l.status],
+        l.request_text ?? '',
+        l.cover_letter ?? '',
+        calcEarnings(l).toFixed(2),
+        l.validated ? 'Так' : 'Ні',
+      ]),
+    ]
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const from = filterFrom || 'початок'
+    const to   = filterTo   || 'кінець'
+    a.download = `leads-${from}-${to}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function createManager() {
     if (!newManager.name.trim() || !newManager.email.trim() || !newManager.password.trim()) return
     setSaving(true)
@@ -159,6 +187,10 @@ export default function LeadsPage() {
           <h1 className="text-xl font-bold text-gray-900">Ліди</h1>
           <p className="text-sm text-gray-500 mt-0.5">Лідогенерація команди</p>
         </div>
+        <button onClick={exportCSV} disabled={filtered.length === 0}
+          className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          <Download size={14} /> Експорт CSV
+        </button>
       </div>
 
       {/* Stats */}

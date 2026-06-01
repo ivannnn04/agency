@@ -66,12 +66,11 @@ export default function MyLeadsPage() {
       supabase.from('leads')
         .select('*')
         .eq('manager_id', managerId)
-        .eq('is_earnings_paid', false)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('outreach_accounts').select('name').order('name'),
     ])
-    if (l) setLeads(l as Lead[])
+    if (l) setLeads((l as Lead[]).filter(lead => !(lead as any).is_earnings_paid))
     if (a) setAccounts(a.map((x: any) => x.name))
     if (a && !form.account && a.length > 0) setForm(f => ({ ...f, account: a[0].name }))
     setLoading(false)

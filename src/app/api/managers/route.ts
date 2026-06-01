@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { cookies } from 'next/headers'
+import { decode } from 'next-auth/jwt'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
@@ -16,8 +16,13 @@ export function hashPassword(password: string): string {
 }
 
 async function requireAdmin() {
-  const session = await getServerSession(authOptions)
-  return session?.user?.role === 'admin'
+  const jar = await cookies()
+  const sessionToken =
+    jar.get('__Secure-next-auth.session-token')?.value ??
+    jar.get('next-auth.session-token')?.value
+  if (!sessionToken) return false
+  const token = await decode({ token: sessionToken, secret: process.env.NEXTAUTH_SECRET! })
+  return token?.role === 'admin'
 }
 
 export async function GET() {

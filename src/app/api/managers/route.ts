@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getToken } from 'next-auth/jwt'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
@@ -14,14 +15,13 @@ export function hashPassword(password: string): string {
   return `${salt}:${hash}`
 }
 
-async function requireAdmin(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
-  return token?.role === 'admin'
+async function requireAdmin() {
+  const session = await getServerSession(authOptions)
+  return session?.user?.role === 'admin'
 }
 
-// GET /api/managers — list all managers (admin only)
-export async function GET(req: NextRequest) {
-  if (!await requireAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+export async function GET() {
+  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { data, error } = await supabase
     .from('lead_managers')
     .select('id,name,email,is_active,created_at')
@@ -30,9 +30,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data)
 }
 
-// POST /api/managers — create manager (admin only)
 export async function POST(req: NextRequest) {
-  if (!await requireAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { name, email, password } = await req.json()
   if (!name?.trim() || !email?.trim() || !password?.trim()) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })

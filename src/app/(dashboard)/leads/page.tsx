@@ -237,13 +237,13 @@ export default function LeadsPage() {
             <div className="px-4 py-3 bg-gray-50 flex gap-2 flex-wrap">
               <input placeholder="Ім'я" value={newManager.name}
                 onChange={e => setNewManager(p => ({ ...p, name: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 w-36" />
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 w-36" />
               <input placeholder="Email" type="email" value={newManager.email}
                 onChange={e => setNewManager(p => ({ ...p, email: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 flex-1 min-w-36" />
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 flex-1 min-w-36" />
               <input placeholder="Пароль" type="password" value={newManager.password}
                 onChange={e => setNewManager(p => ({ ...p, password: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 w-36" />
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 w-36" />
               <button onClick={createManager} disabled={saving}
                 className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-3 py-2 text-sm font-medium transition-colors">
                 <Plus size={14} /> Додати

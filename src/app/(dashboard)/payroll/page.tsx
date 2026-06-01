@@ -11,6 +11,14 @@ interface Project  { id: string; name: string }
 interface Account  { id: string; name: string; currency: string }
 interface Employee { id: string; name: string; rate_usd: number }
 
+interface EmployeeProjectRate {
+  id: string
+  employee_id: string
+  project_id: string
+  rate_usd: number
+  projects?: { name: string } | null
+}
+
 interface PayrollItem {
   key: string
   employee: string
@@ -82,11 +90,13 @@ function fuzzyMatch(raw: string, projects: Project[]): Project | null {
   return m ?? null
 }
 
+// Rate priority: per-row rate > per-employee+project rate > employee default rate > global default
 function parseFile(
   file: File,
   projects: Project[],
   defaultRate: number,
   employeeRates: Record<string, number>,
+  employeeProjectRates: Record<string, Record<string, number>>,
 ): Promise<PayrollItem[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -130,11 +140,16 @@ function parseFile(
           const hours = parseTime(timeRaw)
           if (hours <= 0) continue
 
-          // Priority: per-row rate > saved employee rate > global default
-          const savedRate = employeeRates[normalize(employee)]
-          const rate = (!isNaN(rateRaw) && rateRaw > 0) ? rateRaw : (savedRate ?? defaultRate)
-          const amount = Math.round(hours * rate * 100) / 100
           const matched = projectRaw ? fuzzyMatch(projectRaw, projects) : null
+          const normEmp = normalize(employee)
+
+          // Per-row > per-project > employee default > global default
+          const projectRate = matched ? (employeeProjectRates[normEmp]?.[matched.id]) : undefined
+          const empDefault  = employeeRates[normEmp]
+          const rate = (!isNaN(rateRaw) && rateRaw > 0) ? rateRaw
+            : (projectRate ?? empDefault ?? defaultRate)
+
+          const amount = Math.round(hours * rate * 100) / 100
 
           items.push({
             key: `${i}-${employee}-${projectRaw}`,
@@ -160,31 +175,34 @@ function parseFile(
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function PayrollPage() {
-  const [runs, setRuns]           = useState<PayrollRun[]>([])
-  const [accounts, setAccounts]   = useState<Account[]>([])
-  const [projects, setProjects]   = useState<Project[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [manualOpen, setManualOpen] = useState(false)
-  const [expanded, setExpanded]   = useState<string | null>(null)
+  const [runs, setRuns]                     = useState<PayrollRun[]>([])
+  const [accounts, setAccounts]             = useState<Account[]>([])
+  const [projects, setProjects]             = useState<Project[]>([])
+  const [employees, setEmployees]           = useState<Employee[]>([])
+  const [projectRates, setProjectRates]     = useState<EmployeeProjectRate[]>([])
+  const [loading, setLoading]               = useState(true)
+  const [uploadOpen, setUploadOpen]         = useState(false)
+  const [manualOpen, setManualOpen]         = useState(false)
+  const [expanded, setExpanded]             = useState<string | null>(null)
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: r }, { data: a }, { data: p }, { data: e }] = await Promise.all([
+    const [{ data: r }, { data: a }, { data: p }, { data: e }, { data: pr }] = await Promise.all([
       supabase.from('payroll_runs')
         .select('*, payroll_items(*, projects(name)), accounts(name)')
         .order('created_at', { ascending: false }),
       supabase.from('accounts').select('id,name,currency').order('created_at'),
       supabase.from('projects').select('id,name').neq('status', 'archived').order('name'),
       supabase.from('employees').select('*').order('name'),
+      supabase.from('employee_project_rates').select('*, projects(name)'),
     ])
-    if (r) setRuns(r as PayrollRun[])
-    if (a) setAccounts(a)
-    if (p) setProjects(p)
-    if (e) setEmployees(e)
+    if (r)  setRuns(r as PayrollRun[])
+    if (a)  setAccounts(a)
+    if (p)  setProjects(p)
+    if (e)  setEmployees(e)
+    if (pr) setProjectRates(pr as EmployeeProjectRate[])
     setLoading(false)
   }
 
@@ -219,7 +237,6 @@ export default function PayrollPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Зарплата команді</h1>
@@ -237,10 +254,13 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      {/* Employees panel */}
-      <EmployeesPanel employees={employees} onRefresh={fetchAll} />
+      <EmployeesPanel
+        employees={employees}
+        projects={projects}
+        projectRates={projectRates}
+        onRefresh={fetchAll}
+      />
 
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-900 text-white rounded-xl p-4">
           <p className="text-xs text-gray-400 mb-1">Виплачено (всього)</p>
@@ -297,7 +317,8 @@ export default function PayrollPage() {
 
       {uploadOpen && (
         <UploadModal
-          projects={projects} accounts={accounts} employees={employees}
+          projects={projects} accounts={accounts}
+          employees={employees} projectRates={projectRates}
           onClose={() => setUploadOpen(false)}
           onSuccess={() => { setUploadOpen(false); fetchAll() }}
         />
@@ -315,14 +336,23 @@ export default function PayrollPage() {
 
 // ── Employees Panel ────────────────────────────────────────────────────────────
 
-function EmployeesPanel({ employees, onRefresh }: { employees: Employee[]; onRefresh: () => void }) {
-  const [open, setOpen]         = useState(false)
+function EmployeesPanel({ employees, projects, projectRates, onRefresh }: {
+  employees: Employee[]
+  projects: Project[]
+  projectRates: EmployeeProjectRate[]
+  onRefresh: () => void
+}) {
+  const [open, setOpen]           = useState(false)
+  const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editRate, setEditRate] = useState('')
-  const [addName, setAddName]   = useState('')
-  const [addRate, setAddRate]   = useState('')
-  const [saving, setSaving]     = useState(false)
+  const [editName, setEditName]   = useState('')
+  const [editRate, setEditRate]   = useState('')
+  const [addName, setAddName]     = useState('')
+  const [addRate, setAddRate]     = useState('')
+  const [saving, setSaving]       = useState(false)
+  // per-project rate add form state per employee
+  const [addProjId, setAddProjId]   = useState<Record<string, string>>({})
+  const [addProjRate, setAddProjRate] = useState<Record<string, string>>({})
 
   function startEdit(emp: Employee) {
     setEditingId(emp.id)
@@ -353,6 +383,23 @@ function EmployeesPanel({ employees, onRefresh }: { employees: Employee[]; onRef
     onRefresh()
   }
 
+  async function addProjectRate(empId: string) {
+    const projId = addProjId[empId]
+    const rate   = parseFloat(addProjRate[empId] ?? '')
+    if (!projId || isNaN(rate) || rate <= 0) return
+    await supabase.from('employee_project_rates').upsert({
+      employee_id: empId, project_id: projId, rate_usd: rate,
+    }, { onConflict: 'employee_id,project_id' })
+    setAddProjId(p => ({ ...p, [empId]: '' }))
+    setAddProjRate(p => ({ ...p, [empId]: '' }))
+    onRefresh()
+  }
+
+  async function deleteProjectRate(id: string) {
+    await supabase.from('employee_project_rates').delete().eq('id', id)
+    onRefresh()
+  }
+
   return (
     <div className="border border-gray-200 rounded-xl mb-6 overflow-hidden">
       <button onClick={() => setOpen(o => !o)}
@@ -366,67 +413,138 @@ function EmployeesPanel({ employees, onRefresh }: { employees: Employee[]; onRef
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 p-4">
-          {employees.length > 0 && (
-            <table className="w-full text-sm mb-4">
-              <thead>
-                <tr className="text-xs text-gray-400 border-b border-gray-100">
-                  <th className="text-left pb-2 font-medium">Ім'я</th>
-                  <th className="text-right pb-2 font-medium">$/год</th>
-                  <th className="w-20 pb-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {employees.map(emp => (
-                  <tr key={emp.id}>
-                    {editingId === emp.id ? (
-                      <>
-                        <td className="py-2 pr-2">
-                          <input value={editName} onChange={e => setEditName(e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                        </td>
-                        <td className="py-2 pr-2 text-right">
-                          <input type="number" step="0.5" min="0" value={editRate} onChange={e => setEditRate(e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-24 text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                        </td>
-                        <td className="py-2 text-right">
-                          <button onClick={() => saveEdit(emp.id)} disabled={saving}
-                            className="text-teal-600 text-xs font-medium mr-3 hover:text-teal-700">Зберегти</button>
-                          <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs hover:text-gray-600">✕</button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="py-2.5 text-gray-800 font-medium">{emp.name}</td>
-                        <td className="py-2.5 text-right text-gray-500">${emp.rate_usd}/год</td>
-                        <td className="py-2.5 text-right">
-                          <button onClick={() => startEdit(emp)}
-                            className="text-gray-300 hover:text-gray-600 p-1 transition-colors mr-1">
-                            <Edit2 size={13} />
-                          </button>
-                          <button onClick={() => deleteEmployee(emp.id)}
-                            className="text-gray-300 hover:text-red-500 p-1 transition-colors">
-                            <Trash2 size={13} />
-                          </button>
-                        </td>
-                      </>
+        <div className="border-t border-gray-100 divide-y divide-gray-50">
+          {employees.map(emp => {
+            const empRates = projectRates.filter(r => r.employee_id === emp.id)
+            const isExpanded = expandedEmp === emp.id
+            const usedProjectIds = new Set(empRates.map(r => r.project_id))
+            const availableProjects = projects.filter(p => !usedProjectIds.has(p.id))
+
+            return (
+              <div key={emp.id}>
+                {/* Employee row */}
+                <div className="flex items-center gap-2 px-4 py-3 group">
+                  {/* Expand toggle */}
+                  <button
+                    onClick={() => setExpandedEmp(isExpanded ? null : emp.id)}
+                    className="text-gray-300 hover:text-gray-600 transition-colors p-0.5 flex-shrink-0"
+                    title="Рейти по проектах">
+                    {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+
+                  {editingId === emp.id ? (
+                    <>
+                      <input value={editName} onChange={e => setEditName(e.target.value)}
+                        className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                      <div className="flex items-center gap-1 text-xs text-gray-400 flex-shrink-0">
+                        <span>базовий</span>
+                        <input type="number" step="0.5" min="0" value={editRate} onChange={e => setEditRate(e.target.value)}
+                          className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <span>$/год</span>
+                      </div>
+                      <button onClick={() => saveEdit(emp.id)} disabled={saving}
+                        className="text-teal-600 text-xs font-medium hover:text-teal-700 px-2">Зберегти</button>
+                      <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs hover:text-gray-600">✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm font-medium text-gray-800">{emp.name}</span>
+                      <span className="text-sm text-gray-400 flex-shrink-0">
+                        ${emp.rate_usd}/год
+                        {empRates.length > 0 && (
+                          <span className="ml-1.5 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                            +{empRates.length} проект{empRates.length === 1 ? '' : 'и'}
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => startEdit(emp)}
+                          className="text-gray-400 hover:text-gray-700 p-1 transition-colors">
+                          <Edit2 size={13} />
+                        </button>
+                        <button onClick={() => deleteEmployee(emp.id)}
+                          className="text-gray-400 hover:text-red-500 p-1 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Per-project rates (expanded) */}
+                {isExpanded && (
+                  <div className="bg-gray-50 px-4 pb-3 pt-1 ml-6 border-l border-gray-200">
+                    {empRates.length > 0 && (
+                      <table className="w-full text-xs mb-3">
+                        <thead>
+                          <tr className="text-gray-400 border-b border-gray-200">
+                            <th className="text-left py-1.5 font-medium">Проект</th>
+                            <th className="text-right py-1.5 font-medium">$/год</th>
+                            <th className="w-6" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {empRates.map(pr => (
+                            <tr key={pr.id}>
+                              <td className="py-1.5 text-gray-700">{pr.projects?.name ?? '—'}</td>
+                              <td className="py-1.5 text-right text-gray-600 font-medium">${pr.rate_usd}/год</td>
+                              <td className="py-1.5 text-right">
+                                <button onClick={() => deleteProjectRate(pr.id)}
+                                  className="text-gray-300 hover:text-red-400 transition-colors p-0.5">
+                                  <Trash2 size={12} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+
+                    {availableProjects.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={addProjId[emp.id] ?? ''}
+                          onChange={e => setAddProjId(p => ({ ...p, [emp.id]: e.target.value }))}
+                          className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none bg-white">
+                          <option value="">Обрати проект...</option>
+                          {availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        <input
+                          type="number" step="0.5" min="0" placeholder="$/год"
+                          value={addProjRate[emp.id] ?? ''}
+                          onChange={e => setAddProjRate(p => ({ ...p, [emp.id]: e.target.value }))}
+                          className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        />
+                        <button
+                          onClick={() => addProjectRate(emp.id)}
+                          disabled={!addProjId[emp.id] || !addProjRate[emp.id]}
+                          className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors">
+                          <Plus size={11} /> Додати
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">Рейти вказані для всіх проектів</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
 
           {/* Add employee */}
-          <div className="flex gap-2 items-center">
-            <input placeholder="Ім'я співробітника" value={addName} onChange={e => setAddName(e.target.value)}
+          <div className="px-4 py-3 flex gap-2 items-center bg-white">
+            <div className="w-4 flex-shrink-0" />
+            <input placeholder="Ім'я нового співробітника" value={addName} onChange={e => setAddName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addEmployee() }}
               className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
-            <input type="number" step="0.5" min="0" placeholder="$/год" value={addRate} onChange={e => setAddRate(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addEmployee() }}
-              className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <div className="flex items-center gap-1 text-xs text-gray-400 flex-shrink-0">
+              <span>базовий</span>
+              <input type="number" step="0.5" min="0" placeholder="$/год" value={addRate} onChange={e => setAddRate(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addEmployee() }}
+                className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </div>
             <button onClick={addEmployee} disabled={saving || !addName.trim()}
-              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-3 py-2 text-sm font-medium transition-colors">
+              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-3 py-2 text-sm font-medium transition-colors flex-shrink-0">
               <Plus size={14} /> Додати
             </button>
           </div>
@@ -531,20 +649,20 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
 
 // ── Manual Payroll Modal ───────────────────────────────────────────────────────
 
-interface ManualEntry { id: string; employee: string; projectId: string; amount: string; comment: string }
+interface ManualEntry { id: string; employee: string; projectId: string; amount: string }
 
 function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess }: {
   employees: Employee[]; projects: Project[]; accounts: Account[]
   onClose: () => void; onSuccess: () => void
 }) {
   const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
-  const [label, setLabel]       = useState(defaultLabel)
+  const [label, setLabel]         = useState(defaultLabel)
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [entries, setEntries]   = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', amount: '', comment: '' }])
-  const [saving, setSaving]     = useState(false)
+  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', amount: '' }])
+  const [saving, setSaving]       = useState(false)
 
   function addRow() {
-    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', amount: '', comment: '' }])
+    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', amount: '' }])
   }
 
   function updateRow(id: string, patch: Partial<ManualEntry>) {
@@ -595,7 +713,6 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
-        {/* Settings */}
         <div className="px-5 py-4 border-b border-gray-100 flex gap-4 flex-shrink-0 bg-gray-50">
           <div className="flex-1">
             <label className="block text-xs text-gray-500 mb-1">Назва виплати</label>
@@ -611,7 +728,6 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
           </div>
         </div>
 
-        {/* Entries table */}
         <div className="flex-1 overflow-y-auto p-5">
           <table className="w-full text-sm">
             <thead>
@@ -644,7 +760,7 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </td>
-                  <td className="py-2 pr-2 text-right">
+                  <td className="py-2 pr-2">
                     <input type="number" step="0.01" min="0" placeholder="0.00"
                       value={entry.amount}
                       onChange={e => updateRow(entry.id, { amount: e.target.value })}
@@ -661,14 +777,12 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
               ))}
             </tbody>
           </table>
-
           <button onClick={addRow}
             className="mt-3 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors">
             <Plus size={14} /> Додати рядок
           </button>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
           <div className="text-sm">
             <span className="text-gray-500">Всього: </span>
@@ -692,8 +806,9 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
 
 // ── Upload Modal ───────────────────────────────────────────────────────────────
 
-function UploadModal({ projects, accounts, employees, onClose, onSuccess }: {
-  projects: Project[]; accounts: Account[]; employees: Employee[]
+function UploadModal({ projects, accounts, employees, projectRates, onClose, onSuccess }: {
+  projects: Project[]; accounts: Account[]
+  employees: Employee[]; projectRates: EmployeeProjectRate[]
   onClose: () => void; onSuccess: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -706,15 +821,26 @@ function UploadModal({ projects, accounts, employees, onClose, onSuccess }: {
   const [saving, setSaving]         = useState(false)
   const [dragging, setDragging]     = useState(false)
 
+  // Build rate lookups
   const employeeRates: Record<string, number> = {}
   for (const emp of employees) {
     employeeRates[normalize(emp.name)] = emp.rate_usd
   }
 
+  // employeeProjectRates[normName][projectId] = rate
+  const empProjRates: Record<string, Record<string, number>> = {}
+  for (const pr of projectRates) {
+    const emp = employees.find(e => e.id === pr.employee_id)
+    if (!emp) continue
+    const normName = normalize(emp.name)
+    if (!empProjRates[normName]) empProjRates[normName] = {}
+    empProjRates[normName][pr.project_id] = pr.rate_usd
+  }
+
   async function handleFile(file: File) {
     setParseError('')
     try {
-      const parsed = await parseFile(file, projects, Number(globalRate) || 7, employeeRates)
+      const parsed = await parseFile(file, projects, Number(globalRate) || 7, employeeRates, empProjRates)
       if (parsed.length === 0) { setParseError('Файл порожній або не вдалося розпізнати рядки'); return }
       setItems(parsed)
       setStep('preview')
@@ -809,7 +935,7 @@ function UploadModal({ projects, accounts, employees, onClose, onSuccess }: {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Ставка за замовчуванням ($/год)
-                  {employees.length > 0 && <span className="font-normal text-gray-400 ml-1">— для тих, у кого не вказано</span>}
+                  {employees.length > 0 && <span className="font-normal text-gray-400 ml-1">— якщо не вказано</span>}
                 </label>
                 <input type="number" step="0.5" min="0"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -825,8 +951,8 @@ function UploadModal({ projects, accounts, employees, onClose, onSuccess }: {
             </div>
 
             {employees.length > 0 && (
-              <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 text-xs text-teal-700">
-                Автоматично застосуються індивідуальні ставки для: {employees.filter(e => e.rate_usd > 0).map(e => `${e.name} ($${e.rate_usd}/год)`).join(', ') || '—'}
+              <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 text-xs text-teal-700 leading-relaxed">
+                <span className="font-medium">Пріоритет ставок:</span> ставка з файлу → ставка по проекту → базова ставка → за замовчуванням
               </div>
             )}
           </div>

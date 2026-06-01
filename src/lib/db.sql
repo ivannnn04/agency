@@ -101,6 +101,14 @@ create table if not exists employees (
   created_at timestamptz default now()
 );
 
+create table if not exists employee_project_rates (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees(id) on delete cascade,
+  project_id uuid not null references projects(id) on delete cascade,
+  rate_usd numeric(8,2) not null,
+  unique(employee_id, project_id)
+);
+
 create table if not exists payroll_runs (
   id uuid primary key default gen_random_uuid(),
   label text not null,
@@ -134,6 +142,7 @@ alter table transactions disable row level security;
 alter table budgets disable row level security;
 alter table invoices disable row level security;
 alter table employees disable row level security;
+alter table employee_project_rates disable row level security;
 alter table payroll_runs disable row level security;
 alter table payroll_items disable row level security;
 

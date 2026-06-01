@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users } from 'lucide-react'
 import * as XLSX from 'xlsx'
@@ -53,6 +53,7 @@ interface PayrollItemRow {
   rate_usd: number
   amount: number
   project_id: string | null
+  transaction_id: string | null
   projects?: { name: string } | null
 }
 
@@ -251,26 +252,6 @@ export default function PayrollPage() {
     setLoading(false)
   }
 
-  async function payRun(run: PayrollRun) {
-    if (!run.account_id) { alert('Оберіть рахунок для списання'); return }
-    const items = run.payroll_items ?? []
-    for (const item of items) {
-      const commentParts = [`ЗП ${item.employee_name} — ${run.label}`]
-      if (item.hours_decimal > 0) commentParts.push(`${item.hours_decimal}h × $${item.rate_usd}`)
-      const { data: tx } = await supabase.from('transactions').insert({
-        type: 'expense', amount: item.amount, currency: run.currency,
-        account_id: run.account_id, project_id: item.project_id,
-        date: new Date().toISOString(),
-        comment: commentParts.join(', '),
-        is_planned: false,
-      }).select('id').single()
-      await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -item.amount })
-      if (tx) await supabase.from('payroll_items').update({ transaction_id: tx.id }).eq('id', item.id)
-    }
-    await supabase.from('payroll_runs').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', run.id)
-    fetchAll()
-  }
-
   async function deleteRun(id: string) {
     await supabase.from('payroll_runs').delete().eq('id', id)
     fetchAll()
@@ -333,7 +314,8 @@ export default function PayrollPage() {
                 {drafts.map(run => (
                   <RunCard key={run.id} run={run} expanded={expanded === run.id}
                     onToggle={() => setExpanded(e => e === run.id ? null : run.id)}
-                    onPay={() => payRun(run)} onDelete={() => deleteRun(run.id)} />
+                    onDelete={() => deleteRun(run.id)}
+                    projects={projects} onRefresh={fetchAll} />
                 ))}
               </div>
             </div>
@@ -345,7 +327,8 @@ export default function PayrollPage() {
                 {paid.map(run => (
                   <RunCard key={run.id} run={run} expanded={expanded === run.id}
                     onToggle={() => setExpanded(e => e === run.id ? null : run.id)}
-                    onPay={() => {}} onDelete={() => deleteRun(run.id)} />
+                    onDelete={() => deleteRun(run.id)}
+                    projects={projects} onRefresh={fetchAll} />
                 ))}
               </div>
             </div>
@@ -601,24 +584,127 @@ function EmployeesPanel({ employees, projects, projectRates, onRefresh }: {
 
 // ── Run Card ───────────────────────────────────────────────────────────────────
 
-function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
+type EditState = { projectId: string; rate: number; hours: number; amount: number }
+
+function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
   run: PayrollRun; expanded: boolean
-  onToggle: () => void; onPay: () => void; onDelete: () => void
+  onToggle: () => void; onDelete: () => void
+  projects: Project[]; onRefresh: () => void
 }) {
   const isDraft = run.status === 'draft'
   const items   = run.payroll_items ?? []
 
+  const [edits, setEdits]   = useState<Record<string, EditState>>(() => {
+    const init: Record<string, EditState> = {}
+    for (const item of items) {
+      init[item.id] = { projectId: item.project_id ?? '', rate: item.rate_usd, hours: item.hours_decimal, amount: item.amount }
+    }
+    return init
+  })
+  const [paying, setPaying] = useState<string | null>(null)
+
+  // Sync edits when items refresh (preserve unsaved edits for unpaid items)
+  useEffect(() => {
+    setEdits(prev => {
+      const next: Record<string, EditState> = {}
+      for (const item of items) {
+        next[item.id] = (prev[item.id] && !item.transaction_id)
+          ? prev[item.id]
+          : { projectId: item.project_id ?? '', rate: item.rate_usd, hours: item.hours_decimal, amount: item.amount }
+      }
+      return next
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id, items.length])
+
+  function updateEdit(itemId: string, patch: Partial<EditState>) {
+    setEdits(prev => {
+      const cur  = prev[itemId] ?? { projectId: '', rate: 0, hours: 0, amount: 0 }
+      const next = { ...cur, ...patch }
+      next.amount = Math.round(next.hours * next.rate * 100) / 100
+      return { ...prev, [itemId]: next }
+    })
+  }
+
+  async function saveItemToDb(itemId: string) {
+    const edit = edits[itemId]
+    if (!edit) return
+    await supabase.from('payroll_items').update({
+      project_id:    edit.projectId || null,
+      rate_usd:      edit.rate,
+      hours_decimal: edit.hours,
+      amount:        edit.amount,
+    }).eq('id', itemId)
+  }
+
+  async function payEmployee(empName: string) {
+    if (!run.account_id) { alert('Оберіть рахунок для списання'); return }
+    setPaying(empName)
+
+    const empItems = items.filter(i => i.employee_name === empName && !i.transaction_id)
+    for (const item of empItems) {
+      await saveItemToDb(item.id)
+      const edit   = edits[item.id]
+      const amount = edit?.amount ?? item.amount
+      const hours  = edit?.hours  ?? item.hours_decimal
+      const rate   = edit?.rate   ?? item.rate_usd
+      const projId = edit?.projectId || item.project_id || null
+
+      const comment = hours > 0
+        ? `ЗП ${empName} — ${run.label}, ${hours}h × $${rate}`
+        : `ЗП ${empName} — ${run.label}`
+
+      const { data: tx } = await supabase.from('transactions').insert({
+        type: 'expense', amount, currency: run.currency,
+        account_id: run.account_id,
+        project_id: projId,
+        date: new Date().toISOString(),
+        comment, is_planned: false,
+      }).select('id').single()
+
+      await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -amount })
+      if (tx) await supabase.from('payroll_items').update({ transaction_id: tx.id }).eq('id', item.id)
+    }
+
+    // Recalculate total + check if fully paid
+    const { data: allItems } = await supabase
+      .from('payroll_items').select('id,amount,transaction_id').eq('run_id', run.id)
+    if (allItems) {
+      const allPaid = allItems.every(i => i.transaction_id)
+      const total   = Math.round(allItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
+      const upd: Record<string, unknown> = { total_amount: total }
+      if (allPaid) { upd.status = 'paid'; upd.paid_at = new Date().toISOString() }
+      await supabase.from('payroll_runs').update(upd).eq('id', run.id)
+    }
+
+    setPaying(null)
+    onRefresh()
+  }
+
+  // Group by employee for draft view
+  const byEmployee: Record<string, PayrollItemRow[]> = {}
+  if (isDraft) {
+    for (const item of items) {
+      if (!byEmployee[item.employee_name]) byEmployee[item.employee_name] = []
+      byEmployee[item.employee_name].push(item)
+    }
+  }
+
+  // Group by project for paid view
   const byProject: Record<string, { name: string; items: PayrollItemRow[]; total: number }> = {}
-  for (const item of items) {
-    const key   = item.project_id ?? '__none__'
-    const pName = item.projects?.name ?? item.project_name_raw ?? '—'
-    if (!byProject[key]) byProject[key] = { name: pName, items: [], total: 0 }
-    byProject[key].items.push(item)
-    byProject[key].total += item.amount
+  if (!isDraft) {
+    for (const item of items) {
+      const key   = item.project_id ?? '__none__'
+      const pName = item.projects?.name ?? item.project_name_raw ?? '—'
+      if (!byProject[key]) byProject[key] = { name: pName, items: [], total: 0 }
+      byProject[key].items.push(item)
+      byProject[key].total += item.amount
+    }
   }
 
   return (
     <div className={`border rounded-xl overflow-hidden ${isDraft ? 'border-amber-200' : 'border-gray-200'}`}>
+      {/* Header */}
       <div className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isDraft ? 'bg-amber-50' : 'bg-gray-50'}`}
         onClick={onToggle}>
         <div className="flex items-center gap-3">
@@ -637,12 +723,6 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
         </div>
         <div className="flex items-center gap-3">
           <span className="font-bold text-gray-900">${run.total_amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
-          {isDraft && (
-            <button onClick={e => { e.stopPropagation(); onPay() }}
-              className="bg-teal-500 hover:bg-teal-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors">
-              Оплатити
-            </button>
-          )}
           <button onClick={e => { e.stopPropagation(); onDelete() }}
             className="text-gray-300 hover:text-red-400 transition-colors p-1">
             <X size={14} />
@@ -650,7 +730,101 @@ function RunCard({ run, expanded, onToggle, onPay, onDelete }: {
         </div>
       </div>
 
-      {expanded && (
+      {/* Draft expanded: grouped by employee, editable rows */}
+      {expanded && isDraft && (
+        <div className="p-4 bg-white flex flex-col gap-3">
+          {Object.entries(byEmployee).map(([empName, empItems]) => {
+            const allPaid  = empItems.every(i => i.transaction_id)
+            const empTotal = empItems.reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0)
+
+            return (
+              <div key={empName} className="border border-gray-100 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50 border-b border-gray-100">
+                  <span className="text-sm font-semibold text-gray-800">{empName}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-red-500">${empTotal.toFixed(2)}</span>
+                    {allPaid ? (
+                      <span className="flex items-center gap-1 text-xs bg-teal-100 text-teal-700 px-2.5 py-1 rounded-lg font-medium">
+                        <CheckCircle size={10} /> Оплачено
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => payEmployee(empName)}
+                        disabled={paying !== null}
+                        className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                        {paying === empName ? 'Оплата...' : 'Оплатити'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-white">
+                      <th className="text-left py-2 px-3 text-gray-400 font-medium">Проект</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-medium">Год.</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-medium">$/год</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-medium">Сума</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {empItems.map(item => {
+                      const edit   = edits[item.id] ?? { projectId: item.project_id ?? '', rate: item.rate_usd, hours: item.hours_decimal, amount: item.amount }
+                      const isPaid = !!item.transaction_id
+
+                      return (
+                        <tr key={item.id} className={`border-b border-gray-50 last:border-0 ${isPaid ? 'bg-teal-50/30' : ''}`}>
+                          <td className="py-1.5 px-3">
+                            {isPaid
+                              ? <span className="text-gray-600">{item.projects?.name ?? item.project_name_raw ?? '—'}</span>
+                              : <select
+                                  value={edit.projectId}
+                                  onChange={e => updateEdit(item.id, { projectId: e.target.value })}
+                                  onBlur={() => saveItemToDb(item.id)}
+                                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white">
+                                  <option value="">— без проекту —</option>
+                                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            }
+                          </td>
+                          <td className="py-1.5 px-3 text-right">
+                            {isPaid
+                              ? <span className="text-gray-500">{item.hours_decimal > 0 ? `${item.hours_decimal}h` : '—'}</span>
+                              : <input type="number" step="0.01" min="0"
+                                  value={edit.hours}
+                                  onChange={e => updateEdit(item.id, { hours: parseFloat(e.target.value) || 0 })}
+                                  onBlur={() => saveItemToDb(item.id)}
+                                  className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-teal-400" />
+                            }
+                          </td>
+                          <td className="py-1.5 px-3 text-right">
+                            {isPaid
+                              ? <span className="text-gray-500">{item.rate_usd > 0 ? `$${item.rate_usd}` : 'фікс.'}</span>
+                              : <input type="number" step="0.5" min="0"
+                                  value={edit.rate}
+                                  onChange={e => updateEdit(item.id, { rate: parseFloat(e.target.value) || 0 })}
+                                  onBlur={() => saveItemToDb(item.id)}
+                                  className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-teal-400" />
+                            }
+                          </td>
+                          <td className="py-1.5 px-3 text-right">
+                            <span className={`font-semibold ${isPaid ? 'text-teal-600' : 'text-red-500'}`}>
+                              ${(isPaid ? item.amount : edit.amount).toFixed(2)}
+                            </span>
+                            {isPaid && <CheckCircle size={9} className="inline ml-1 text-teal-400" />}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Paid expanded: grouped by project, read-only */}
+      {expanded && !isDraft && (
         <div className="p-4 bg-white flex flex-col gap-4">
           {Object.entries(byProject).map(([key, group]) => (
             <div key={key}>

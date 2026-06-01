@@ -105,14 +105,23 @@ function parseFile(
   employeeRates: Record<string, number>,
   employeeProjectRates: Record<string, Record<string, number>>,
 ): Promise<PayrollItem[]> {
+  const isCSV = /\.(csv|txt)$/i.test(file.name) || file.type === 'text/csv'
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const data = new Uint8Array(e.target!.result as ArrayBuffer)
-        const wb = XLSX.read(data, { type: 'array' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+        let rows: any[][]
+        if (isCSV) {
+          // CSV: read as plain text — avoids binary encoding quirks
+          const wb = XLSX.read(e.target!.result as string, { type: 'string' })
+          const ws = wb.Sheets[wb.SheetNames[0]]
+          rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+        } else {
+          const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), { type: 'array' })
+          const ws = wb.Sheets[wb.SheetNames[0]]
+          rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+        }
 
         if (rows.length < 2) { resolve([]); return }
 
@@ -138,7 +147,8 @@ function parseFile(
         const rateCol = findCol('rate', 'ставка')
 
         if (empCol < 0 || timeCol < 0) {
-          reject(new Error(`Не вдалося знайти колонки. Заголовки: ${rows[0].join(', ')}`))
+          const missing = [empCol < 0 && 'виконавець', timeCol < 0 && 'час'].filter(Boolean).join(', ')
+          reject(new Error(`Не знайдено колонки: ${missing}. Заголовки у файлі: ${rows[0].slice(0,10).join(' | ')}`))
           return
         }
 
@@ -189,13 +199,21 @@ function parseFile(
           ...item,
           amount: Math.round(item.hoursDecimal * item.rate * 100) / 100,
         }))
+        if (items.length === 0 && rawItems.length === 0) {
+          reject(new Error(`Знайдено ${rows.length - 1} рядків, але жоден не розпізнано. Перевірте колонки: виконавець[${empCol}], проект[${projCol}], час[${timeCol}]`))
+          return
+        }
         resolve(items)
       } catch (err: any) {
         reject(new Error('Помилка парсингу файлу: ' + err.message))
       }
     }
     reader.onerror = () => reject(new Error('Помилка читання файлу'))
-    reader.readAsArrayBuffer(file)
+    if (isCSV) {
+      reader.readAsText(file, 'utf-8')
+    } else {
+      reader.readAsArrayBuffer(file)
+    }
   })
 }
 

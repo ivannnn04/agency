@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
-import { Plus, X, ChevronDown, Check } from 'lucide-react'
+import { Plus, X, ChevronDown, Check, Trash2 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -101,6 +101,12 @@ export default function MyLeadsPage() {
     setSaving(false)
     setForm({ ...emptyForm(), account: form.account, date: form.date })
     setFormOpen(false)
+    fetchAll()
+  }
+
+  async function deleteLead(id: string) {
+    if (!confirm('Видалити цей лід? Заробіток по ньому буде знято.')) return
+    await supabase.from('leads').delete().eq('id', id)
     fetchAll()
   }
 
@@ -251,7 +257,7 @@ export default function MyLeadsPage() {
             {leads.map(lead => (
               <>
                 <tr key={lead.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                  className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
                   onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
                   <td className="py-3 px-4 text-gray-500 text-xs">
                     {new Date(lead.date).toLocaleDateString('uk-UA')}
@@ -281,8 +287,19 @@ export default function MyLeadsPage() {
                       ? <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white"><Check size={11} /></span>
                       : <span className="inline-block w-5 h-5 rounded border-2 border-gray-200" />}
                   </td>
-                  <td className="py-3 px-2">
-                    <ChevronDown size={13} className={`text-gray-400 transition-transform ${expanded === lead.id ? 'rotate-180' : ''}`} />
+                  <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 justify-end">
+                      <button
+                        onClick={() => deleteLead(lead.id)}
+                        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1 rounded transition-all">
+                        <Trash2 size={13} />
+                      </button>
+                      <ChevronDown
+                        size={13}
+                        className={`text-gray-400 transition-transform cursor-pointer ${expanded === lead.id ? 'rotate-180' : ''}`}
+                        onClick={e => { e.stopPropagation(); setExpanded(ex => ex === lead.id ? null : lead.id) }}
+                      />
+                    </div>
                   </td>
                 </tr>
                 {expanded === lead.id && (

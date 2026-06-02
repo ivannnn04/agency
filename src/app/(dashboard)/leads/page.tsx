@@ -13,6 +13,7 @@ interface Lead {
   status: 'sent' | 'reply' | 'call' | 'sale'
   phase_sent: boolean; phase_reply: boolean; phase_call: boolean; phase_sale: boolean
   validated: boolean; manager_id: string; created_at: string
+  ping_1_done?: boolean; ping_2_done?: boolean; ping_3_done?: boolean
   lead_managers?: { name: string } | null
 }
 
@@ -26,6 +27,16 @@ function calcEarnings(lead: Pick<Lead, 'phase_sent' | 'phase_reply' | 'phase_cal
     + (lead.phase_call  ? PHASE_AMOUNTS.call  : 0)
     + (lead.phase_sale  ? PHASE_AMOUNTS.sale  : 0)
 }
+
+function getPingLevel(lead: Lead): 1 | 2 | 3 | null {
+  if (lead.status !== 'sent') return null
+  const h = (Date.now() - new Date(lead.created_at).getTime()) / 3_600_000
+  if (!lead.ping_1_done && h >= 24) return 1
+  if (lead.ping_1_done && !lead.ping_2_done && h >= 48) return 2
+  if (lead.ping_2_done && !lead.ping_3_done && h >= 72) return 3
+  return null
+}
+const PING_COLORS = ['', 'bg-blue-100 text-blue-700', 'bg-amber-100 text-amber-700', 'bg-red-100 text-red-700']
 
 const STATUS_ORDER = ['sent', 'reply', 'call', 'sale'] as const
 const STATUS_LABELS: Record<string, string> = { sent: 'Надіслано', reply: 'Відповідь', call: 'Дзвінок', sale: 'Продаж' }
@@ -58,6 +69,7 @@ export default function LeadsPage() {
   const [newAccount, setNewAccount]     = useState('')
   const [saving, setSaving]             = useState(false)
   const [expandedLead, setExpandedLead] = useState<string | null>(null)
+  const [activeTab, setActiveTab]       = useState<'leads' | 'pings'>('leads')
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -73,6 +85,8 @@ export default function LeadsPage() {
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  const pingLeads = leads.filter(l => getPingLevel(l) !== null)
 
   // Filtered leads
   const filtered = leads.filter(l => {
@@ -110,6 +124,13 @@ export default function LeadsPage() {
 
   async function deleteLead(id: string) {
     await supabase.from('leads').delete().eq('id', id)
+    fetchAll()
+  }
+
+  async function markPing(lead: Lead) {
+    const level = getPingLevel(lead)
+    if (!level) return
+    await supabase.from('leads').update({ [`ping_${level}_done`]: true }).eq('id', lead.id)
     fetchAll()
   }
 
@@ -320,6 +341,85 @@ export default function LeadsPage() {
         )}
       </div>
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">
+        <button onClick={() => setActiveTab('leads')}
+          className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
+            activeTab === 'leads' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          Ліди
+        </button>
+        <button onClick={() => setActiveTab('pings')}
+          className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+            activeTab === 'pings' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          Пінги
+          {pingLeads.length > 0 && (
+            <span className="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold leading-none">
+              {pingLeads.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ── Ping tab ── */}
+      {activeTab === 'pings' && (
+        <div className="border border-gray-100 rounded-xl overflow-hidden">
+          {loading && <p className="text-center py-10 text-gray-400 text-sm">Завантаження...</p>}
+          {!loading && pingLeads.length === 0 && (
+            <div className="text-center py-14 text-gray-400">
+              <p className="text-3xl mb-2">✅</p>
+              <p className="text-sm">Немає лідів для пінгування</p>
+              <p className="text-xs mt-1 text-gray-300">Ліди з'являться тут через 24г після надсилання</p>
+            </div>
+          )}
+          <table className="w-full text-sm">
+            <thead>
+              {pingLeads.length > 0 && (
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Пінг</th>
+                  <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Лід</th>
+                  <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Акаунт</th>
+                  <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Менеджер</th>
+                  <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Надіслано</th>
+                  <th className="py-3 px-4" />
+                </tr>
+              )}
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {pingLeads.map(lead => {
+                const level = getPingLevel(lead)!
+                const h = Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 3_600_000)
+                return (
+                  <tr key={lead.id} className="hover:bg-gray-50/50">
+                    <td className="py-3 px-4">
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${PING_COLORS[level]}`}>
+                        Пінг {level}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-medium text-gray-800">{lead.lead_name}</td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{lead.account}</span>
+                    </td>
+                    <td className="py-3 px-4 text-gray-500 text-xs">{lead.lead_managers?.name ?? '—'}</td>
+                    <td className="py-3 px-4 text-gray-400 text-xs">{h}г тому</td>
+                    <td className="py-3 px-4 text-right">
+                      <button onClick={() => markPing(lead)}
+                        className="bg-gray-900 hover:bg-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition-colors">
+                        Запінгував ✓
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Leads tab ── */}
+      {activeTab === 'leads' && <>
+
       {/* Filters */}
       <div className="flex gap-2 flex-wrap mb-4">
         <select value={filterManager} onChange={e => setFilterManager(e.target.value)}
@@ -485,6 +585,8 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
+
+      </>}{/* end leads tab */}
     </div>
   )
 }

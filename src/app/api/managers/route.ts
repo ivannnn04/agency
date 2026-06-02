@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { decode } from 'next-auth/jwt'
-import { createClient } from '@supabase/supabase-js'
+import supabaseAdmin from '@/lib/supabaseAdmin'
 import crypto from 'crypto'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -27,7 +22,7 @@ async function requireAdmin() {
 
 export async function GET() {
   if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('lead_managers')
     .select('id,name,email,is_active,created_at')
     .order('name')
@@ -41,7 +36,7 @@ export async function POST(req: NextRequest) {
   if (!name?.trim() || !email?.trim() || !password?.trim()) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
   }
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('lead_managers')
     .insert({ name: name.trim(), email: email.toLowerCase().trim(), password_hash: hashPassword(password) })
     .select('id,name,email,is_active,created_at')

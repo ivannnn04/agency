@@ -1,13 +1,8 @@
 import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { createClient } from '@supabase/supabase-js'
+import supabaseAdmin from '@/lib/supabaseAdmin'
 import crypto from 'crypto'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
 
 function verifyPassword(password: string, stored: string): boolean {
   const parts = stored.split(':')
@@ -32,7 +27,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
-        const { data: mgr } = await supabase
+        const { data: mgr } = await supabaseAdmin
           .from('lead_managers')
           .select('id,name,email,password_hash,is_active')
           .eq('email', credentials.email.toLowerCase().trim())

@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { decode } from 'next-auth/jwt'
-import { createClient } from '@supabase/supabase-js'
+import supabaseAdmin from '@/lib/supabaseAdmin'
 import { hashPassword } from '../route'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
 
 async function requireAdmin() {
   const jar = await cookies()
@@ -32,7 +27,7 @@ export async function PATCH(
   if (typeof body.password === 'string' && body.password.trim()) {
     update.password_hash = hashPassword(body.password)
   }
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('lead_managers')
     .update(update)
     .eq('id', id)
@@ -48,6 +43,6 @@ export async function DELETE(
 ) {
   if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
-  await supabase.from('lead_managers').delete().eq('id', id)
+  await supabaseAdmin.from('lead_managers').delete().eq('id', id)
   return NextResponse.json({ ok: true })
 }

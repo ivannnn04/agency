@@ -25,7 +25,7 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
           <LogOut size={15} /> Вийти
         </button>
       </header>
-      <main className="p-6 max-w-5xl mx-auto">
+      <main className="p-3 sm:p-6 max-w-5xl mx-auto">
         {children}
       </main>
     </div>

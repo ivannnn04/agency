@@ -124,31 +124,31 @@ export default function MyLeadsPage() {
 
   return (
     <div>
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <div className="bg-gray-900 text-white rounded-xl p-4">
+      {/* Summary cards — 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
+        <div className="bg-gray-900 text-white rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
           <p className="text-xs text-gray-400 mb-1">Мій заробіток</p>
           <p className="text-2xl font-bold">${totalEarned.toFixed(2)}</p>
         </div>
-        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+        <div className="bg-blue-50 rounded-xl p-3 sm:p-4 border border-blue-100">
           <p className="text-xs text-gray-500 mb-1">Відповіді</p>
           <p className="text-2xl font-bold text-blue-700">{replied}</p>
           <p className="text-xs text-gray-400">+${(replied * PHASE_AMOUNTS.reply).toFixed(2)}</p>
         </div>
-        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+        <div className="bg-amber-50 rounded-xl p-3 sm:p-4 border border-amber-100">
           <p className="text-xs text-gray-500 mb-1">Дзвінки</p>
           <p className="text-2xl font-bold text-amber-700">{called}</p>
           <p className="text-xs text-gray-400">+${(called * PHASE_AMOUNTS.call).toFixed(2)}</p>
         </div>
-        <div className="bg-teal-50 rounded-xl p-4 border border-teal-100">
+        <div className="bg-teal-50 rounded-xl p-3 sm:p-4 border border-teal-100">
           <p className="text-xs text-gray-500 mb-1">Продажі</p>
           <p className="text-2xl font-bold text-teal-700">{sold}</p>
           <p className="text-xs text-gray-400">+${(sold * PHASE_AMOUNTS.sale).toFixed(2)}</p>
         </div>
       </div>
 
-      {/* Phase earnings legend */}
-      <div className="flex items-center gap-3 mb-5 text-xs text-gray-500">
+      {/* Phase legend — wraps on mobile */}
+      <div className="flex flex-wrap items-center gap-2 mb-4 sm:mb-5 text-xs text-gray-500">
         <span className="font-medium text-gray-600">Ставки:</span>
         <span className="bg-gray-100 px-2 py-1 rounded">Надіслано $0.50</span>
         <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">Відповідь +$2.00</span>
@@ -159,44 +159,45 @@ export default function MyLeadsPage() {
       {/* Add button / form */}
       {!formOpen ? (
         <button onClick={() => setFormOpen(true)}
-          className="flex items-center gap-2 bg-gray-900 hover:bg-gray-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors mb-5">
+          className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-700 text-white px-4 py-3 sm:py-2.5 rounded-xl text-sm font-medium transition-colors mb-4 sm:mb-5">
           <Plus size={15} /> Додати лід
         </button>
       ) : (
         <form onSubmit={submitLead}
-          className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-sm">
+          className="border border-gray-200 rounded-xl p-4 sm:p-5 mb-4 sm:mb-5 bg-white shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-800">Новий лід</h2>
             <button type="button" onClick={() => setFormOpen(false)} className="text-gray-400 hover:text-gray-600">
               <X size={16} />
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          {/* Single col on mobile, 2 cols on sm+ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Назва ліда *</label>
               <input required value={form.lead_name}
                 onChange={e => setForm(f => ({ ...f, lead_name: e.target.value }))}
                 placeholder="Ім'я / компанія"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 sm:py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Дата</label>
               <input type="date" value={form.date}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 sm:py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Країна</label>
               <input value={form.country}
                 onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
                 placeholder="США, Велика Британія..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 sm:py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Акаунт *</label>
               <select required value={form.account}
                 onChange={e => setForm(f => ({ ...f, account: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white focus:ring-2 focus:ring-gray-900">
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 sm:py-2 text-sm text-gray-900 focus:outline-none bg-white focus:ring-2 focus:ring-gray-900">
                 <option value="">Обрати...</option>
                 {accounts.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
@@ -216,21 +217,111 @@ export default function MyLeadsPage() {
               placeholder="Текст відправленого листа..."
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none" />
           </div>
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
             <button type="button" onClick={() => setFormOpen(false)}
-              className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+              className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2.5 sm:py-2 text-sm hover:bg-gray-50 transition-colors text-center">
               Скасувати
             </button>
             <button type="submit" disabled={saving || !form.lead_name.trim() || !form.account}
-              className="bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+              className="bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-5 py-2.5 sm:py-2 text-sm font-medium transition-colors text-center">
               {saving ? 'Збереження...' : 'Зберегти'}
             </button>
           </div>
         </form>
       )}
 
-      {/* Leads table */}
-      <div className="border border-gray-100 rounded-xl overflow-hidden">
+      {/* ── Mobile card list (hidden on sm+) ── */}
+      <div className="sm:hidden border border-gray-100 rounded-xl overflow-hidden">
+        {loading && (
+          <p className="text-center py-12 text-gray-400 text-sm">Завантаження...</p>
+        )}
+        {!loading && leads.length === 0 && (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-3xl mb-2">📬</p>
+            <p className="text-sm">Ще немає лідів. Додайте перший!</p>
+          </div>
+        )}
+        {leads.map((lead, i) => (
+          <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
+            {/* Card header */}
+            <div className="px-4 py-3"
+              onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0 pr-2">
+                  <p className="font-medium text-gray-800 text-sm leading-tight">{lead.lead_name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {new Date(lead.date).toLocaleDateString('uk-UA')}
+                    {lead.country ? ` · ${lead.country}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-bold text-gray-800 text-sm">${calcEarnings(lead).toFixed(2)}</span>
+                  {lead.validated && (
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white">
+                      <Check size={10} />
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+                  {lead.account}
+                </span>
+                <div onClick={e => e.stopPropagation()}>
+                  <select
+                    value={lead.status}
+                    onChange={e => setStatus(lead, e.target.value as LeadStatus)}
+                    className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none cursor-pointer ${STATUS_COLORS[lead.status]}`}>
+                    {STATUS_ORDER.map(s => (
+                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={e => { e.stopPropagation(); deleteLead(lead.id) }}
+                    className="text-gray-300 hover:text-red-500 p-1 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${expanded === lead.id ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+            </div>
+
+            {/* Expanded detail */}
+            {expanded === lead.id && (
+              <div className="px-4 pb-4 bg-gray-50/50 border-t border-gray-100">
+                <div className="flex flex-wrap gap-1.5 my-3">
+                  {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
+                    <span key={phase} className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
+                    }`}>
+                      {lead[`phase_${phase}`] && <Check size={8} />}
+                      {STATUS_LABELS[phase]}
+                      {lead[`phase_${phase}`] && ` +$${PHASE_AMOUNTS[phase]}`}
+                    </span>
+                  ))}
+                </div>
+                {lead.request_text && (
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Запит</p>
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.request_text}</p>
+                  </div>
+                )}
+                {lead.cover_letter && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Листа</p>
+                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.cover_letter}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Desktop table (hidden on mobile) ── */}
+      <div className="hidden sm:block border border-gray-100 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
@@ -305,24 +396,20 @@ export default function MyLeadsPage() {
                 {expanded === lead.id && (
                   <tr key={`${lead.id}-detail`} className="border-b border-gray-100">
                     <td colSpan={8} className="px-4 py-4 bg-gray-50/50">
-                      {/* Phase progress */}
-                      <div className="flex items-center gap-2 mb-3">
-                        {(['sent', 'reply', 'call', 'sale'] as const).map((phase, idx) => (
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
                           <span key={phase} className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
                             lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
                           }`}>
                             {lead[`phase_${phase}`] && <Check size={9} />}
                             {STATUS_LABELS[phase]}
-                            {lead[`phase_${phase}`] && (
-                              <span className="font-bold">+${PHASE_AMOUNTS[phase]}</span>
-                            )}
+                            {lead[`phase_${phase}`] && <span className="font-bold">+${PHASE_AMOUNTS[phase]}</span>}
                           </span>
                         ))}
                         <span className="ml-auto text-sm font-bold text-gray-700">
                           Разом: ${calcEarnings(lead).toFixed(2)}
                         </span>
                       </div>
-
                       <div className="grid grid-cols-2 gap-4 text-xs">
                         {lead.request_text && (
                           <div>

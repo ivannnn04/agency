@@ -911,12 +911,18 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
 
 // ── Manual Payroll Modal ───────────────────────────────────────────────────────
 
-interface ManualEntry { id: string; employee: string; projectId: string; hours: string; rate: string }
+interface ManualEntry { id: string; employee: string; projectId: string; hours: string; minutes: string; rate: string }
+
+function entryHoursDecimal(e: ManualEntry) {
+  const h = parseInt(e.hours) || 0
+  const m = Math.min(parseInt(e.minutes) || 0, 59)
+  return h + m / 60
+}
 
 function entryAmount(e: ManualEntry) {
-  const h = parseFloat(e.hours)
-  const r = parseFloat(e.rate)
-  return (!isNaN(h) && !isNaN(r) && h > 0 && r > 0) ? Math.round(h * r * 100) / 100 : 0
+  const hd = entryHoursDecimal(e)
+  const r  = parseFloat(e.rate)
+  return (hd > 0 && !isNaN(r) && r > 0) ? Math.round(hd * r * 100) / 100 : 0
 }
 
 function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess }: {
@@ -926,11 +932,11 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
   const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
   const [label, setLabel]         = useState(defaultLabel)
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', rate: '' }])
+  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
   const [saving, setSaving]       = useState(false)
 
   function addRow() {
-    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', hours: '', rate: '' }])
+    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
   }
 
   function updateRow(id: string, patch: Partial<ManualEntry>) {
@@ -971,7 +977,7 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
         employee_name: e.employee.trim(),
         project_id: e.projectId || null,
         project_name_raw: projects.find(p => p.id === e.projectId)?.name ?? null,
-        hours_decimal: parseFloat(e.hours) || 0,
+        hours_decimal: Math.round(entryHoursDecimal(e) * 100) / 100,
         rate_usd: parseFloat(e.rate) || 0,
         amount: entryAmount(e),
       }))
@@ -1010,7 +1016,7 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
               <tr className="text-xs text-gray-400 border-b border-gray-100">
                 <th className="text-left pb-2 font-medium">Співробітник</th>
                 <th className="text-left pb-2 font-medium">Проект</th>
-                <th className="text-right pb-2 font-medium w-24">Год.</th>
+                <th className="text-right pb-2 font-medium w-36">Час</th>
                 <th className="text-right pb-2 font-medium w-24">$/год</th>
                 <th className="text-right pb-2 font-medium w-24">Сума ($)</th>
                 <th className="w-6 pb-2" />
@@ -1041,10 +1047,18 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
                       </select>
                     </td>
                     <td className="py-2 pr-2">
-                      <input type="number" step="0.5" min="0" placeholder="0"
-                        value={entry.hours}
-                        onChange={e => updateRow(entry.id, { hours: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" placeholder="0"
+                          value={entry.hours}
+                          onChange={e => updateRow(entry.id, { hours: e.target.value })}
+                          className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <span className="text-xs text-gray-400 shrink-0">г</span>
+                        <input type="number" min="0" max="59" placeholder="0"
+                          value={entry.minutes}
+                          onChange={e => updateRow(entry.id, { minutes: e.target.value })}
+                          className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <span className="text-xs text-gray-400 shrink-0">хв</span>
+                      </div>
                     </td>
                     <td className="py-2 pr-2">
                       <input type="number" step="0.5" min="0" placeholder="0"

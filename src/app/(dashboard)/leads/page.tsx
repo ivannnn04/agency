@@ -109,10 +109,12 @@ export default function LeadsPage() {
   const totalEarned = filtered.reduce((s, l) => s + calcEarnings(l), 0)
 
   async function setStatus(lead: Lead, status: Lead['status']) {
-    const phases: Partial<Lead> = {}
-    if (STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf('reply')) phases.phase_reply = true
-    if (STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf('call'))  phases.phase_call  = true
-    if (STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf('sale'))  phases.phase_sale  = true
+    const idx = STATUS_ORDER.indexOf(status)
+    const phases = {
+      phase_reply: idx >= STATUS_ORDER.indexOf('reply'),
+      phase_call:  idx >= STATUS_ORDER.indexOf('call'),
+      phase_sale:  idx >= STATUS_ORDER.indexOf('sale'),
+    }
     await supabase.from('leads').update({ status, ...phases }).eq('id', lead.id)
     fetchAll()
   }

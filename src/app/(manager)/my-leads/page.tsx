@@ -132,13 +132,12 @@ export default function MyLeadsPage() {
   }
 
   async function setStatus(lead: Lead, status: LeadStatus) {
-    const curIdx  = STATUS_ORDER.indexOf(lead.status)
-    const nextIdx = STATUS_ORDER.indexOf(status)
-    // Only set new phases (never clear existing ones)
-    const phases: Partial<Lead> = {}
-    if (nextIdx >= STATUS_ORDER.indexOf('reply')) phases.phase_reply = true
-    if (nextIdx >= STATUS_ORDER.indexOf('call'))  phases.phase_call  = true
-    if (nextIdx >= STATUS_ORDER.indexOf('sale'))  phases.phase_sale  = true
+    const idx = STATUS_ORDER.indexOf(status)
+    const phases = {
+      phase_reply: idx >= STATUS_ORDER.indexOf('reply'),
+      phase_call:  idx >= STATUS_ORDER.indexOf('call'),
+      phase_sale:  idx >= STATUS_ORDER.indexOf('sale'),
+    }
     await supabase.from('leads').update({ status, ...phases }).eq('id', lead.id)
     fetchAll()
   }

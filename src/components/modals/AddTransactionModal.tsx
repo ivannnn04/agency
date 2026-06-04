@@ -22,6 +22,8 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UAH')
+  const [toAmount, setToAmount] = useState('')
+  const [toCurrency, setToCurrency] = useState<Currency>('UAH')
   const [accountId, setAccountId] = useState('')
   const [toAccountId, setToAccountId] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -72,6 +74,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
       }
 
       const txAmount = parseFloat(amount)
+      const toTxAmount = type === 'transfer' ? parseFloat(toAmount || amount) : txAmount
       const payload: Record<string, unknown> = {
         type,
         amount: txAmount,
@@ -87,6 +90,8 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
       if (type === 'transfer') {
         payload.to_account_id = toAccountId || null
+        payload.to_amount = toTxAmount
+        payload.to_currency = toCurrency
       }
 
       await supabase.from('transactions').insert(payload)
@@ -98,7 +103,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
         await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -txAmount })
       } else if (type === 'transfer' && toAccountId) {
         await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -txAmount })
-        await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: txAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: toTxAmount })
       }
 
       onSuccess()
@@ -112,6 +117,8 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
   function resetForm() {
     setAmount('')
     setCurrency('UAH')
+    setToAmount('')
+    setToCurrency('UAH')
     setCategoryId('')
     setProjectId('')
     setCounterpartyId('')
@@ -157,25 +164,46 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
           {/* Amount + Currency */}
-          <div className="flex gap-3">
-            <input
-              type="number"
-              placeholder="Сума"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400"
-              required
-            />
-            <select
-              value={currency}
-              onChange={e => setCurrency(e.target.value as Currency)}
-              className="border border-gray-200 rounded-xl px-3 py-3 text-gray-800 focus:outline-none bg-gray-50"
-            >
-              <option value="UAH">UAH (₴)</option>
-              <option value="USD">USD ($)</option>
-              <option value="EUR">EUR (€)</option>
-            </select>
-          </div>
+          {type === 'transfer' ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-3 items-center">
+                <span className="text-xs text-gray-500 w-20 shrink-0">Відправляю</span>
+                <input type="number" placeholder="Сума" value={amount}
+                  onChange={e => setAmount(e.target.value)} required
+                  className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400" />
+                <select value={currency} onChange={e => setCurrency(e.target.value as Currency)}
+                  className="border border-gray-200 rounded-xl px-3 py-3 text-gray-800 focus:outline-none bg-gray-50">
+                  <option value="UAH">UAH (₴)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                </select>
+              </div>
+              <div className="flex gap-3 items-center">
+                <span className="text-xs text-gray-500 w-20 shrink-0">Отримую</span>
+                <input type="number" placeholder="Сума" value={toAmount}
+                  onChange={e => setToAmount(e.target.value)}
+                  className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400" />
+                <select value={toCurrency} onChange={e => setToCurrency(e.target.value as Currency)}
+                  className="border border-gray-200 rounded-xl px-3 py-3 text-gray-800 focus:outline-none bg-gray-50">
+                  <option value="UAH">UAH (₴)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                </select>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <input type="number" placeholder="Сума" value={amount}
+                onChange={e => setAmount(e.target.value)} required
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              <select value={currency} onChange={e => setCurrency(e.target.value as Currency)}
+                className="border border-gray-200 rounded-xl px-3 py-3 text-gray-800 focus:outline-none bg-gray-50">
+                <option value="UAH">UAH (₴)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+              </select>
+            </div>
+          )}
 
           {/* Account */}
           <select

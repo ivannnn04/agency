@@ -911,7 +911,13 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
 
 // ── Manual Payroll Modal ───────────────────────────────────────────────────────
 
-interface ManualEntry { id: string; employee: string; projectId: string; amount: string }
+interface ManualEntry { id: string; employee: string; projectId: string; hours: string; rate: string }
+
+function entryAmount(e: ManualEntry) {
+  const h = parseFloat(e.hours)
+  const r = parseFloat(e.rate)
+  return (!isNaN(h) && !isNaN(r) && h > 0 && r > 0) ? Math.round(h * r * 100) / 100 : 0
+}
 
 function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess }: {
   employees: Employee[]; projects: Project[]; accounts: Account[]
@@ -920,15 +926,23 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
   const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
   const [label, setLabel]         = useState(defaultLabel)
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', amount: '' }])
+  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', rate: '' }])
   const [saving, setSaving]       = useState(false)
 
   function addRow() {
-    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', amount: '' }])
+    setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', hours: '', rate: '' }])
   }
 
   function updateRow(id: string, patch: Partial<ManualEntry>) {
-    setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e))
+    setEntries(prev => prev.map(e => {
+      if (e.id !== id) return e
+      const updated = { ...e, ...patch }
+      if (patch.employee !== undefined && !updated.rate) {
+        const match = employees.find(emp => emp.name.toLowerCase() === updated.employee.toLowerCase())
+        if (match && match.rate_usd > 0) updated.rate = String(match.rate_usd)
+      }
+      return updated
+    }))
   }
 
   function removeRow(id: string) {
@@ -936,11 +950,11 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
   }
 
   async function save() {
-    const valid = entries.filter(e => e.employee.trim() && parseFloat(e.amount) > 0)
+    const valid = entries.filter(e => e.employee.trim() && entryAmount(e) > 0)
     if (valid.length === 0) return
     setSaving(true)
 
-    const total = valid.reduce((s, e) => s + parseFloat(e.amount), 0)
+    const total = valid.reduce((s, e) => s + entryAmount(e), 0)
     const { data: run } = await supabase.from('payroll_runs').insert({
       label: label.trim() || defaultLabel,
       status: 'draft',
@@ -957,19 +971,19 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
         employee_name: e.employee.trim(),
         project_id: e.projectId || null,
         project_name_raw: projects.find(p => p.id === e.projectId)?.name ?? null,
-        hours_decimal: 0,
-        rate_usd: 0,
-        amount: parseFloat(e.amount),
+        hours_decimal: parseFloat(e.hours) || 0,
+        rate_usd: parseFloat(e.rate) || 0,
+        amount: entryAmount(e),
       }))
     )
     onSuccess()
   }
 
-  const total = entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
+  const total = entries.reduce((s, e) => s + entryAmount(e), 0)
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-900">Нарахувати вручну</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -996,47 +1010,63 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
               <tr className="text-xs text-gray-400 border-b border-gray-100">
                 <th className="text-left pb-2 font-medium">Співробітник</th>
                 <th className="text-left pb-2 font-medium">Проект</th>
-                <th className="text-right pb-2 font-medium w-28">Сума ($)</th>
+                <th className="text-right pb-2 font-medium w-24">Год.</th>
+                <th className="text-right pb-2 font-medium w-24">$/год</th>
+                <th className="text-right pb-2 font-medium w-24">Сума ($)</th>
                 <th className="w-6 pb-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {entries.map(entry => (
-                <tr key={entry.id}>
-                  <td className="py-2 pr-2">
-                    <input
-                      list={`emp-list-${entry.id}`}
-                      placeholder="Ім'я"
-                      value={entry.employee}
-                      onChange={e => updateRow(entry.id, { employee: e.target.value })}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                    />
-                    <datalist id={`emp-list-${entry.id}`}>
-                      {employees.map(e => <option key={e.id} value={e.name} />)}
-                    </datalist>
-                  </td>
-                  <td className="py-2 pr-2">
-                    <select value={entry.projectId} onChange={e => updateRow(entry.id, { projectId: e.target.value })}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white">
-                      <option value="">— без проекту —</option>
-                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </td>
-                  <td className="py-2 pr-2">
-                    <input type="number" step="0.01" min="0" placeholder="0.00"
-                      value={entry.amount}
-                      onChange={e => updateRow(entry.id, { amount: e.target.value })}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                  </td>
-                  <td className="py-2 text-center">
-                    {entries.length > 1 && (
-                      <button onClick={() => removeRow(entry.id)} className="text-gray-300 hover:text-red-400 transition-colors p-1">
-                        <X size={13} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {entries.map(entry => {
+                const amt = entryAmount(entry)
+                return (
+                  <tr key={entry.id}>
+                    <td className="py-2 pr-2">
+                      <input
+                        list={`emp-list-${entry.id}`}
+                        placeholder="Ім'я"
+                        value={entry.employee}
+                        onChange={e => updateRow(entry.id, { employee: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                      <datalist id={`emp-list-${entry.id}`}>
+                        {employees.map(e => <option key={e.id} value={e.name} />)}
+                      </datalist>
+                    </td>
+                    <td className="py-2 pr-2">
+                      <select value={entry.projectId} onChange={e => updateRow(entry.id, { projectId: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white">
+                        <option value="">— без проекту —</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input type="number" step="0.5" min="0" placeholder="0"
+                        value={entry.hours}
+                        onChange={e => updateRow(entry.id, { hours: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input type="number" step="0.5" min="0" placeholder="0"
+                        value={entry.rate}
+                        onChange={e => updateRow(entry.id, { rate: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                    </td>
+                    <td className="py-2 pr-2 text-right">
+                      <span className={`text-sm font-semibold ${amt > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                        ${amt.toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="py-2 text-center">
+                      {entries.length > 1 && (
+                        <button onClick={() => removeRow(entry.id)} className="text-gray-300 hover:text-red-400 transition-colors p-1">
+                          <X size={13} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <button onClick={addRow}

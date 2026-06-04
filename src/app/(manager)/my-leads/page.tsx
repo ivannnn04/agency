@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
-import { Plus, X, ChevronDown, Check, Trash2 } from 'lucide-react'
+import { Plus, X, ChevronDown, Check, Trash2, Search } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -71,6 +71,7 @@ export default function MyLeadsPage() {
   const [saving, setSaving]     = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'leads' | 'pings'>('leads')
+  const [search, setSearch] = useState('')
 
   const fetchAll = useCallback(async () => {
     if (!managerId) return
@@ -143,6 +144,18 @@ export default function MyLeadsPage() {
   }
 
   const pingLeads = leads.filter(l => getPingLevel(l) !== null)
+
+  const filteredLeads = search.trim()
+    ? leads.filter(l => {
+        const q = search.toLowerCase()
+        return (
+          l.lead_name.toLowerCase().includes(q) ||
+          (l.country ?? '').toLowerCase().includes(q) ||
+          l.account.toLowerCase().includes(q) ||
+          (l.request_text ?? '').toLowerCase().includes(q)
+        )
+      })
+    : leads
 
   return (
     <div>
@@ -238,6 +251,22 @@ export default function MyLeadsPage() {
       {/* ── Leads tab ── */}
       {activeTab === 'leads' && <>
 
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Пошук по імені, країні, акаунту…"
+          className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {/* Add button / form */}
       {!formOpen ? (
         <button onClick={() => setFormOpen(true)}
@@ -317,13 +346,13 @@ export default function MyLeadsPage() {
         {loading && (
           <p className="text-center py-12 text-gray-400 text-sm">Завантаження...</p>
         )}
-        {!loading && leads.length === 0 && (
+        {!loading && filteredLeads.length === 0 && (
           <div className="text-center py-16 text-gray-400">
-            <p className="text-3xl mb-2">📬</p>
-            <p className="text-sm">Ще немає лідів. Додайте перший!</p>
+            <p className="text-3xl mb-2">{search ? '🔍' : '📬'}</p>
+            <p className="text-sm">{search ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
           </div>
         )}
-        {leads.map((lead, i) => (
+        {filteredLeads.map((lead, i) => (
           <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
             {/* Card header */}
             <div className="px-4 py-3"
@@ -421,13 +450,13 @@ export default function MyLeadsPage() {
             {loading && (
               <tr><td colSpan={8} className="text-center py-12 text-gray-400">Завантаження...</td></tr>
             )}
-            {!loading && leads.length === 0 && (
+            {!loading && filteredLeads.length === 0 && (
               <tr><td colSpan={8} className="text-center py-16 text-gray-400">
-                <p className="text-3xl mb-2">📬</p>
-                <p>Ще немає лідів. Додайте перший!</p>
+                <p className="text-3xl mb-2">{search ? '🔍' : '📬'}</p>
+                <p>{search ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
               </td></tr>
             )}
-            {leads.map(lead => (
+            {filteredLeads.map(lead => (
               <>
                 <tr key={lead.id}
                   className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"

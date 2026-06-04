@@ -16,7 +16,10 @@ interface Lead {
   phase_sent: boolean; phase_reply: boolean; phase_call: boolean; phase_sale: boolean
   validated: boolean; manager_id: string; created_at: string
   ping_1_done?: boolean; ping_2_done?: boolean; ping_3_done?: boolean
+  is_earnings_paid?: boolean
 }
+
+interface Manager { id: string; name: string }
 
 const PHASE_AMOUNTS: Record<string, number> = { sent: 0.5, reply: 2, call: 3, sale: 10 }
 const STATUS_ORDER: LeadStatus[]            = ['sent', 'reply', 'call', 'sale']
@@ -48,13 +51,8 @@ const PING_COLORS = ['', 'bg-blue-100 text-blue-700', 'bg-amber-100 text-amber-7
 
 const today = () => new Date().toISOString().split('T')[0]
 
-// ── Form defaults ──────────────────────────────────────────────────────────────
-
 function emptyForm() {
-  return {
-    lead_name: '', date: today(), country: '',
-    request_text: '', cover_letter: '', account: '',
-  }
+  return { lead_name: '', date: today(), country: '', request_text: '', cover_letter: '', account: '' }
 }
 
 // ── Manager Page ───────────────────────────────────────────────────────────────
@@ -63,39 +61,47 @@ export default function MyLeadsPage() {
   const { data: session } = useSession()
   const managerId = session?.user?.managerId
 
-  const [leads, setLeads]       = useState<Lead[]>([])
-  const [accounts, setAccounts] = useState<string[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm]         = useState(emptyForm())
-  const [saving, setSaving]     = useState(false)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [leads, setLeads]         = useState<Lead[]>([])
+  const [managers, setManagers]   = useState<Manager[]>([])
+  const [accounts, setAccounts]   = useState<string[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [formOpen, setFormOpen]   = useState(false)
+  const [form, setForm]           = useState(emptyForm())
+  const [saving, setSaving]       = useState(false)
+  const [expanded, setExpanded]   = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'leads' | 'pings'>('leads')
-  const [search, setSearch] = useState('')
+  const [leadsFilter, setLeadsFilter] = useState<'mine' | 'all'>('mine')
+  const [search, setSearch]       = useState('')
 
   const fetchAll = useCallback(async () => {
     if (!managerId) return
     setLoading(true)
-    const [{ data: l }, { data: a }] = await Promise.all([
+    const [{ data: l }, { data: a }, { data: m }] = await Promise.all([
       supabase.from('leads')
         .select('*')
-        .eq('manager_id', managerId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('outreach_accounts').select('name').order('name'),
+      supabase.from('lead_managers').select('id,name').order('name'),
     ])
-    if (l) setLeads((l as Lead[]).filter(lead => !(lead as any).is_earnings_paid))
+    if (l) setLeads(l as Lead[])
     if (a) setAccounts(a.map((x: any) => x.name))
     if (a && !form.account && a.length > 0) setForm(f => ({ ...f, account: a[0].name }))
+    if (m) setManagers(m as Manager[])
     setLoading(false)
   }, [managerId])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const totalEarned = leads.reduce((s, l) => s + calcEarnings(l), 0)
-  const replied = leads.filter(l => l.phase_reply).length
-  const called  = leads.filter(l => l.phase_call).length
-  const sold    = leads.filter(l => l.phase_sale).length
+  const managerMap = Object.fromEntries(managers.map(m => [m.id, m.name]))
+
+  // My active (not yet paid out) leads — used for stats + pings
+  const myLeads = leads.filter(l => l.manager_id === managerId && !l.is_earnings_paid)
+
+  const totalEarned = myLeads.reduce((s, l) => s + calcEarnings(l), 0)
+  const replied     = myLeads.filter(l => l.phase_reply).length
+  const called      = myLeads.filter(l => l.phase_call).length
+  const sold        = myLeads.filter(l => l.phase_sale).length
 
   async function submitLead(e: React.FormEvent) {
     e.preventDefault()
@@ -142,10 +148,14 @@ export default function MyLeadsPage() {
     fetchAll()
   }
 
-  const pingLeads = leads.filter(l => getPingLevel(l) !== null)
+  // Pings: only my leads
+  const pingLeads = myLeads.filter(l => getPingLevel(l) !== null)
+
+  // Leads list base: depends on filter tab
+  const baseLeads = leadsFilter === 'mine' ? myLeads : leads
 
   const filteredLeads = search.trim()
-    ? leads.filter(l => {
+    ? baseLeads.filter(l => {
         const q = search.toLowerCase()
         return (
           l.lead_name.toLowerCase().includes(q) ||
@@ -154,11 +164,11 @@ export default function MyLeadsPage() {
           (l.request_text ?? '').toLowerCase().includes(q)
         )
       })
-    : leads
+    : baseLeads
 
   return (
     <div>
-      {/* Summary cards — 2 cols on mobile, 4 on desktop */}
+      {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
         <div className="bg-gray-900 text-white rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
           <p className="text-xs text-gray-400 mb-1">Мій заробіток</p>
@@ -181,7 +191,7 @@ export default function MyLeadsPage() {
         </div>
       </div>
 
-      {/* Phase legend — wraps on mobile */}
+      {/* Phase legend */}
       <div className="flex flex-wrap items-center gap-2 mb-4 sm:mb-5 text-xs text-gray-500">
         <span className="font-medium text-gray-600">Ставки:</span>
         <span className="bg-gray-100 px-2 py-1 rounded">Надіслано $0.50</span>
@@ -190,7 +200,7 @@ export default function MyLeadsPage() {
         <span className="bg-teal-100 text-teal-700 px-2 py-1 rounded">Продаж +$10.00</span>
       </div>
 
-      {/* Tab switcher */}
+      {/* Main tab switcher: Ліди / Пінги */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1">
         <button onClick={() => setActiveTab('leads')}
           className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
@@ -250,6 +260,26 @@ export default function MyLeadsPage() {
       {/* ── Leads tab ── */}
       {activeTab === 'leads' && <>
 
+      {/* All / Mine filter pills */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setLeadsFilter('mine')}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            leadsFilter === 'mine' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}>
+          Мої ліди
+          <span className="ml-1.5 text-xs opacity-60">{myLeads.length}</span>
+        </button>
+        <button
+          onClick={() => setLeadsFilter('all')}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            leadsFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}>
+          Всі ліди
+          <span className="ml-1.5 text-xs opacity-60">{leads.length}</span>
+        </button>
+      </div>
+
       {/* Search */}
       <div className="relative mb-4">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -281,7 +311,6 @@ export default function MyLeadsPage() {
               <X size={16} />
             </button>
           </div>
-          {/* Single col on mobile, 2 cols on sm+ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Назва ліда *</label>
@@ -340,97 +369,109 @@ export default function MyLeadsPage() {
         </form>
       )}
 
-      {/* ── Mobile card list (hidden on sm+) ── */}
+      {/* ── Mobile card list ── */}
       <div className="sm:hidden border border-gray-100 rounded-xl overflow-hidden">
-        {loading && (
-          <p className="text-center py-12 text-gray-400 text-sm">Завантаження...</p>
-        )}
+        {loading && <p className="text-center py-12 text-gray-400 text-sm">Завантаження...</p>}
         {!loading && filteredLeads.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <p className="text-3xl mb-2">{search ? '🔍' : '📬'}</p>
             <p className="text-sm">{search ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
           </div>
         )}
-        {filteredLeads.map((lead, i) => (
-          <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
-            {/* Card header */}
-            <div className="px-4 py-3"
-              onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0 pr-2">
-                  <p className="font-medium text-gray-800 text-sm leading-tight">{lead.lead_name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(lead.date).toLocaleDateString('uk-UA')}
-                    {lead.country ? ` · ${lead.country}` : ''}
-                  </p>
+        {filteredLeads.map((lead, i) => {
+          const isOwn = lead.manager_id === managerId
+          return (
+            <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
+              <div className="px-4 py-3"
+                onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0 pr-2">
+                    <p className="font-medium text-gray-800 text-sm leading-tight">{lead.lead_name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(lead.date).toLocaleDateString('uk-UA')}
+                      {lead.country ? ` · ${lead.country}` : ''}
+                    </p>
+                    {!isOwn && (
+                      <p className="text-xs text-purple-500 mt-0.5 font-medium">
+                        {managerMap[lead.manager_id] ?? '—'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isOwn && <span className="font-bold text-gray-800 text-sm">${calcEarnings(lead).toFixed(2)}</span>}
+                    {lead.validated && (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white">
+                        <Check size={10} />
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="font-bold text-gray-800 text-sm">${calcEarnings(lead).toFixed(2)}</span>
-                  {lead.validated && (
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white">
-                      <Check size={10} />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+                    {lead.account}
+                  </span>
+                  {isOwn ? (
+                    <div onClick={e => e.stopPropagation()}>
+                      <select
+                        value={lead.status}
+                        onChange={e => setStatus(lead, e.target.value as LeadStatus)}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none cursor-pointer ${STATUS_COLORS[lead.status]}`}>
+                        {STATUS_ORDER.map(s => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_COLORS[lead.status]}`}>
+                      {STATUS_LABELS[lead.status]}
                     </span>
                   )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {isOwn && (
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteLead(lead.id) }}
+                        className="text-gray-300 hover:text-red-500 p-1 transition-colors">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <ChevronDown size={14} className={`text-gray-400 transition-transform ${expanded === lead.id ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
-                  {lead.account}
-                </span>
-                <div onClick={e => e.stopPropagation()}>
-                  <select
-                    value={lead.status}
-                    onChange={e => setStatus(lead, e.target.value as LeadStatus)}
-                    className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none cursor-pointer ${STATUS_COLORS[lead.status]}`}>
-                    {STATUS_ORDER.map(s => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteLead(lead.id) }}
-                    className="text-gray-300 hover:text-red-500 p-1 transition-colors">
-                    <Trash2 size={14} />
-                  </button>
-                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${expanded === lead.id ? 'rotate-180' : ''}`} />
-                </div>
-              </div>
-            </div>
 
-            {/* Expanded detail */}
-            {expanded === lead.id && (
-              <div className="px-4 pb-4 bg-gray-50/50 border-t border-gray-100">
-                <div className="flex flex-wrap gap-1.5 my-3">
-                  {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
-                    <span key={phase} className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-                      lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {lead[`phase_${phase}`] && <Check size={8} />}
-                      {STATUS_LABELS[phase]}
-                      {lead[`phase_${phase}`] && ` +$${PHASE_AMOUNTS[phase]}`}
-                    </span>
-                  ))}
+              {expanded === lead.id && (
+                <div className="px-4 pb-4 bg-gray-50/50 border-t border-gray-100">
+                  <div className="flex flex-wrap gap-1.5 my-3">
+                    {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
+                      <span key={phase} className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                        lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {lead[`phase_${phase}`] && <Check size={8} />}
+                        {STATUS_LABELS[phase]}
+                        {lead[`phase_${phase}`] && isOwn && ` +$${PHASE_AMOUNTS[phase]}`}
+                      </span>
+                    ))}
+                  </div>
+                  {lead.request_text && (
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Запит</p>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.request_text}</p>
+                    </div>
+                  )}
+                  {lead.cover_letter && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Листа</p>
+                      <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.cover_letter}</p>
+                    </div>
+                  )}
                 </div>
-                {lead.request_text && (
-                  <div className="mb-3">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Запит</p>
-                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.request_text}</p>
-                  </div>
-                )}
-                {lead.cover_letter && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Листа</p>
-                    <p className="text-xs text-gray-700 whitespace-pre-wrap">{lead.cover_letter}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          )
+        })}
       </div>
 
-      {/* ── Desktop table (hidden on mobile) ── */}
+      {/* ── Desktop table ── */}
       <div className="hidden sm:block border border-gray-100 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -439,8 +480,13 @@ export default function MyLeadsPage() {
               <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Лід</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Країна</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Акаунт</th>
+              {leadsFilter === 'all' && (
+                <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Лідген</th>
+              )}
               <th className="text-left py-3 px-4 text-gray-500 font-medium text-xs">Статус</th>
-              <th className="text-right py-3 px-4 text-gray-500 font-medium text-xs">Заробіток</th>
+              {leadsFilter === 'mine' && (
+                <th className="text-right py-3 px-4 text-gray-500 font-medium text-xs">Заробіток</th>
+              )}
               <th className="text-center py-3 px-4 text-gray-500 font-medium text-xs">Валід.</th>
               <th className="w-8 py-3 px-2" />
             </tr>
@@ -455,90 +501,113 @@ export default function MyLeadsPage() {
                 <p>{search ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
               </td></tr>
             )}
-            {filteredLeads.map(lead => (
-              <>
-                <tr key={lead.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
-                  onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
-                  <td className="py-3 px-4 text-gray-500 text-xs">
-                    {new Date(lead.date).toLocaleDateString('uk-UA')}
-                  </td>
-                  <td className="py-3 px-4 font-medium text-gray-800 max-w-48">
-                    <span className="truncate block">{lead.lead_name}</span>
-                  </td>
-                  <td className="py-3 px-4 text-gray-500 text-xs">{lead.country || '—'}</td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{lead.account}</span>
-                  </td>
-                  <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
-                    <select
-                      value={lead.status}
-                      onChange={e => setStatus(lead, e.target.value as LeadStatus)}
-                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-gray-400 cursor-pointer ${STATUS_COLORS[lead.status]}`}>
-                      {STATUS_ORDER.map(s => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="py-3 px-4 text-right font-semibold text-gray-700">
-                    ${calcEarnings(lead).toFixed(2)}
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    {lead.validated
-                      ? <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white"><Check size={11} /></span>
-                      : <span className="inline-block w-5 h-5 rounded border-2 border-gray-200" />}
-                  </td>
-                  <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-1 justify-end">
-                      <button
-                        onClick={() => deleteLead(lead.id)}
-                        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1 rounded transition-all">
-                        <Trash2 size={13} />
-                      </button>
-                      <ChevronDown
-                        size={13}
-                        className={`text-gray-400 transition-transform cursor-pointer ${expanded === lead.id ? 'rotate-180' : ''}`}
-                        onClick={e => { e.stopPropagation(); setExpanded(ex => ex === lead.id ? null : lead.id) }}
-                      />
-                    </div>
-                  </td>
-                </tr>
-                {expanded === lead.id && (
-                  <tr key={`${lead.id}-detail`} className="border-b border-gray-100">
-                    <td colSpan={8} className="px-4 py-4 bg-gray-50/50">
-                      <div className="flex flex-wrap items-center gap-2 mb-3">
-                        {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
-                          <span key={phase} className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                            lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
-                          }`}>
-                            {lead[`phase_${phase}`] && <Check size={9} />}
-                            {STATUS_LABELS[phase]}
-                            {lead[`phase_${phase}`] && <span className="font-bold">+${PHASE_AMOUNTS[phase]}</span>}
-                          </span>
-                        ))}
-                        <span className="ml-auto text-sm font-bold text-gray-700">
-                          Разом: ${calcEarnings(lead).toFixed(2)}
+            {filteredLeads.map(lead => {
+              const isOwn = lead.manager_id === managerId
+              return (
+                <>
+                  <tr key={lead.id}
+                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
+                    onClick={() => setExpanded(e => e === lead.id ? null : lead.id)}>
+                    <td className="py-3 px-4 text-gray-500 text-xs">
+                      {new Date(lead.date).toLocaleDateString('uk-UA')}
+                    </td>
+                    <td className="py-3 px-4 font-medium text-gray-800 max-w-48">
+                      <span className="truncate block">{lead.lead_name}</span>
+                    </td>
+                    <td className="py-3 px-4 text-gray-500 text-xs">{lead.country || '—'}</td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{lead.account}</span>
+                    </td>
+                    {leadsFilter === 'all' && (
+                      <td className="py-3 px-4 text-xs">
+                        {isOwn
+                          ? <span className="font-semibold text-gray-800">Я</span>
+                          : <span className="text-purple-600 font-medium">{managerMap[lead.manager_id] ?? '—'}</span>
+                        }
+                      </td>
+                    )}
+                    <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
+                      {isOwn ? (
+                        <select
+                          value={lead.status}
+                          onChange={e => setStatus(lead, e.target.value as LeadStatus)}
+                          className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-gray-400 cursor-pointer ${STATUS_COLORS[lead.status]}`}>
+                          {STATUS_ORDER.map(s => (
+                            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_COLORS[lead.status]}`}>
+                          {STATUS_LABELS[lead.status]}
                         </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-xs">
-                        {lead.request_text && (
-                          <div>
-                            <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Запит</p>
-                            <p className="text-gray-700 whitespace-pre-wrap">{lead.request_text}</p>
-                          </div>
+                      )}
+                    </td>
+                    {leadsFilter === 'mine' && (
+                      <td className="py-3 px-4 text-right font-semibold text-gray-700">
+                        ${calcEarnings(lead).toFixed(2)}
+                      </td>
+                    )}
+                    <td className="py-3 px-4 text-center">
+                      {lead.validated
+                        ? <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white"><Check size={11} /></span>
+                        : <span className="inline-block w-5 h-5 rounded border-2 border-gray-200" />}
+                    </td>
+                    <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1 justify-end">
+                        {isOwn && (
+                          <button
+                            onClick={() => deleteLead(lead.id)}
+                            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1 rounded transition-all">
+                            <Trash2 size={13} />
+                          </button>
                         )}
-                        {lead.cover_letter && (
-                          <div>
-                            <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Листа</p>
-                            <p className="text-gray-700 whitespace-pre-wrap">{lead.cover_letter}</p>
-                          </div>
-                        )}
+                        <ChevronDown
+                          size={13}
+                          className={`text-gray-400 transition-transform cursor-pointer ${expanded === lead.id ? 'rotate-180' : ''}`}
+                          onClick={e => { e.stopPropagation(); setExpanded(ex => ex === lead.id ? null : lead.id) }}
+                        />
                       </div>
                     </td>
                   </tr>
-                )}
-              </>
-            ))}
+                  {expanded === lead.id && (
+                    <tr key={`${lead.id}-detail`} className="border-b border-gray-100">
+                      <td colSpan={8} className="px-4 py-4 bg-gray-50/50">
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          {(['sent', 'reply', 'call', 'sale'] as const).map(phase => (
+                            <span key={phase} className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
+                              lead[`phase_${phase}`] ? STATUS_COLORS[phase] : 'bg-gray-100 text-gray-400'
+                            }`}>
+                              {lead[`phase_${phase}`] && <Check size={9} />}
+                              {STATUS_LABELS[phase]}
+                              {lead[`phase_${phase}`] && isOwn && <span className="font-bold">+${PHASE_AMOUNTS[phase]}</span>}
+                            </span>
+                          ))}
+                          {isOwn && (
+                            <span className="ml-auto text-sm font-bold text-gray-700">
+                              Разом: ${calcEarnings(lead).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          {lead.request_text && (
+                            <div>
+                              <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Запит</p>
+                              <p className="text-gray-700 whitespace-pre-wrap">{lead.request_text}</p>
+                            </div>
+                          )}
+                          {lead.cover_letter && (
+                            <div>
+                              <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Листа</p>
+                              <p className="text-gray-700 whitespace-pre-wrap">{lead.cover_letter}</p>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })}
           </tbody>
         </table>
       </div>

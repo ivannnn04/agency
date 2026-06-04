@@ -214,6 +214,75 @@ export default function LeadsPage() {
         </button>
       </div>
 
+      {/* Manager performance cards — top of page */}
+      {managers.length > 0 && leads.length > 0 && (() => {
+        const mgrStats = managers
+          .map(mgr => {
+            const ml     = leads.filter(l => l.manager_id === mgr.id)
+            const sent   = ml.length
+            const r      = ml.filter(l => l.phase_reply).length
+            const c      = ml.filter(l => l.phase_call).length
+            const s      = ml.filter(l => l.phase_sale).length
+            const earned = ml.reduce((sum, l) => sum + calcEarnings(l), 0)
+            const replyPct = sent ? Math.round(r / sent * 100) : 0
+            const callPct  = sent ? Math.round(c / sent * 100) : 0
+            const salePct  = sent ? Math.round(s / sent * 100) : 0
+            const score    = replyPct * 0.3 + callPct * 0.3 + salePct * 0.4
+            return { mgr, sent, r, c, s, earned, replyPct, callPct, salePct, score }
+          })
+          .filter(x => x.sent > 0)
+          .sort((a, b) => b.score - a.score)
+        if (!mgrStats.length) return null
+        const medals = ['🥇', '🥈', '🥉']
+        return (
+          <div className="mb-6">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Ефективність менеджерів</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {mgrStats.map(({ mgr, sent, r, c, s, earned, replyPct, callPct, salePct }, i) => (
+                <div key={mgr.id} className={`rounded-xl border p-4 ${i === 0 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100 bg-white'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base leading-none">{medals[i] ?? ''}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800 leading-tight">{mgr.name}</p>
+                        {!mgr.is_active && (
+                          <span className="text-[10px] bg-red-100 text-red-500 px-1.5 py-0.5 rounded">неактивний</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-base font-bold text-gray-900">${earned.toFixed(2)}</p>
+                      <p className="text-[11px] text-gray-400">{sent} лідів</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-blue-50 rounded-lg px-2 py-2 text-center">
+                      <p className="text-[10px] text-blue-500 font-medium mb-0.5">Відповідь</p>
+                      <p className="text-lg font-bold text-blue-700 leading-tight">{replyPct}%</p>
+                      <p className="text-[10px] text-gray-400">{r}/{sent}</p>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg px-2 py-2 text-center">
+                      <p className="text-[10px] text-amber-500 font-medium mb-0.5">Дзвінок</p>
+                      <p className="text-lg font-bold text-amber-700 leading-tight">{callPct}%</p>
+                      <p className="text-[10px] text-gray-400">{c}/{sent}</p>
+                    </div>
+                    <div className="bg-teal-50 rounded-lg px-2 py-2 text-center">
+                      <p className="text-[10px] text-teal-500 font-medium mb-0.5">Продаж</p>
+                      <p className="text-lg font-bold text-teal-700 leading-tight">{salePct}%</p>
+                      <p className="text-[10px] text-gray-400">{s}/{sent}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-blue-400 via-amber-400 to-teal-400 transition-all"
+                      style={{ width: `${Math.max(replyPct, callPct, salePct)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Stats */}
       <div className="grid grid-cols-5 gap-3 mb-6">
         <div className="bg-gray-900 text-white rounded-xl p-4">
@@ -340,75 +409,6 @@ export default function LeadsPage() {
           </div>
         )}
       </div>
-
-      {/* Manager performance cards */}
-      {managers.length > 0 && leads.length > 0 && (() => {
-        const mgrStats = managers
-          .map(mgr => {
-            const ml     = leads.filter(l => l.manager_id === mgr.id)
-            const sent   = ml.length
-            const r      = ml.filter(l => l.phase_reply).length
-            const c      = ml.filter(l => l.phase_call).length
-            const s      = ml.filter(l => l.phase_sale).length
-            const earned = ml.reduce((sum, l) => sum + calcEarnings(l), 0)
-            const replyPct = sent ? Math.round(r / sent * 100) : 0
-            const callPct  = sent ? Math.round(c / sent * 100) : 0
-            const salePct  = sent ? Math.round(s / sent * 100) : 0
-            const score    = replyPct * 0.3 + callPct * 0.3 + salePct * 0.4
-            return { mgr, sent, r, c, s, earned, replyPct, callPct, salePct, score }
-          })
-          .filter(x => x.sent > 0)
-          .sort((a, b) => b.score - a.score)
-        if (!mgrStats.length) return null
-        const medals = ['🥇', '🥈', '🥉']
-        return (
-          <div className="mb-6">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Ефективність менеджерів</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {mgrStats.map(({ mgr, sent, r, c, s, earned, replyPct, callPct, salePct }, i) => (
-                <div key={mgr.id} className={`rounded-xl border p-4 ${i === 0 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100 bg-white'}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base leading-none">{medals[i] ?? ''}</span>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800 leading-tight">{mgr.name}</p>
-                        {!mgr.is_active && (
-                          <span className="text-[10px] bg-red-100 text-red-500 px-1.5 py-0.5 rounded">неактивний</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base font-bold text-gray-900">${earned.toFixed(2)}</p>
-                      <p className="text-[11px] text-gray-400">{sent} лідів</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-blue-50 rounded-lg px-2 py-2 text-center">
-                      <p className="text-[10px] text-blue-500 font-medium mb-0.5">Відповідь</p>
-                      <p className="text-lg font-bold text-blue-700 leading-tight">{replyPct}%</p>
-                      <p className="text-[10px] text-gray-400">{r}/{sent}</p>
-                    </div>
-                    <div className="bg-amber-50 rounded-lg px-2 py-2 text-center">
-                      <p className="text-[10px] text-amber-500 font-medium mb-0.5">Дзвінок</p>
-                      <p className="text-lg font-bold text-amber-700 leading-tight">{callPct}%</p>
-                      <p className="text-[10px] text-gray-400">{c}/{sent}</p>
-                    </div>
-                    <div className="bg-teal-50 rounded-lg px-2 py-2 text-center">
-                      <p className="text-[10px] text-teal-500 font-medium mb-0.5">Продаж</p>
-                      <p className="text-lg font-bold text-teal-700 leading-tight">{salePct}%</p>
-                      <p className="text-[10px] text-gray-400">{s}/{sent}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-400 via-amber-400 to-teal-400 transition-all"
-                      style={{ width: `${Math.max(replyPct, callPct, salePct)}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
 
       {/* Tab switcher */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 w-fit">

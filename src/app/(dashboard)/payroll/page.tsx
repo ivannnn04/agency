@@ -63,6 +63,7 @@ interface LeadManager {
   name: string
   email: string
   is_active: boolean
+  skip_payroll: boolean
   unpaid_usd: number
 }
 
@@ -257,7 +258,7 @@ export default function PayrollPage() {
       supabase.from('projects').select('id,name').neq('status', 'archived').order('name'),
       supabase.from('employees').select('*').order('name'),
       supabase.from('employee_project_rates').select('*, projects(name)'),
-      supabase.from('lead_managers').select('id,name,email,is_active').order('name'),
+      supabase.from('lead_managers').select('id,name,email,is_active,skip_payroll').order('name'),
       supabase.from('leads').select('manager_id,phase_sent,phase_reply,phase_call,phase_sale,is_earnings_paid'),
     ])
     if (r)  setRuns(r as PayrollRun[])
@@ -275,7 +276,11 @@ export default function PayrollPage() {
           + (lead.phase_sale  ? PHASE_AMOUNTS.sale  : 0)
         earningsMap[lead.manager_id] = (earningsMap[lead.manager_id] ?? 0) + amt
       }
-      setLeadManagers((mgrs as any[]).map(m => ({ ...m, unpaid_usd: earningsMap[m.id] ?? 0 })))
+      setLeadManagers(
+        (mgrs as any[])
+          .filter(m => !m.skip_payroll)
+          .map(m => ({ ...m, unpaid_usd: earningsMap[m.id] ?? 0 }))
+      )
     }
     setLoading(false)
   }

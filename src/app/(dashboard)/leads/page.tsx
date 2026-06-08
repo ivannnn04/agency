@@ -14,6 +14,7 @@ interface Lead {
   phase_sent: boolean; phase_reply: boolean; phase_call: boolean; phase_sale: boolean
   validated: boolean; manager_id: string; created_at: string
   ping_1_done?: boolean; ping_2_done?: boolean; ping_3_done?: boolean
+  job_closed?: boolean; job_closed_at?: string
   lead_managers?: { name: string } | null
 }
 
@@ -70,6 +71,7 @@ export default function LeadsPage() {
   const [saving, setSaving]             = useState(false)
   const [expandedLead, setExpandedLead] = useState<string | null>(null)
   const [activeTab, setActiveTab]       = useState<'leads' | 'pings'>('leads')
+  const [showClosedStats, setShowClosedStats] = useState(false)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -86,7 +88,20 @@ export default function LeadsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const pingLeads = leads.filter(l => getPingLevel(l) !== null)
+  const pingLeads = leads.filter(l => !l.job_closed && getPingLevel(l) !== null)
+
+  function getWeekStart() {
+    const d = new Date()
+    const day = d.getDay()
+    d.setDate(d.getDate() - day + (day === 0 ? -6 : 1))
+    d.setHours(0, 0, 0, 0)
+    return d
+  }
+  const weekStart = getWeekStart()
+  const closedLeads = leads.filter(l => l.job_closed).sort((a, b) =>
+    new Date(b.job_closed_at ?? 0).getTime() - new Date(a.job_closed_at ?? 0).getTime()
+  )
+  const closedThisWeek = closedLeads.filter(l => l.job_closed_at && new Date(l.job_closed_at) >= weekStart)
 
   // Filtered leads
   const filtered = leads.filter(l => {
@@ -133,6 +148,11 @@ export default function LeadsPage() {
     const level = getPingLevel(lead)
     if (!level) return
     await supabase.from('leads').update({ [`ping_${level}_done`]: true }).eq('id', lead.id)
+    fetchAll()
+  }
+
+  async function closeLead(lead: Lead) {
+    await supabase.from('leads').update({ job_closed: true, job_closed_at: new Date().toISOString() }).eq('id', lead.id)
     fetchAll()
   }
 
@@ -284,6 +304,67 @@ export default function LeadsPage() {
           </div>
         )
       })()}
+
+      {/* Closed jobs stats panel */}
+      <div className="mb-6">
+        <button
+          onClick={() => setShowClosedStats(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">🔒</span>
+            <span className="font-medium text-gray-800">Закриті вакансії</span>
+            <span className="text-gray-400 text-xs">{closedLeads.length} всього · {closedThisWeek.length} цього тижня</span>
+          </div>
+          {showClosedStats ? <ChevronUp size={15} className="text-gray-400" /> : <ChevronDown size={15} className="text-gray-400" />}
+        </button>
+        {showClosedStats && (
+          <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Цього тижня по менеджерах</p>
+              <div className="flex flex-wrap gap-3">
+                {managers.map(mgr => {
+                  const count = closedThisWeek.filter(l => l.manager_id === mgr.id).length
+                  if (!count) return null
+                  return (
+                    <div key={mgr.id} className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                      <span className="text-sm font-medium text-gray-800">{mgr.name}</span>
+                      <span className="text-xl font-bold text-red-600">{count}</span>
+                    </div>
+                  )
+                })}
+                {closedThisWeek.length === 0 && (
+                  <p className="text-sm text-gray-400">Жодної закритої вакансії цього тижня</p>
+                )}
+              </div>
+            </div>
+            {closedLeads.length > 0 && (
+              <div>
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Останні закриті</p>
+                </div>
+                {closedLeads.slice(0, 10).map((lead, i) => (
+                  <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-50' : ''} px-4 py-2.5 flex items-center gap-3`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-700 truncate">{lead.lead_name}</p>
+                      <p className="text-xs text-gray-400">{lead.lead_managers?.name ?? '—'} · {lead.account}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[lead.status]}`}>
+                        {STATUS_LABELS[lead.status]}
+                      </span>
+                      {lead.job_closed_at && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {new Date(lead.job_closed_at).toLocaleDateString('uk-UA')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-3 mb-6">
@@ -475,10 +556,16 @@ export default function LeadsPage() {
                     <td className="py-3 px-4 text-gray-500 text-xs">{lead.lead_managers?.name ?? '—'}</td>
                     <td className="py-3 px-4 text-gray-400 text-xs">{h}г тому</td>
                     <td className="py-3 px-4 text-right">
-                      <button onClick={() => markPing(lead)}
-                        className="bg-gray-900 hover:bg-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition-colors">
-                        Запінгував ✓
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => closeLead(lead)}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap">
+                          Вакансія закрита
+                        </button>
+                        <button onClick={() => markPing(lead)}
+                          className="bg-gray-900 hover:bg-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap">
+                          Запінгував ✓
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )

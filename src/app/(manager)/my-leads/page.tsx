@@ -16,6 +16,7 @@ interface Lead {
   phase_sent: boolean; phase_reply: boolean; phase_call: boolean; phase_sale: boolean
   validated: boolean; manager_id: string; created_at: string
   ping_1_done?: boolean; ping_2_done?: boolean; ping_3_done?: boolean
+  job_closed?: boolean; job_closed_at?: string
   is_earnings_paid?: boolean
 }
 
@@ -137,6 +138,11 @@ export default function MyLeadsPage() {
     fetchAll()
   }
 
+  async function closeLead(lead: Lead) {
+    await supabase.from('leads').update({ job_closed: true, job_closed_at: new Date().toISOString() }).eq('id', lead.id)
+    fetchAll()
+  }
+
   async function setStatus(lead: Lead, status: LeadStatus) {
     const idx = STATUS_ORDER.indexOf(status)
     const phases = {
@@ -148,8 +154,17 @@ export default function MyLeadsPage() {
     fetchAll()
   }
 
-  // Pings: only my leads
-  const pingLeads = myLeads.filter(l => getPingLevel(l) !== null)
+  // Pings: only my leads, not closed ones
+  const pingLeads = myLeads.filter(l => !l.job_closed && getPingLevel(l) !== null)
+
+  const weekStart = (() => {
+    const d = new Date()
+    const day = d.getDay()
+    d.setDate(d.getDate() - day + (day === 0 ? -6 : 1))
+    d.setHours(0, 0, 0, 0)
+    return d
+  })()
+  const closedThisWeek = myLeads.filter(l => l.job_closed && l.job_closed_at && new Date(l.job_closed_at) >= weekStart)
 
   // Leads list base: depends on filter tab
   const baseLeads = leadsFilter === 'mine' ? myLeads : leads
@@ -223,37 +238,54 @@ export default function MyLeadsPage() {
 
       {/* ── Ping tab ── */}
       {activeTab === 'pings' && (
-        <div className="border border-gray-100 rounded-xl overflow-hidden">
-          {loading && <p className="text-center py-10 text-gray-400 text-sm">Завантаження...</p>}
-          {!loading && pingLeads.length === 0 && (
-            <div className="text-center py-14 text-gray-400">
-              <p className="text-3xl mb-2">✅</p>
-              <p className="text-sm">Немає лідів для пінгування</p>
-              <p className="text-xs mt-1 text-gray-300">Ліди з'являться тут через 24г після надсилання</p>
+        <div>
+          {closedThisWeek.length > 0 && (
+            <div className="flex items-center gap-2 mb-3 px-1 text-xs text-gray-500">
+              <span className="text-gray-400">🔒</span>
+              <span>Закрито цього тижня:</span>
+              <span className="font-semibold text-red-600">{closedThisWeek.length}</span>
             </div>
           )}
-          {pingLeads.map((lead, i) => {
-            const level = getPingLevel(lead)!
-            const h = Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 3_600_000)
-            return (
-              <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''} px-4 py-3 flex items-center gap-3`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${PING_COLORS[level]}`}>
-                      Пінг {level}
-                    </span>
-                    <span className="text-xs text-gray-400">{h}г тому</span>
-                  </div>
-                  <p className="font-medium text-gray-800 text-sm truncate">{lead.lead_name}</p>
-                  <p className="text-xs text-gray-400">{lead.account}{lead.country ? ` · ${lead.country}` : ''}</p>
-                </div>
-                <button onClick={() => markPing(lead)}
-                  className="shrink-0 bg-gray-900 hover:bg-gray-700 text-white rounded-lg px-3 py-2 text-xs font-medium transition-colors">
-                  Запінгував ✓
-                </button>
+          <div className="border border-gray-100 rounded-xl overflow-hidden">
+            {loading && <p className="text-center py-10 text-gray-400 text-sm">Завантаження...</p>}
+            {!loading && pingLeads.length === 0 && (
+              <div className="text-center py-14 text-gray-400">
+                <p className="text-3xl mb-2">✅</p>
+                <p className="text-sm">Немає лідів для пінгування</p>
+                <p className="text-xs mt-1 text-gray-300">Ліди з'являться тут через 24г після надсилання</p>
               </div>
-            )
-          })}
+            )}
+            {pingLeads.map((lead, i) => {
+              const level = getPingLevel(lead)!
+              const h = Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 3_600_000)
+              return (
+                <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''} px-4 py-3`}>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${PING_COLORS[level]}`}>
+                          Пінг {level}
+                        </span>
+                        <span className="text-xs text-gray-400">{h}г тому</span>
+                      </div>
+                      <p className="font-medium text-gray-800 text-sm truncate">{lead.lead_name}</p>
+                      <p className="text-xs text-gray-400">{lead.account}{lead.country ? ` · ${lead.country}` : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2.5">
+                    <button onClick={() => closeLead(lead)}
+                      className="flex-1 sm:flex-none bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg px-3 py-2 text-xs font-medium transition-colors">
+                      Вакансія закрита
+                    </button>
+                    <button onClick={() => markPing(lead)}
+                      className="flex-1 sm:flex-none bg-gray-900 hover:bg-gray-700 text-white rounded-lg px-3 py-2 text-xs font-medium transition-colors">
+                      Запінгував ✓
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

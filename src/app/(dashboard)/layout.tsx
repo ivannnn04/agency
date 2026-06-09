@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import Sidebar from '@/components/sidebar/Sidebar'
 import AddTransactionModal from '@/components/modals/AddTransactionModal'
-import { Settings, Clock, Plus, Minus, ArrowLeftRight } from 'lucide-react'
+import { Settings, Clock, Plus, Minus, ArrowLeftRight, FolderKanban, TrendingUp } from 'lucide-react'
 import { TransactionType } from '@/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -38,14 +38,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <header className="bg-[#0f1117] px-6 py-3 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">F</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">F</span>
+              </div>
+              <div>
+                <p className="text-white font-semibold text-sm leading-tight">Моя компанія</p>
+                <p className="text-gray-500 text-xs">фінансовий трекер</p>
+              </div>
             </div>
-            <div>
-              <p className="text-white font-semibold text-sm leading-tight">Моя компанія</p>
-              <p className="text-gray-500 text-xs">фінансовий трекер</p>
-            </div>
+
+            {/* Finance / PM toggle — admin only */}
+            {session?.user?.role === 'admin' && (
+              <div className="flex items-center bg-white/10 rounded-lg p-0.5 gap-0.5">
+                <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-teal-500 text-white font-medium">
+                  <TrendingUp size={12} />
+                  Finance
+                </div>
+                <a
+                  href="/pm"
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  <FolderKanban size={12} />
+                  PM
+                </a>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

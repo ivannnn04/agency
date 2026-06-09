@@ -2,46 +2,50 @@ import { createPMServerClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MessageSquare, Kanban, TrendingUp, Clock } from "lucide-react";
+import ProjectMembersSection from "@/components/pm/projects/ProjectMembersSection";
+import type { PMProfile } from "@/types/pm";
 
 export default async function PMProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createPMServerClient();
 
-  const { data: project } = await supabase
-    .from("pm_projects")
-    .select("*")
-    .eq("id", id)
-    .single();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: callerProfile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const isAdmin = callerProfile?.role === "admin";
 
+  const { data: project } = await supabase.from("pm_projects").select("*").eq("id", id).single();
   if (!project) notFound();
 
-  const [{ data: taskStats }, { data: timeLogs }] = await Promise.all([
-    supabase.from("pm_tasks").select("status").eq("project_id", id),
-    supabase
-      .from("pm_time_logs")
-      .select("duration_s, pm_tasks!inner(project_id)")
-      .eq("pm_tasks.project_id", id)
-      .not("ended_at", "is", null),
-  ]);
+  const [{ data: taskStats }, { data: timeLogs }, { data: memberRows }, { data: allProfiles }] =
+    await Promise.all([
+      supabase.from("pm_tasks").select("status").eq("project_id", id),
+      supabase
+        .from("pm_time_logs")
+        .select("duration_s, pm_tasks!inner(project_id)")
+        .eq("pm_tasks.project_id", id)
+        .not("ended_at", "is", null),
+      supabase
+        .from("pm_project_members")
+        .select("user_id, profile:profiles(id, full_name, avatar_url, role, hourly_rate_usd, email, created_at)")
+        .eq("project_id", id),
+      supabase.from("profiles").select("id, full_name, avatar_url, role, hourly_rate_usd, email, created_at").order("full_name"),
+    ]);
 
   let financeProjectName: string | null = null;
   if (project.finance_project_id) {
-    const { data: fp } = await supabase
-      .from("projects")
-      .select("name")
-      .eq("id", project.finance_project_id)
-      .single();
+    const { data: fp } = await supabase.from("projects").select("name").eq("id", project.finance_project_id).single();
     financeProjectName = fp?.name ?? null;
   }
 
-  const counts = {
-    todo: taskStats?.filter((t) => t.status === "todo").length ?? 0,
-    in_progress: taskStats?.filter((t) => t.status === "in_progress").length ?? 0,
-    review: taskStats?.filter((t) => t.status === "review").length ?? 0,
-    done: taskStats?.filter((t) => t.status === "done").length ?? 0,
-  };
+  const members = (memberRows ?? [])
+    .map((r) => r.profile as unknown as PMProfile & { email?: string })
+    .filter(Boolean);
+
+  const statusList = ["todo", "in_progress", "internal_review", "blocked", "ready_for_report", "to_be_invoiced", "completed"] as const;
+  const counts = Object.fromEntries(statusList.map((s) => [s, taskStats?.filter((t) => t.status === s).length ?? 0]));
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const donePercent = total > 0 ? Math.round((counts.done / total) * 100) : 0;
+  const completed = counts.completed ?? 0;
+  const donePercent = total > 0 ? Math.round((completed / total) * 100) : 0;
   const totalHours = ((timeLogs ?? []).reduce((s, l) => s + (l.duration_s ?? 0), 0) / 3600).toFixed(1);
 
   return (
@@ -54,9 +58,7 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
           </div>
           <div>
             <h1 className="text-xl font-semibold text-white">{project.name}</h1>
-            {project.description && (
-              <p className="text-zinc-500 text-sm mt-0.5">{project.description}</p>
-            )}
+            {project.description && <p className="text-zinc-500 text-sm mt-0.5">{project.description}</p>}
             {financeProjectName && (
               <div className="flex items-center gap-1.5 mt-1">
                 <TrendingUp size={12} className="text-teal-400" />
@@ -87,11 +89,11 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
             <div className="h-full rounded-full transition-all"
               style={{ width: `${donePercent}%`, backgroundColor: project.color }} />
           </div>
-          <div className="flex gap-6 mt-4">
-            {Object.entries(counts).map(([status, count]) => (
-              <div key={status}>
-                <p className="text-2xl font-semibold text-white">{count}</p>
-                <p className="text-xs text-zinc-600 capitalize mt-0.5">{status.replace("_", " ")}</p>
+          <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4">
+            {statusList.map((s) => (counts[s] ?? 0) > 0 && (
+              <div key={s}>
+                <p className="text-2xl font-semibold text-white">{counts[s]}</p>
+                <p className="text-xs text-zinc-600 mt-0.5">{s.replace(/_/g, " ")}</p>
               </div>
             ))}
           </div>
@@ -102,6 +104,15 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
           <p className="text-xs text-zinc-500 mt-1">Total tracked</p>
         </div>
       </div>
+
+      {/* Members */}
+      <ProjectMembersSection
+        projectId={id}
+        members={members}
+        allProfiles={(allProfiles ?? []) as (PMProfile & { email?: string })[]}
+        isAdmin={isAdmin}
+        ownerId={project.owner_id}
+      />
 
       <Link href={`/pm/projects/${id}/tasks`}
         className="block bg-[#534AB7]/10 border border-[#534AB7]/30 hover:border-[#534AB7]/50 rounded-xl p-5 transition-colors">

@@ -41,20 +41,22 @@ export default function PMSidebar({ projects, profile }: Props) {
           <span className="text-white font-semibold text-sm">Gudrix PM</span>
         </div>
 
-        {/* Finance / PM toggle */}
-        <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 gap-0.5">
-          <Link
-            href="/"
-            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs text-zinc-400 hover:text-white transition-colors"
-          >
-            <TrendingUp size={12} />
-            Finance
-          </Link>
-          <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs bg-[#534AB7] text-white">
-            <FolderKanban size={12} />
-            PM
+        {/* Finance / PM toggle — admin only */}
+        {profile?.role === "admin" && (
+          <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 gap-0.5">
+            <Link
+              href="/"
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs text-zinc-400 hover:text-white transition-colors"
+            >
+              <TrendingUp size={12} />
+              Finance
+            </Link>
+            <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs bg-[#534AB7] text-white">
+              <FolderKanban size={12} />
+              PM
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Nav */}
@@ -86,12 +88,14 @@ export default function PMSidebar({ projects, profile }: Props) {
             <span className="text-xs text-zinc-600 uppercase tracking-wider font-medium">
               Projects
             </span>
-            <Link
-              href="/pm/projects/new"
-              className="text-zinc-600 hover:text-zinc-400 transition-colors"
-            >
-              <ChevronRight size={14} />
-            </Link>
+            {profile?.role === "admin" && (
+              <Link
+                href="/pm/projects/new"
+                className="text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                <ChevronRight size={14} />
+              </Link>
+            )}
           </div>
           <div className="space-y-0.5">
             {projects.map((p) => (

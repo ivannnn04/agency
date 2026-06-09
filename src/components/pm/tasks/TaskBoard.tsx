@@ -9,10 +9,13 @@ import PMTaskModal from "./TaskModal";
 import { Plus } from "lucide-react";
 
 const COLUMNS: { id: PMTaskStatus; label: string; color: string }[] = [
-  { id: "todo", label: "To Do", color: "#6B7280" },
-  { id: "in_progress", label: "In Progress", color: "#F59E0B" },
-  { id: "review", label: "Review", color: "#8B5CF6" },
-  { id: "done", label: "Done", color: "#10B981" },
+  { id: "todo",             label: "To Do",            color: "#6B7280" },
+  { id: "in_progress",      label: "In Progress",      color: "#F59E0B" },
+  { id: "internal_review",  label: "Internal Review",  color: "#8B5CF6" },
+  { id: "blocked",          label: "Blocked",          color: "#EF4444" },
+  { id: "ready_for_report", label: "Ready for Report", color: "#06B6D4" },
+  { id: "to_be_invoiced",   label: "To be Invoiced",   color: "#10B981" },
+  { id: "completed",        label: "Completed",        color: "#3B82F6" },
 ];
 
 interface Props {
@@ -43,6 +46,7 @@ export default function PMTaskBoard({ projectId, initialTasks, members, currentU
           setActiveLogMap(map);
         }
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
   async function handleTimerToggle(taskId: string) {
@@ -78,7 +82,11 @@ export default function PMTaskBoard({ projectId, initialTasks, members, currentU
     const { draggableId, destination } = result;
     const newStatus = destination.droppableId as PMTaskStatus;
     setTasks((prev) => prev.map((t) => (t.id === draggableId ? { ...t, status: newStatus } : t)));
-    await supabase.from("pm_tasks").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", draggableId);
+    await supabase
+      .from("pm_tasks")
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq("id", draggableId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
   function handleTaskCreated(task: PMTask) { setTasks((prev) => [task, ...prev]); setCreating(null); }
@@ -90,26 +98,42 @@ export default function PMTaskBoard({ projectId, initialTasks, members, currentU
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">
           {COLUMNS.map((col) => (
-            <div key={col.id} className="flex flex-col w-72 shrink-0">
+            <div key={col.id} className="flex flex-col w-64 shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
-                  <span className="text-sm font-medium text-zinc-300">{col.label}</span>
-                  <span className="text-xs text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded-full">{tasksByColumn(col.id).length}</span>
+                  <span className="text-xs font-medium text-zinc-400">{col.label}</span>
+                  <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded-full">
+                    {tasksByColumn(col.id).length}
+                  </span>
                 </div>
-                <button onClick={() => setCreating(col.id)} className="text-zinc-600 hover:text-zinc-400 transition-colors">
-                  <Plus size={16} />
+                <button
+                  onClick={() => setCreating(col.id)}
+                  className="text-zinc-600 hover:text-zinc-400 transition-colors"
+                >
+                  <Plus size={15} />
                 </button>
               </div>
+
               <Droppable droppableId={col.id}>
                 {(provided, snapshot) => (
-                  <div ref={provided.innerRef} {...provided.droppableProps}
-                    className={`flex-1 rounded-xl p-2 space-y-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-zinc-800/50" : "bg-zinc-900/30"}`}>
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className={`flex-1 rounded-xl p-2 space-y-2 min-h-[100px] transition-colors ${
+                      snapshot.isDraggingOver ? "bg-zinc-800/50" : "bg-zinc-900/30"
+                    }`}
+                  >
                     {tasksByColumn(col.id).map((task, index) => (
                       <Draggable key={task.id} draggableId={task.id} index={index}>
                         {(provided, snapshot) => (
-                          <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
-                            style={provided.draggableProps.style} className={snapshot.isDragging ? "opacity-75" : ""}>
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                            style={provided.draggableProps.style}
+                            className={snapshot.isDragging ? "opacity-75" : ""}
+                          >
                             <PMTaskCard
                               task={task}
                               onClick={() => setSelectedTask(task)}
@@ -130,12 +154,25 @@ export default function PMTaskBoard({ projectId, initialTasks, members, currentU
       </DragDropContext>
 
       {creating && (
-        <PMTaskModal projectId={projectId} initialStatus={creating} members={members}
-          onCreated={handleTaskCreated} onClose={() => setCreating(null)} />
+        <PMTaskModal
+          projectId={projectId}
+          initialStatus={creating}
+          members={members}
+          onCreated={handleTaskCreated}
+          onClose={() => setCreating(null)}
+        />
       )}
       {selectedTask && (
-        <PMTaskModal projectId={projectId} task={selectedTask} members={members}
-          onUpdated={handleTaskUpdated} onDeleted={handleTaskDeleted} onClose={() => setSelectedTask(null)} />
+        <PMTaskModal
+          projectId={projectId}
+          task={selectedTask}
+          members={members}
+          isTimerRunning={!!activeLogMap[selectedTask.id]}
+          onTimerToggle={() => handleTimerToggle(selectedTask.id)}
+          onUpdated={handleTaskUpdated}
+          onDeleted={handleTaskDeleted}
+          onClose={() => setSelectedTask(null)}
+        />
       )}
     </>
   );

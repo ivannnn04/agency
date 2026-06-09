@@ -13,7 +13,7 @@ const PRIORITY_COLORS = { low: "text-zinc-500", medium: "text-amber-400", high: 
 const PRIORITY_BG = { low: "bg-zinc-800", medium: "bg-amber-500/10", high: "bg-red-500/10" };
 
 export default function PMTaskCard({ task, onClick, isTimerRunning, onTimerToggle }: Props) {
-  const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && task.status !== "done";
+  const isOverdue = task.due_date && isPast(parseISO(task.due_date)) && task.status !== "completed";
 
   return (
     <div className={`bg-[#1e1e1e] border rounded-lg p-3 cursor-pointer transition-colors group ${

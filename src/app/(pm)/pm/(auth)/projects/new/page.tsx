@@ -57,7 +57,7 @@ export default function PMNewProjectPage() {
 
     if (!error && data) {
       await supabase.from("pm_project_members").insert({ project_id: data.id, user_id: user?.id });
-      router.push(`/pm/projects/${data.id}`);
+      router.push(`/pm/projects/${data.id}/tasks`);
     }
     setLoading(false);
   }

@@ -1,6 +1,13 @@
 export type PMUserRole = "admin" | "member";
 export type PMProjectStatus = "active" | "paused" | "done";
-export type PMTaskStatus = "todo" | "in_progress" | "review" | "done";
+export type PMTaskStatus =
+  | "todo"
+  | "in_progress"
+  | "internal_review"
+  | "blocked"
+  | "ready_for_report"
+  | "to_be_invoiced"
+  | "completed";
 export type PMTaskPriority = "low" | "medium" | "high";
 
 export interface PMProfile {
@@ -8,6 +15,7 @@ export interface PMProfile {
   full_name: string;
   avatar_url: string | null;
   role: PMUserRole;
+  hourly_rate_usd?: number;
   created_at: string;
 }
 
@@ -18,6 +26,7 @@ export interface PMProject {
   color: string;
   status: PMProjectStatus;
   owner_id: string;
+  finance_project_id?: string | null;
   created_at: string;
 }
 
@@ -49,6 +58,26 @@ export interface PMTimeLog {
   started_at: string;
   ended_at: string | null;
   duration_s: number | null;
+}
+
+export interface PMTaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  author?: PMProfile;
+}
+
+export interface PMTaskAttachment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  file_name: string;
+  file_url: string;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: string;
 }
 
 export interface PMMessage {

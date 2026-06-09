@@ -1,7 +1,7 @@
 import { createPMServerClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MessageSquare, Kanban } from "lucide-react";
+import { MessageSquare, Kanban, TrendingUp, Clock } from "lucide-react";
 
 export default async function PMProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,10 +15,24 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
 
   if (!project) notFound();
 
-  const { data: taskStats } = await supabase
-    .from("pm_tasks")
-    .select("status")
-    .eq("project_id", id);
+  const [{ data: taskStats }, { data: timeLogs }] = await Promise.all([
+    supabase.from("pm_tasks").select("status").eq("project_id", id),
+    supabase
+      .from("pm_time_logs")
+      .select("duration_s, pm_tasks!inner(project_id)")
+      .eq("pm_tasks.project_id", id)
+      .not("ended_at", "is", null),
+  ]);
+
+  let financeProjectName: string | null = null;
+  if (project.finance_project_id) {
+    const { data: fp } = await supabase
+      .from("projects")
+      .select("name")
+      .eq("id", project.finance_project_id)
+      .single();
+    financeProjectName = fp?.name ?? null;
+  }
 
   const counts = {
     todo: taskStats?.filter((t) => t.status === "todo").length ?? 0,
@@ -28,15 +42,14 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
   };
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const donePercent = total > 0 ? Math.round((counts.done / total) * 100) : 0;
+  const totalHours = ((timeLogs ?? []).reduce((s, l) => s + (l.duration_s ?? 0), 0) / 3600).toFixed(1);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
-            style={{ backgroundColor: project.color }}
-          >
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
+            style={{ backgroundColor: project.color }}>
             {project.name.charAt(0)}
           </div>
           <div>
@@ -44,51 +57,54 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
             {project.description && (
               <p className="text-zinc-500 text-sm mt-0.5">{project.description}</p>
             )}
+            {financeProjectName && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <TrendingUp size={12} className="text-teal-400" />
+                <span className="text-xs text-teal-400">Linked: {financeProjectName}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
-          <Link
-            href={`/pm/projects/${id}/tasks`}
-            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-2 rounded-lg transition-colors"
-          >
-            <Kanban size={16} />
-            Board
+          <Link href={`/pm/projects/${id}/tasks`}
+            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-2 rounded-lg transition-colors">
+            <Kanban size={16} /> Board
           </Link>
-          <Link
-            href={`/pm/projects/${id}/chat`}
-            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-2 rounded-lg transition-colors"
-          >
-            <MessageSquare size={16} />
-            Chat
+          <Link href={`/pm/projects/${id}/chat`}
+            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-2 rounded-lg transition-colors">
+            <MessageSquare size={16} /> Chat
           </Link>
         </div>
       </div>
 
-      <div className="bg-[#1a1a1a] border border-zinc-800 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-zinc-400">Overall progress</span>
-          <span className="text-sm font-medium text-white">{donePercent}%</span>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="col-span-2 bg-[#1a1a1a] border border-zinc-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-zinc-400">Overall progress</span>
+            <span className="text-sm font-medium text-white">{donePercent}%</span>
+          </div>
+          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all"
+              style={{ width: `${donePercent}%`, backgroundColor: project.color }} />
+          </div>
+          <div className="flex gap-6 mt-4">
+            {Object.entries(counts).map(([status, count]) => (
+              <div key={status}>
+                <p className="text-2xl font-semibold text-white">{count}</p>
+                <p className="text-xs text-zinc-600 capitalize mt-0.5">{status.replace("_", " ")}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${donePercent}%`, backgroundColor: project.color }}
-          />
-        </div>
-        <div className="flex gap-6 mt-4">
-          {Object.entries(counts).map(([status, count]) => (
-            <div key={status}>
-              <p className="text-2xl font-semibold text-white">{count}</p>
-              <p className="text-xs text-zinc-600 capitalize mt-0.5">{status.replace("_", " ")}</p>
-            </div>
-          ))}
+        <div className="bg-[#1a1a1a] border border-zinc-800 rounded-xl p-5 flex flex-col justify-center items-center">
+          <Clock size={20} className="text-[#534AB7] mb-2" />
+          <p className="text-3xl font-semibold text-white">{totalHours}h</p>
+          <p className="text-xs text-zinc-500 mt-1">Total tracked</p>
         </div>
       </div>
 
-      <Link
-        href={`/pm/projects/${id}/tasks`}
-        className="block bg-[#534AB7]/10 border border-[#534AB7]/30 hover:border-[#534AB7]/50 rounded-xl p-5 transition-colors"
-      >
+      <Link href={`/pm/projects/${id}/tasks`}
+        className="block bg-[#534AB7]/10 border border-[#534AB7]/30 hover:border-[#534AB7]/50 rounded-xl p-5 transition-colors">
         <p className="text-[#8B7FD4] text-sm font-medium">Open Kanban Board →</p>
         <p className="text-zinc-500 text-xs mt-1">View and manage all tasks in {project.name}</p>
       </Link>

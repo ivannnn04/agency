@@ -6,7 +6,7 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createPMServerClient();
 
-  const [{ data: project }, { data: tasks }, { data: members }] = await Promise.all([
+  const [{ data: project }, { data: tasks }, { data: members }, { data: { user } }] = await Promise.all([
     supabase.from("pm_projects").select("*").eq("id", id).single(),
     supabase
       .from("pm_tasks")
@@ -17,6 +17,7 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
       .from("pm_project_members")
       .select("user_id, profile:profiles(id, full_name, avatar_url)")
       .eq("project_id", id),
+    supabase.auth.getUser(),
   ]);
 
   if (!project) notFound();
@@ -37,7 +38,8 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
       <PMTaskBoard
         projectId={id}
         initialTasks={tasks ?? []}
-        members={profiles as { id: string; full_name: string; avatar_url: string | null }[]}
+        members={profiles as MemberProfile[]}
+        currentUserId={user?.id ?? ""}
       />
     </div>
   );

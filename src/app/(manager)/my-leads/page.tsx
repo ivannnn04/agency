@@ -139,8 +139,12 @@ export default function MyLeadsPage() {
   }
 
   async function closeLead(lead: Lead) {
-    await supabase.from('leads').update({ job_closed: true, job_closed_at: new Date().toISOString() }).eq('id', lead.id)
-    fetchAll()
+    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, job_closed: true } : l))
+    const { error } = await supabase
+      .from('leads')
+      .update({ job_closed: true, job_closed_at: new Date().toISOString() })
+      .eq('id', lead.id)
+    if (error) fetchAll()
   }
 
   async function setStatus(lead: Lead, status: LeadStatus) {

@@ -26,9 +26,9 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
         .not("ended_at", "is", null),
       supabase
         .from("pm_project_members")
-        .select("user_id, profile:profiles(id, full_name, avatar_url, role, hourly_rate_usd, email, created_at)")
+        .select("user_id, profile:profiles(id, full_name, avatar_url, role, hourly_rate_usd, created_at)")
         .eq("project_id", id),
-      supabase.from("profiles").select("id, full_name, avatar_url, role, hourly_rate_usd, email, created_at").order("full_name"),
+      supabase.from("profiles").select("id, full_name, avatar_url, role, hourly_rate_usd, created_at").order("full_name"),
     ]);
 
   let financeProjectName: string | null = null;

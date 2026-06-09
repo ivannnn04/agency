@@ -7,9 +7,9 @@ export default async function PMChatPage({ params }: { params: Promise<{ id: str
   const supabase = await createPMServerClient();
 
   const [{ data: project }, { data: messages }, { data: { user } }] = await Promise.all([
-    supabase.from("projects").select("name, color").eq("id", id).single(),
+    supabase.from("pm_projects").select("name, color").eq("id", id).single(),
     supabase
-      .from("messages")
+      .from("pm_messages")
       .select("*, sender:profiles(id, full_name, avatar_url)")
       .eq("project_id", id)
       .order("created_at", { ascending: true })

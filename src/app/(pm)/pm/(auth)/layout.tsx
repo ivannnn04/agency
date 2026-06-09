@@ -19,7 +19,7 @@ export default async function PMDashboardLayout({
     .single();
 
   const { data: projects } = await supabase
-    .from("projects")
+    .from("pm_projects")
     .select("id, name, color, status")
     .order("created_at", { ascending: false });
 

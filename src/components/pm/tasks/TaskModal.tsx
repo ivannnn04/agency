@@ -51,7 +51,7 @@ export default function PMTaskModal({
 
     if (task) {
       const { data } = await supabase
-        .from("tasks")
+        .from("pm_tasks")
         .update(payload)
         .eq("id", task.id)
         .select("*, assignee:profiles(id, full_name, avatar_url)")
@@ -60,7 +60,7 @@ export default function PMTaskModal({
     } else {
       const { data: { user } } = await supabase.auth.getUser();
       const { data } = await supabase
-        .from("tasks")
+        .from("pm_tasks")
         .insert({ ...payload, project_id: projectId, created_by: user?.id })
         .select("*, assignee:profiles(id, full_name, avatar_url)")
         .single();
@@ -72,7 +72,7 @@ export default function PMTaskModal({
   async function handleDelete() {
     if (!task) return;
     if (!confirm("Delete this task?")) return;
-    await supabase.from("tasks").delete().eq("id", task.id);
+    await supabase.from("pm_tasks").delete().eq("id", task.id);
     onDeleted?.(task.id);
   }
 

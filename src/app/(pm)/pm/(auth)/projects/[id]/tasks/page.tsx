@@ -7,14 +7,14 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
   const supabase = await createPMServerClient();
 
   const [{ data: project }, { data: tasks }, { data: members }] = await Promise.all([
-    supabase.from("projects").select("*").eq("id", id).single(),
+    supabase.from("pm_projects").select("*").eq("id", id).single(),
     supabase
-      .from("tasks")
+      .from("pm_tasks")
       .select("*, assignee:profiles(id, full_name, avatar_url)")
       .eq("project_id", id)
       .order("created_at", { ascending: false }),
     supabase
-      .from("project_members")
+      .from("pm_project_members")
       .select("user_id, profile:profiles(id, full_name, avatar_url)")
       .eq("project_id", id),
   ]);

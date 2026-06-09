@@ -8,15 +8,15 @@ export default async function PMDashboardPage() {
 
   const [{ data: projects }, { data: tasks }, { data: overdueTasks }] =
     await Promise.all([
-      supabase.from("projects").select("*").eq("status", "active"),
+      supabase.from("pm_projects").select("*").eq("status", "active"),
       supabase
-        .from("tasks")
+        .from("pm_tasks")
         .select("*, assignee:profiles(full_name)")
         .in("status", ["todo", "in_progress", "review"])
         .order("due_date", { ascending: true })
         .limit(10),
       supabase
-        .from("tasks")
+        .from("pm_tasks")
         .select("*, assignee:profiles(full_name)")
         .lt("due_date", new Date().toISOString().split("T")[0])
         .not("status", "eq", "done"),

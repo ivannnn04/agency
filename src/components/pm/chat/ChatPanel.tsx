@@ -29,10 +29,10 @@ export default function PMChatPanel({ projectId, initialMessages, currentUserId 
       .channel(`pm-chat-${projectId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `project_id=eq.${projectId}` },
+        { event: "INSERT", schema: "public", table: "pm_messages", filter: `project_id=eq.${projectId}` },
         async (payload) => {
           const { data } = await supabase
-            .from("messages")
+            .from("pm_messages")
             .select("*, sender:profiles(id, full_name, avatar_url)")
             .eq("id", payload.new.id)
             .single();
@@ -51,7 +51,7 @@ export default function PMChatPanel({ projectId, initialMessages, currentUserId 
     const content = text.trim();
     setText("");
 
-    await supabase.from("messages").insert({
+    await supabase.from("pm_messages").insert({
       project_id: projectId,
       sender_id: currentUserId,
       content,
@@ -76,7 +76,7 @@ export default function PMChatPanel({ projectId, initialMessages, currentUserId 
     });
     const { reply } = await res.json();
 
-    await supabase.from("messages").insert({
+    await supabase.from("pm_messages").insert({
       project_id: projectId,
       sender_id: null,
       content: reply,

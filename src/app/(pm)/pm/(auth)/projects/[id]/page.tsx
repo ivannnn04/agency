@@ -8,7 +8,7 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
   const supabase = await createPMServerClient();
 
   const { data: project } = await supabase
-    .from("projects")
+    .from("pm_projects")
     .select("*")
     .eq("id", id)
     .single();
@@ -16,7 +16,7 @@ export default async function PMProjectPage({ params }: { params: Promise<{ id: 
   if (!project) notFound();
 
   const { data: taskStats } = await supabase
-    .from("tasks")
+    .from("pm_tasks")
     .select("status")
     .eq("project_id", id);
 

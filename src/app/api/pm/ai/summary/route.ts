@@ -19,7 +19,7 @@ ${transcript}`;
 
     if (projectId) {
       const supabase = await createPMServerClient();
-      await supabase.from("meetings").insert({
+      await supabase.from("pm_meetings").insert({
         project_id: projectId,
         transcript,
         summary: result,

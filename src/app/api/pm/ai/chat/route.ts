@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     let context = "";
     if (projectId) {
       const { data: tasks } = await supabase
-        .from("tasks")
+        .from("pm_tasks")
         .select("title, status, assignee_id, due_date")
         .eq("project_id", projectId)
         .order("due_date");

@@ -5,7 +5,7 @@ import { Plus } from "lucide-react";
 export default async function PMProjectsPage() {
   const supabase = await createPMServerClient();
   const { data: projects } = await supabase
-    .from("projects")
+    .from("pm_projects")
     .select("*, owner:profiles(full_name)")
     .order("created_at", { ascending: false });
 

@@ -41,7 +41,7 @@ export default function PMTaskBoard({ projectId, initialTasks, members }: Props)
       );
 
       await supabase
-        .from("tasks")
+        .from("pm_tasks")
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq("id", draggableId);
     },

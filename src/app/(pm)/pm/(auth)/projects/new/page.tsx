@@ -22,14 +22,14 @@ export default function PMNewProjectPage() {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase
-      .from("projects")
+      .from("pm_projects")
       .insert({ name, description, color, owner_id: user?.id })
       .select()
       .single();
 
     if (!error && data) {
       await supabase
-        .from("project_members")
+        .from("pm_project_members")
         .insert({ project_id: data.id, user_id: user?.id });
       router.push(`/pm/projects/${data.id}`);
     }

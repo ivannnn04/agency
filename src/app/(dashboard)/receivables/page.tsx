@@ -352,15 +352,20 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
   const maxNative = p.remaining_native
 
   const [amount, setAmount]     = useState(maxNative.toFixed(2))
+  const [fee, setFee]           = useState('')
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
   const [error, setError]       = useState('')
   const [saving, setSaving]     = useState(false)
 
+  const netAmount = Number(amount) - (Number(fee) || 0)
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     const amt = Number(amount)
+    const feeAmt = Number(fee) || 0
     if (!amt || amt <= 0) { setError('Введіть суму'); return }
     if (amt > maxNative + 0.01) { setError(`Максимум: ${sym}${maxNative.toFixed(2)}`); return }
+    if (feeAmt < 0) { setError('Комісія не може бути від\'ємною'); return }
     if (!accountId) { setError('Оберіть рахунок'); return }
     setSaving(true)
 
@@ -371,12 +376,26 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
       account_id: accountId,
       project_id: p.id,
       date: new Date().toISOString(),
-      comment: `Оплата по проекту ${p.name}`,
+      comment: `Оплата по проекту ${p.name}${feeAmt > 0 ? ` (клієнт: ${sym}${amt.toFixed(2)})` : ''}`,
       is_planned: false,
     })
     if (txErr) { setError(txErr.message); setSaving(false); return }
 
-    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: amt })
+    if (feeAmt > 0) {
+      const { error: feeErr } = await supabase.from('transactions').insert({
+        type: 'expense',
+        amount: feeAmt,
+        currency: p.contract_currency,
+        account_id: accountId,
+        project_id: p.id,
+        date: new Date().toISOString(),
+        comment: `Комісія за транзакцію: ${p.name}`,
+        is_planned: false,
+      })
+      if (feeErr) { setError(feeErr.message); setSaving(false); return }
+    }
+
+    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: amt - feeAmt })
     onSuccess()
   }
 
@@ -415,6 +434,24 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
                 50%
               </button>
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Комісія за переказ <span className="text-gray-400">(необовʼязково)</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{sym}</span>
+              <input type="number" step="0.01" min="0"
+                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                placeholder="0.00"
+                value={fee} onChange={e => setFee(e.target.value)} />
+            </div>
+            {(Number(fee) || 0) > 0 && (
+              <div className="mt-1.5 flex items-center justify-between text-xs bg-orange-50 border border-orange-100 rounded-lg px-3 py-1.5">
+                <span className="text-orange-700">На рахунок надійде (нетто):</span>
+                <span className="font-semibold text-orange-800">{sym}{netAmount.toFixed(2)}</span>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Зарахувати на рахунок</label>

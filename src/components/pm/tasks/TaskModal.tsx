@@ -39,6 +39,7 @@ interface Props {
   task?: PMTask;
   initialStatus?: PMTaskStatus;
   members: { id: string; full_name: string; avatar_url: string | null }[];
+  currentUserId?: string;
   isTimerRunning?: boolean;
   onTimerToggle?: () => void;
   onCreated?: (task: PMTask) => void;
@@ -52,6 +53,7 @@ export default function PMTaskModal({
   task,
   initialStatus = "todo",
   members,
+  currentUserId: currentUserIdProp,
   isTimerRunning = false,
   onTimerToggle,
   onCreated,
@@ -78,7 +80,7 @@ export default function PMTaskModal({
   const [commentText, setCommentText] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
-  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserId, setCurrentUserId] = useState(currentUserIdProp ?? "");
 
   // Attachments
   const [attachments, setAttachments] = useState<PMTaskAttachment[]>([]);
@@ -88,6 +90,7 @@ export default function PMTaskModal({
   const supabase = createPMClient();
 
   useEffect(() => {
+    if (currentUserIdProp) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setCurrentUserId(user.id);
     });

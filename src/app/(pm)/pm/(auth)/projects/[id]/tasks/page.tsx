@@ -1,6 +1,8 @@
 import { createPMServerClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import PMTaskBoard from "@/components/pm/tasks/TaskBoard";
+import { LayoutDashboard } from "lucide-react";
 
 export default async function PMTasksPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,6 +24,10 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
 
   if (!project) notFound();
 
+  const { data: callerProfile } = await supabase
+    .from("profiles").select("role").eq("id", user!.id).single();
+  const isAdmin = callerProfile?.role === "admin";
+
   type MemberProfile = { id: string; full_name: string; avatar_url: string | null };
   const profiles = (members ?? []).flatMap((m) => {
     const p = m.profile as unknown as MemberProfile | MemberProfile[] | null;
@@ -31,9 +37,19 @@ export default async function PMTasksPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-6 shrink-0">
-        <h1 className="text-xl font-semibold text-white">{project.name}</h1>
-        <p className="text-zinc-500 text-sm mt-1">Kanban Board</p>
+      <div className="mb-5 shrink-0 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-white">{project.name}</h1>
+          <p className="text-zinc-500 text-sm mt-0.5">Kanban Board</p>
+        </div>
+        {isAdmin && (
+          <Link
+            href={`/pm/projects/${id}/overview`}
+            className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-600 px-3 py-2 rounded-lg transition-colors"
+          >
+            <LayoutDashboard size={15} /> Overview
+          </Link>
+        )}
       </div>
       <PMTaskBoard
         projectId={id}

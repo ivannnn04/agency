@@ -158,6 +158,7 @@ export default function PMTaskBoard({ projectId, initialTasks, members, currentU
           projectId={projectId}
           initialStatus={creating}
           members={members}
+          currentUserId={currentUserId}
           onCreated={handleTaskCreated}
           onClose={() => setCreating(null)}
         />

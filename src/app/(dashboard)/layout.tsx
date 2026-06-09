@@ -49,20 +49,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             </div>
 
-            {/* Finance / PM space toggle */}
-            <div className="flex items-center bg-white/10 rounded-lg p-0.5 gap-0.5">
-              <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-teal-500 text-white font-medium">
-                <TrendingUp size={12} />
-                Finance
+            {/* Finance / PM toggle — admin only */}
+            {session?.user?.role === 'admin' && (
+              <div className="flex items-center bg-white/10 rounded-lg p-0.5 gap-0.5">
+                <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-teal-500 text-white font-medium">
+                  <TrendingUp size={12} />
+                  Finance
+                </div>
+                <a
+                  href="/pm"
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  <FolderKanban size={12} />
+                  PM
+                </a>
               </div>
-              <a
-                href="/pm"
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-gray-400 hover:text-white transition-colors"
-              >
-                <FolderKanban size={12} />
-                PM
-              </a>
-            </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

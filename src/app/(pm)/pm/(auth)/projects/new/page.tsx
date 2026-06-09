@@ -19,6 +19,7 @@ export default function PMNewProjectPage() {
   const [financeProjectId, setFinanceProjectId] = useState("");
   const [financeProjects, setFinanceProjects] = useState<FinanceProject[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createPMClient();
 
@@ -41,22 +42,36 @@ export default function PMNewProjectPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      setError("Not authenticated. Please refresh and try again.");
+      setLoading(false);
+      return;
+    }
+
+    const { data, error: insertError } = await supabase
       .from("pm_projects")
       .insert({
         name,
         description,
         color,
-        owner_id: user?.id,
+        owner_id: user.id,
         finance_project_id: financeProjectId || null,
       })
       .select()
       .single();
 
-    if (!error && data) {
-      await supabase.from("pm_project_members").insert({ project_id: data.id, user_id: user?.id });
+    if (insertError) {
+      setError(insertError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
+      await supabase.from("pm_project_members").insert({ project_id: data.id, user_id: user.id });
       router.push(`/pm/projects/${data.id}/tasks`);
     }
     setLoading(false);
@@ -125,6 +140,12 @@ export default function PMNewProjectPage() {
             ))}
           </div>
         </div>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5 text-sm text-red-400">
+            {error}
+          </div>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button type="button" onClick={() => router.back()}

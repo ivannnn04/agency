@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
+import EditTransactionModal from '@/components/modals/EditTransactionModal'
+import type { Transaction } from '@/types'
 import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -244,6 +246,7 @@ export default function PayrollPage() {
   const [expanded, setExpanded]             = useState<string | null>(null)
   const [leadManagers, setLeadManagers]     = useState<LeadManager[]>([])
   const [payingManager, setPayingManager]   = useState<LeadManager | null>(null)
+  const [editingTx, setEditingTx]           = useState<Transaction | null>(null)
   const { rates }                           = useRates()
 
   useEffect(() => { fetchAll() }, [])
@@ -288,6 +291,11 @@ export default function PayrollPage() {
   async function deleteRun(id: string) {
     await supabase.from('payroll_runs').delete().eq('id', id)
     fetchAll()
+  }
+
+  async function handleEditTx(txId: string) {
+    const { data } = await supabase.from('transactions').select('*').eq('id', txId).single()
+    if (data) setEditingTx(data as Transaction)
   }
 
   const drafts    = runs.filter(r => r.status === 'draft')
@@ -354,7 +362,8 @@ export default function PayrollPage() {
                   <RunCard key={run.id} run={run} expanded={expanded === run.id}
                     onToggle={() => setExpanded(e => e === run.id ? null : run.id)}
                     onDelete={() => deleteRun(run.id)}
-                    projects={projects} onRefresh={fetchAll} />
+                    projects={projects} onRefresh={fetchAll}
+                    accounts={accounts} rates={rates} onEditTx={handleEditTx} />
                 ))}
               </div>
             </div>
@@ -367,7 +376,8 @@ export default function PayrollPage() {
                   <RunCard key={run.id} run={run} expanded={expanded === run.id}
                     onToggle={() => setExpanded(e => e === run.id ? null : run.id)}
                     onDelete={() => deleteRun(run.id)}
-                    projects={projects} onRefresh={fetchAll} />
+                    projects={projects} onRefresh={fetchAll}
+                    accounts={accounts} rates={rates} onEditTx={handleEditTx} />
                 ))}
               </div>
             </div>
@@ -404,6 +414,13 @@ export default function PayrollPage() {
           usdRate={rates.USD}
           onClose={() => setPayingManager(null)}
           onSuccess={() => { setPayingManager(null); fetchAll() }}
+        />
+      )}
+      {editingTx && (
+        <EditTransactionModal
+          transaction={editingTx}
+          onClose={() => setEditingTx(null)}
+          onSuccess={() => { setEditingTx(null); fetchAll() }}
         />
       )}
     </div>
@@ -634,10 +651,11 @@ function EmployeesPanel({ employees, projects, projectRates, onRefresh }: {
 
 type EditState = { projectId: string; rate: number; hours: number; amount: number }
 
-function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
+function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accounts, rates, onEditTx }: {
   run: PayrollRun; expanded: boolean
   onToggle: () => void; onDelete: () => void
   projects: Project[]; onRefresh: () => void
+  accounts: Account[]; rates: { USD: number }; onEditTx: (txId: string) => void
 }) {
   const isDraft = run.status === 'draft'
   const items   = run.payroll_items ?? []
@@ -650,6 +668,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
     return init
   })
   const [paying, setPaying] = useState<string | null>(null)
+  const [pendingPay, setPendingPay] = useState<string | null>(null)
 
   // Sync edits when items refresh (preserve unsaved edits for unpaid items)
   useEffect(() => {
@@ -685,9 +704,12 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
     }).eq('id', itemId)
   }
 
-  async function payEmployee(empName: string) {
+  async function payEmployee(empName: string, exchangeRate?: number) {
     if (!run.account_id) { alert('Оберіть рахунок для списання'); return }
     setPaying(empName)
+
+    const account = accounts.find(a => a.id === run.account_id)
+    const needsConversion = account && account.currency !== run.currency
 
     const empItems = items.filter(i => i.employee_name === empName && !i.transaction_id)
     for (const item of empItems) {
@@ -698,19 +720,26 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
       const rate   = edit?.rate   ?? item.rate_usd
       const projId = edit?.projectId || item.project_id || null
 
+      let txAmount   = amount
+      let txCurrency = run.currency
+      if (needsConversion && exchangeRate && exchangeRate > 0) {
+        txAmount   = Math.round(amount * exchangeRate * 100) / 100
+        txCurrency = account!.currency
+      }
+
       const comment = hours > 0
         ? `ЗП ${empName} — ${run.label}, ${hours}h × $${rate}`
         : `ЗП ${empName} — ${run.label}`
 
       const { data: tx } = await supabase.from('transactions').insert({
-        type: 'expense', amount, currency: run.currency,
+        type: 'expense', amount: txAmount, currency: txCurrency,
         account_id: run.account_id,
         project_id: projId,
         date: new Date().toISOString(),
         comment, is_planned: false,
       }).select('id').single()
 
-      await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -amount })
+      await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -txAmount })
       if (tx) await supabase.from('payroll_items').update({ transaction_id: tx.id }).eq('id', item.id)
     }
 
@@ -727,6 +756,15 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
 
     setPaying(null)
     onRefresh()
+  }
+
+  function handlePayClick(empName: string) {
+    const account = accounts.find(a => a.id === run.account_id)
+    if (account && account.currency !== run.currency) {
+      setPendingPay(empName)
+    } else {
+      payEmployee(empName)
+    }
   }
 
   // Group by employee for draft view
@@ -751,6 +789,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
   }
 
   return (
+    <>
     <div className={`border rounded-xl overflow-hidden ${isDraft ? 'border-amber-200' : 'border-gray-200'}`}>
       {/* Header */}
       <div className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isDraft ? 'bg-amber-50' : 'bg-gray-50'}`}
@@ -797,7 +836,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
                       </span>
                     ) : (
                       <button
-                        onClick={() => payEmployee(empName)}
+                        onClick={() => handlePayClick(empName)}
                         disabled={paying !== null}
                         className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
                         {paying === empName ? 'Оплата...' : 'Оплатити'}
@@ -859,6 +898,12 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
                               ${(isPaid ? item.amount : edit.amount).toFixed(2)}
                             </span>
                             {isPaid && <CheckCircle size={9} className="inline ml-1 text-teal-400" />}
+                            {isPaid && item.transaction_id && (
+                              <button onClick={() => onEditTx(item.transaction_id!)}
+                                className="text-gray-300 hover:text-gray-600 transition-colors ml-1" title="Редагувати транзакцію">
+                                <Edit2 size={9} className="inline" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )
@@ -900,7 +945,15 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
                         <td className="py-2 px-3 text-right text-gray-500">
                           {item.rate_usd > 0 ? `$${item.rate_usd}/h` : 'фікс.'}
                         </td>
-                        <td className="py-2 px-3 text-right font-semibold text-red-500">${item.amount.toFixed(2)}</td>
+                        <td className="py-2 px-3 text-right">
+                          <span className="font-semibold text-red-500">${item.amount.toFixed(2)}</span>
+                          {item.transaction_id && (
+                            <button onClick={() => onEditTx(item.transaction_id!)}
+                              className="text-gray-300 hover:text-gray-600 transition-colors ml-1.5" title="Редагувати транзакцію">
+                              <Edit2 size={10} className="inline" />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -910,6 +963,82 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh }: {
           ))}
         </div>
       )}
+    </div>
+    {pendingPay && (
+      <PayConfirmModal
+        empName={pendingPay}
+        empTotal={items
+          .filter(i => i.employee_name === pendingPay && !i.transaction_id)
+          .reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0)}
+        runCurrency={run.currency}
+        accountCurrency={accounts.find(a => a.id === run.account_id)?.currency ?? run.currency}
+        defaultRate={rates.USD}
+        onConfirm={rate => { setPendingPay(null); payEmployee(pendingPay, rate) }}
+        onClose={() => setPendingPay(null)}
+      />
+    )}
+    </>
+  )
+}
+
+// ── Pay Confirm Modal ──────────────────────────────────────────────────────────
+
+function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defaultRate, onConfirm, onClose }: {
+  empName: string; empTotal: number
+  runCurrency: string; accountCurrency: string
+  defaultRate: number
+  onConfirm: (rate: number) => void; onClose: () => void
+}) {
+  const [rate, setRate] = useState(defaultRate > 0 ? defaultRate.toFixed(4) : '')
+  const rateNum   = parseFloat(rate)
+  const converted = rateNum > 0 ? Math.round(empTotal * rateNum * 100) / 100 : 0
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">Оплата зарплати</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="bg-gray-50 rounded-xl px-4 py-3 flex justify-between items-center">
+            <p className="text-sm font-semibold text-gray-800">{empName}</p>
+            <p className="font-bold text-gray-900">{empTotal.toFixed(2)} {runCurrency}</p>
+          </div>
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-lg">
+            Рахунок у <strong>{accountCurrency}</strong>, зарплата у <strong>{runCurrency}</strong> — вкажіть курс конвертації
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              1 {runCurrency} = ? {accountCurrency}
+            </label>
+            <input
+              type="number" step="0.01" min="0"
+              value={rate}
+              onChange={e => setRate(e.target.value)}
+              autoFocus
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+            {converted > 0 && (
+              <p className="text-xs text-gray-500 mt-1 text-right">
+                = {converted.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {accountCurrency}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={onClose}
+            className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            Скасувати
+          </button>
+          <button
+            onClick={() => { if (rateNum > 0) onConfirm(rateNum) }}
+            disabled={!(rateNum > 0)}
+            className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+            {converted > 0 ? `Оплатити ${converted.toFixed(2)} ${accountCurrency}` : 'Оплатити'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

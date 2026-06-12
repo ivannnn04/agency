@@ -5,11 +5,23 @@ import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Account, Category, Project, Transaction, Currency, TransactionType } from '@/types'
 import { cn } from '@/lib/utils'
+import { useRates } from '@/lib/use-rates'
 
 interface Props {
   transaction: Transaction
   onClose: () => void
   onSuccess: () => void
+}
+
+function calcDefaultRate(from: string, to: string, rates: { USD: number; EUR: number }): number {
+  if (from === to) return 1
+  if (to === 'UAH' && from === 'USD') return rates.USD
+  if (to === 'UAH' && from === 'EUR') return rates.EUR
+  if (from === 'UAH' && to === 'USD') return rates.USD > 0 ? 1 / rates.USD : 0
+  if (from === 'UAH' && to === 'EUR') return rates.EUR > 0 ? 1 / rates.EUR : 0
+  if (from === 'USD' && to === 'EUR') return rates.EUR > 0 ? rates.USD / rates.EUR : 0
+  if (from === 'EUR' && to === 'USD') return rates.USD > 0 ? rates.EUR / rates.USD : 0
+  return 1
 }
 
 export default function EditTransactionModal({ transaction: tx, onClose, onSuccess }: Props) {
@@ -18,8 +30,10 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
   const [categories, setCategories] = useState<Category[]>([])
   const [projects, setProjects]     = useState<Project[]>([])
 
+  const { rates } = useRates()
   const [amount, setAmount]           = useState(String(tx.amount))
   const [currency, setCurrency]       = useState<Currency>(tx.currency as Currency)
+  const [rateStr, setRateStr]         = useState('')
   const [accountId, setAccountId]     = useState(tx.account_id)
   const [toAccountId, setToAccountId] = useState(tx.to_account_id ?? '')
   const [categoryId, setCategoryId]   = useState(tx.category_id ?? '')
@@ -28,6 +42,8 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
   const [comment, setComment]         = useState(tx.comment ?? '')
   const [isPlanned, setIsPlanned]     = useState(tx.is_planned)
   const [loading, setLoading]         = useState(false)
+
+  useEffect(() => { setRateStr('') }, [currency, accountId])
 
   useEffect(() => {
     Promise.all([
@@ -49,15 +65,25 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
     try {
       const newAmount = parseFloat(amount)
 
+      // Currency conversion: when transaction currency ≠ account currency
+      const selAccount  = accounts.find(a => a.id === accountId)
+      const accCurrency = selAccount?.currency ?? currency
+      const effectiveRate = parseFloat(rateStr) > 0 ? parseFloat(rateStr) : calcDefaultRate(currency, accCurrency, rates)
+      const needsConv   = type !== 'transfer' && accCurrency !== currency && effectiveRate > 0
+      const savedAmount   = needsConv ? Math.round(newAmount * effectiveRate * 100) / 100 : newAmount
+      const savedCurrency = needsConv ? accCurrency as Currency : currency
+
       // Update transaction record
       await supabase.from('transactions').update({
-        type, amount: newAmount, currency,
+        type, amount: savedAmount, currency: savedCurrency,
         account_id: accountId,
         to_account_id: type === 'transfer' ? (toAccountId || null) : null,
         category_id: categoryId || null,
         project_id: projectId || null,
         date: new Date(date).toISOString(),
-        comment: comment || null,
+        comment: needsConv
+          ? `${comment ? comment + ' · ' : ''}${newAmount} ${currency} @ ${effectiveRate.toFixed(4)}`
+          : (comment || null),
         is_planned: isPlanned,
       }).eq('id', tx.id)
 
@@ -71,11 +97,11 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
         if (tx.to_account_id) await supabase.rpc('update_account_balance', { p_account_id: tx.to_account_id, p_delta: -tx.amount })
       }
 
-      // Apply new balance effect
+      // Apply new balance effect (with converted amount)
       if (type === 'income') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: newAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: savedAmount })
       } else if (type === 'expense') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -newAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -savedAmount })
       } else if (type === 'transfer' && toAccountId) {
         await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -newAmount })
         await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: newAmount })
@@ -91,6 +117,16 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
   const filteredCategories = categories.filter(c =>
     type === 'transfer' ? true : c.type === (type === 'income' ? 'income' : 'expense')
   )
+
+  // Conversion helpers
+  const selAccount   = accounts.find(a => a.id === accountId)
+  const accCurrency  = selAccount?.currency ?? 'UAH'
+  const needsConv    = type !== 'transfer' && !!selAccount && currency !== accCurrency
+  const autoRate     = needsConv ? calcDefaultRate(currency, accCurrency, rates) : 1
+  const displayRate  = parseFloat(rateStr) > 0 ? parseFloat(rateStr) : autoRate
+  const convertedAmt = needsConv && parseFloat(amount) > 0
+    ? Math.round(parseFloat(amount) * displayRate * 100) / 100
+    : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -125,6 +161,28 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
             <option value="">{type === 'expense' || type === 'transfer' ? 'З рахунку' : 'На рахунок'}</option>
             {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
           </select>
+
+          {/* Currency conversion row */}
+          {needsConv && (
+            <div className="flex flex-col gap-1.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-800">1 {currency} =</span>
+                <input
+                  type="number" step="0.0001" min="0"
+                  placeholder={autoRate.toFixed(4)}
+                  value={rateStr}
+                  onChange={e => setRateStr(e.target.value)}
+                  className="w-28 border border-amber-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                />
+                <span className="text-xs font-semibold text-amber-800">{accCurrency}</span>
+              </div>
+              {convertedAmt !== null && (
+                <p className="text-xs text-amber-700">
+                  {parseFloat(amount)} {currency} → <strong>{convertedAmt.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {accCurrency}</strong>
+                </p>
+              )}
+            </div>
+          )}
 
           {type === 'transfer' && (
             <select value={toAccountId} onChange={e => setToAccountId(e.target.value)}

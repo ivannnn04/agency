@@ -421,7 +421,7 @@ export default function PayrollPage() {
       )}
       {manualOpen && (
         <ManualPayrollModal
-          employees={employees} projects={projects} accounts={accounts}
+          employees={employees} projects={projects}
           rates={rates}
           onClose={() => setManualOpen(false)}
           onSuccess={() => { setManualOpen(false); fetchAll() }}
@@ -1100,14 +1100,13 @@ function entryAmount(e: ManualEntry) {
   return (hd > 0 && !isNaN(r) && r > 0) ? Math.round(hd * r * 100) / 100 : 0
 }
 
-function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onSuccess }: {
-  employees: Employee[]; projects: Project[]; accounts: Account[]
+function ManualPayrollModal({ employees, projects, rates, onClose, onSuccess }: {
+  employees: Employee[]; projects: Project[]
   rates: { USD: number; EUR: number }
   onClose: () => void; onSuccess: () => void
 }) {
   const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
   const [label, setLabel]             = useState(defaultLabel)
-  const [accountId, setAccountId]     = useState(accounts[0]?.id ?? '')
   const [exchangeRateStr, setExchangeRateStr] = useState(String(Math.round(rates.USD * 100) / 100))
   const [entries, setEntries]         = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
   const [saving, setSaving]           = useState(false)
@@ -1146,7 +1145,7 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
       status: 'draft',
       total_amount: Math.round(total * 100) / 100,
       currency: 'USD',
-      account_id: accountId || null,
+      account_id: null,
       exchange_rate: runRate,
       total_amount_uah: Math.round(total * runRate * 100) / 100,
     }).select('id').single()
@@ -1189,14 +1188,7 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
             <input value={label} onChange={e => setLabel(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
           </div>
-          <div className="w-52">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок для списання</label>
-            <select value={accountId} onChange={e => setAccountId(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white">
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-            </select>
-          </div>
-          <div className="w-32">
+          <div className="w-36">
             <label className="block text-xs font-medium text-gray-700 mb-1">Курс USD→UAH</label>
             <input type="number" step="0.01" min="0"
               value={exchangeRateStr} onChange={e => setExchangeRateStr(e.target.value)}
@@ -1317,7 +1309,6 @@ function UploadModal({ projects, accounts, employees, projectRates, rates, onClo
   const [items, setItems]           = useState<PayrollItem[]>([])
   const [parseError, setParseError] = useState('')
   const [label, setLabel]           = useState(`ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`)
-  const [accountId, setAccountId]   = useState(accounts[0]?.id ?? '')
   const [globalRate, setGlobalRate] = useState('7')
   const [exchangeRateStr, setExchangeRateStr] = useState(String(Math.round(rates.USD * 100) / 100))
   const [saving, setSaving]         = useState(false)
@@ -1370,7 +1361,7 @@ function UploadModal({ projects, accounts, employees, projectRates, rates, onClo
     const { data: run, error } = await supabase.from('payroll_runs').insert({
       label: label.trim(), status: 'draft',
       total_amount: Math.round(total * 100) / 100,
-      currency: 'USD', account_id: accountId || null,
+      currency: 'USD', account_id: null,
       exchange_rate: runRate,
       total_amount_uah: Math.round(total * runRate * 100) / 100,
     }).select('id').single()
@@ -1438,7 +1429,7 @@ function UploadModal({ projects, accounts, employees, projectRates, rates, onClo
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Ставка за замовчуванням ($/год)
@@ -1447,13 +1438,6 @@ function UploadModal({ projects, accounts, employees, projectRates, rates, onClo
                 <input type="number" step="0.5" min="0"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={globalRate} onChange={e => setGlobalRate(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок для списання</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
-                  value={accountId} onChange={e => setAccountId(e.target.value)}>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-                </select>
               </div>
             </div>
 
@@ -1473,14 +1457,7 @@ function UploadModal({ projects, accounts, employees, projectRates, rates, onClo
                 <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={label} onChange={e => setLabel(e.target.value)} />
               </div>
-              <div className="w-48">
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">Рахунок</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none bg-white"
-                  value={accountId} onChange={e => setAccountId(e.target.value)}>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              <div className="w-32">
+              <div className="w-36">
                 <label className="block text-xs font-medium text-gray-700 mb-0.5">Курс USD→UAH</label>
                 <input type="number" step="0.01" min="0"
                   className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"

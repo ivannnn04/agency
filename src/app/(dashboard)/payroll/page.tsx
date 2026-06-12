@@ -675,20 +675,20 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
   run: PayrollRun; expanded: boolean
   onToggle: () => void; onDelete: () => void
   projects: Project[]; onRefresh: () => void
-  accounts: Account[]; rates: { USD: number }; onEditTx: (txId: string) => void
+  accounts: Account[]; rates: { USD: number; EUR: number }; onEditTx: (txId: string) => void
 }) {
   const isDraft = run.status === 'draft'
   const items   = run.payroll_items ?? []
+  const payments = run.payroll_payments ?? []
 
-  const [edits, setEdits]   = useState<Record<string, EditState>>(() => {
+  const [edits, setEdits]       = useState<Record<string, EditState>>(() => {
     const init: Record<string, EditState> = {}
     for (const item of items) {
       init[item.id] = { projectId: item.project_id ?? '', rate: item.rate_usd, hours: item.hours_decimal, amount: item.amount }
     }
     return init
   })
-  const [paying, setPaying] = useState<string | null>(null)
-  const [pendingPay, setPendingPay] = useState<string | null>(null)
+  const [showPayModal, setShowPayModal] = useState(false)
 
   // Sync edits when items refresh (preserve unsaved edits for unpaid items)
   useEffect(() => {
@@ -716,96 +716,31 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
   async function saveItemToDb(itemId: string) {
     const edit = edits[itemId]
     if (!edit) return
+    const runRate = run.exchange_rate || rates.USD
     await supabase.from('payroll_items').update({
       project_id:    edit.projectId || null,
       rate_usd:      edit.rate,
       hours_decimal: edit.hours,
       amount:        edit.amount,
+      amount_uah:    Math.round(edit.amount * runRate * 100) / 100,
+      exchange_rate: runRate,
     }).eq('id', itemId)
   }
 
-  async function payEmployee(empName: string, exchangeRate?: number) {
-    if (!run.account_id) { alert('Оберіть рахунок для списання'); return }
-    setPaying(empName)
+  // Compute totals from payments
+  const runRate = run.exchange_rate || rates.USD
+  const totalUsd = Math.round(items.reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0) * 100) / 100
+  const totalUah = Math.round(totalUsd * runRate * 100) / 100
+  const paidUsd  = Math.round(payments.reduce((s, p) => s + p.amount_usd, 0) * 100) / 100
+  const paidUah  = Math.round(payments.reduce((s, p) => s + p.amount_uah, 0) * 100) / 100
+  const remUsd   = Math.max(0, Math.round((totalUsd - paidUsd) * 100) / 100)
+  const remUah   = Math.max(0, Math.round((totalUah - paidUah) * 100) / 100)
 
-    const account = accounts.find(a => a.id === run.account_id)
-    const needsConversion = account && account.currency !== run.currency
-
-    const empItems = items.filter(i => i.employee_name === empName && !i.transaction_id)
-    for (const item of empItems) {
-      await saveItemToDb(item.id)
-      const edit   = edits[item.id]
-      const amount = edit?.amount ?? item.amount
-      const hours  = edit?.hours  ?? item.hours_decimal
-      const rate   = edit?.rate   ?? item.rate_usd
-      const projId = edit?.projectId || item.project_id || null
-
-      let txAmount   = amount
-      let txCurrency = run.currency
-      if (needsConversion && exchangeRate && exchangeRate > 0) {
-        txAmount   = Math.round(amount * exchangeRate * 100) / 100
-        txCurrency = account!.currency
-      }
-
-      const comment = hours > 0
-        ? `ЗП ${empName} — ${run.label}, ${hours}h × $${rate}`
-        : `ЗП ${empName} — ${run.label}`
-
-      const { data: tx } = await supabase.from('transactions').insert({
-        type: 'expense', amount: txAmount, currency: txCurrency,
-        account_id: run.account_id,
-        project_id: projId,
-        date: new Date().toISOString(),
-        comment, is_planned: false,
-      }).select('id').single()
-
-      await supabase.rpc('update_account_balance', { p_account_id: run.account_id, p_delta: -txAmount })
-      if (tx) await supabase.from('payroll_items').update({ transaction_id: tx.id }).eq('id', item.id)
-    }
-
-    // Recalculate total + check if fully paid
-    const { data: allItems } = await supabase
-      .from('payroll_items').select('id,amount,transaction_id').eq('run_id', run.id)
-    if (allItems) {
-      const allPaid = allItems.every(i => i.transaction_id)
-      const total   = Math.round(allItems.reduce((s, i) => s + i.amount, 0) * 100) / 100
-      const upd: Record<string, unknown> = { total_amount: total }
-      if (allPaid) { upd.status = 'paid'; upd.paid_at = new Date().toISOString() }
-      await supabase.from('payroll_runs').update(upd).eq('id', run.id)
-    }
-
-    setPaying(null)
-    onRefresh()
-  }
-
-  function handlePayClick(empName: string) {
-    const account = accounts.find(a => a.id === run.account_id)
-    if (account && account.currency !== run.currency) {
-      setPendingPay(empName)
-    } else {
-      payEmployee(empName)
-    }
-  }
-
-  // Group by employee for draft view
+  // Group by employee for all views
   const byEmployee: Record<string, PayrollItemRow[]> = {}
-  if (isDraft) {
-    for (const item of items) {
-      if (!byEmployee[item.employee_name]) byEmployee[item.employee_name] = []
-      byEmployee[item.employee_name].push(item)
-    }
-  }
-
-  // Group by project for paid view
-  const byProject: Record<string, { name: string; items: PayrollItemRow[]; total: number }> = {}
-  if (!isDraft) {
-    for (const item of items) {
-      const key   = item.project_id ?? '__none__'
-      const pName = item.projects?.name ?? item.project_name_raw ?? '—'
-      if (!byProject[key]) byProject[key] = { name: pName, items: [], total: 0 }
-      byProject[key].items.push(item)
-      byProject[key].total += item.amount
-    }
+  for (const item of items) {
+    if (!byEmployee[item.employee_name]) byEmployee[item.employee_name] = []
+    byEmployee[item.employee_name].push(item)
   }
 
   return (
@@ -829,7 +764,10 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
           }
         </div>
         <div className="flex items-center gap-3">
-          <span className="font-bold text-gray-900">${run.total_amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+          <div className="text-right">
+            <span className="font-bold text-gray-900">${totalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+            <span className="text-xs text-gray-400 ml-1">/ ₴{totalUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}</span>
+          </div>
           <button onClick={e => { e.stopPropagation(); onDelete() }}
             className="text-gray-300 hover:text-red-400 transition-colors p-1">
             <X size={14} />
@@ -837,32 +775,17 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
         </div>
       </div>
 
-      {/* Draft expanded: grouped by employee, editable rows */}
-      {expanded && isDraft && (
+      {/* Expanded: grouped by employee, editable rows */}
+      {expanded && (
         <div className="p-4 bg-white flex flex-col gap-3">
           {Object.entries(byEmployee).map(([empName, empItems]) => {
-            const allPaid  = empItems.every(i => i.transaction_id)
             const empTotal = empItems.reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0)
 
             return (
               <div key={empName} className="border border-gray-100 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50 border-b border-gray-100">
                   <span className="text-sm font-semibold text-gray-800">{empName}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-red-500">${empTotal.toFixed(2)}</span>
-                    {allPaid ? (
-                      <span className="flex items-center gap-1 text-xs bg-teal-100 text-teal-700 px-2.5 py-1 rounded-lg font-medium">
-                        <CheckCircle size={10} /> Оплачено
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handlePayClick(empName)}
-                        disabled={paying !== null}
-                        className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
-                        {paying === empName ? 'Оплата...' : 'Оплатити'}
-                      </button>
-                    )}
-                  </div>
+                  <span className="text-sm font-bold text-red-500">${empTotal.toFixed(2)}</span>
                 </div>
                 <table className="w-full text-xs">
                   <thead>
@@ -881,7 +804,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
                       return (
                         <tr key={item.id} className={`border-b border-gray-50 last:border-0 ${isPaid ? 'bg-teal-50/30' : ''}`}>
                           <td className="py-1.5 px-3">
-                            {isPaid
+                            {isPaid || !isDraft
                               ? <span className="text-gray-600">{item.projects?.name ?? item.project_name_raw ?? '—'}</span>
                               : <select
                                   value={edit.projectId}
@@ -894,7 +817,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
                             }
                           </td>
                           <td className="py-1.5 px-3 text-right">
-                            {isPaid
+                            {isPaid || !isDraft
                               ? <span className="text-gray-500">{item.hours_decimal > 0 ? `${item.hours_decimal}h` : '—'}</span>
                               : <input type="number" step="0.01" min="0"
                                   value={edit.hours}
@@ -904,7 +827,7 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
                             }
                           </td>
                           <td className="py-1.5 px-3 text-right">
-                            {isPaid
+                            {isPaid || !isDraft
                               ? <span className="text-gray-500">{item.rate_usd > 0 ? `$${item.rate_usd}` : 'фікс.'}</span>
                               : <input type="number" step="0.5" min="0"
                                   value={edit.rate}
@@ -933,118 +856,216 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
               </div>
             )
           })}
-        </div>
-      )}
 
-      {/* Paid expanded: grouped by project, read-only */}
-      {expanded && !isDraft && (
-        <div className="p-4 bg-white flex flex-col gap-4">
-          {Object.entries(byProject).map(([key, group]) => (
-            <div key={key}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{group.name}</p>
-                <span className="text-xs font-semibold text-red-500">${group.total.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
-              </div>
-              <div className="bg-gray-50 rounded-lg overflow-hidden">
+          {/* Payments history */}
+          {payments.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Виплати</p>
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 px-3 text-gray-400 font-medium">Виконавець</th>
-                      <th className="text-right py-2 px-3 text-gray-400 font-medium">Год.</th>
-                      <th className="text-right py-2 px-3 text-gray-400 font-medium">Ставка</th>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="text-left py-2 px-3 text-gray-400 font-medium">Дата</th>
+                      <th className="text-left py-2 px-3 text-gray-400 font-medium">Рахунок</th>
                       <th className="text-right py-2 px-3 text-gray-400 font-medium">Сума</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-medium">USD</th>
+                      <th className="text-right py-2 px-3 text-gray-400 font-medium">UAH</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map(item => (
-                      <tr key={item.id} className="border-b border-gray-100 last:border-0">
-                        <td className="py-2 px-3 text-gray-700 font-medium">{item.employee_name}</td>
-                        <td className="py-2 px-3 text-right text-gray-500">
-                          {item.hours_decimal > 0 ? `${item.hours_decimal}h` : '—'}
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-500">
-                          {item.rate_usd > 0 ? `$${item.rate_usd}/h` : 'фікс.'}
-                        </td>
-                        <td className="py-2 px-3 text-right">
-                          <span className="font-semibold text-red-500">${item.amount.toFixed(2)}</span>
-                          {item.transaction_id && (
-                            <button onClick={() => onEditTx(item.transaction_id!)}
-                              className="text-gray-300 hover:text-gray-600 transition-colors ml-1.5" title="Редагувати транзакцію">
-                              <Edit2 size={10} className="inline" />
-                            </button>
-                          )}
-                        </td>
+                    {payments.map(pmt => (
+                      <tr key={pmt.id} className="border-b border-gray-50 last:border-0">
+                        <td className="py-1.5 px-3 text-gray-500">{new Date(pmt.created_at).toLocaleDateString('uk-UA')}</td>
+                        <td className="py-1.5 px-3 text-gray-600">{pmt.accounts?.name ?? '—'}</td>
+                        <td className="py-1.5 px-3 text-right text-gray-700 font-medium">{pmt.amount.toFixed(2)} {pmt.currency}</td>
+                        <td className="py-1.5 px-3 text-right text-gray-500">${pmt.amount_usd.toFixed(2)}</td>
+                        <td className="py-1.5 px-3 text-right text-gray-500">₴{pmt.amount_uah.toFixed(0)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Footer balance bar */}
+          {isDraft && (
+            <div className="mt-2 flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+              <div className="text-sm text-gray-700">
+                <span className="font-medium">Залишок: </span>
+                <span className="font-bold text-red-600">${remUsd.toFixed(2)}</span>
+                <span className="text-gray-400 ml-1">/ ₴{remUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}</span>
+              </div>
+              <button
+                onClick={() => setShowPayModal(true)}
+                className="text-sm bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                Виплатити суму
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
-    {pendingPay && (
-      <PayConfirmModal
-        empName={pendingPay}
-        empTotal={items
-          .filter(i => i.employee_name === pendingPay && !i.transaction_id)
-          .reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0)}
-        runCurrency={run.currency}
-        accountCurrency={accounts.find(a => a.id === run.account_id)?.currency ?? run.currency}
-        defaultRate={rates.USD}
-        onConfirm={rate => { setPendingPay(null); payEmployee(pendingPay, rate) }}
-        onClose={() => setPendingPay(null)}
+    {showPayModal && (
+      <RunPayModal
+        run={run}
+        totalUsd={totalUsd}
+        totalUah={totalUah}
+        remUsd={remUsd}
+        remUah={remUah}
+        accounts={accounts}
+        rates={rates}
+        onClose={() => setShowPayModal(false)}
+        onSuccess={() => { setShowPayModal(false); onRefresh() }}
       />
     )}
     </>
   )
 }
 
-// ── Pay Confirm Modal ──────────────────────────────────────────────────────────
+// ── Run Pay Modal ──────────────────────────────────────────────────────────────
 
-function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defaultRate, onConfirm, onClose }: {
-  empName: string; empTotal: number
-  runCurrency: string; accountCurrency: string
-  defaultRate: number
-  onConfirm: (rate: number) => void; onClose: () => void
+function RunPayModal({ run, totalUsd, totalUah, remUsd, remUah, accounts, rates, onClose, onSuccess }: {
+  run: PayrollRun; totalUsd: number; totalUah: number; remUsd: number; remUah: number
+  accounts: Account[]; rates: { USD: number; EUR: number }
+  onClose: () => void; onSuccess: () => void
 }) {
-  const [rate, setRate] = useState(defaultRate > 0 ? defaultRate.toFixed(4) : '')
-  const rateNum   = parseFloat(rate)
-  const converted = rateNum > 0 ? Math.round(empTotal * rateNum * 100) / 100 : 0
+  const runRate = run.exchange_rate || rates.USD
+  const [accountId, setAccountId] = useState(run.account_id ?? accounts[0]?.id ?? '')
+  const [amountStr, setAmountStr] = useState(remUsd.toFixed(2))
+  const [currency, setCurrency]   = useState<'UAH' | 'USD'>('USD')
+  const [saving, setSaving]       = useState(false)
+
+  const amtNum = parseFloat(amountStr) || 0
+  const amtUsd = currency === 'USD' ? amtNum : Math.round(amtNum / runRate * 100) / 100
+  const amtUah = currency === 'UAH' ? amtNum : Math.round(amtNum * runRate * 100) / 100
+  const afterRemUsd = Math.max(0, Math.round((remUsd - amtUsd) * 100) / 100)
+  const afterRemUah = Math.max(0, Math.round((remUah - amtUah) * 100) / 100)
+
+  async function pay() {
+    if (!accountId || amtNum <= 0) return
+    setSaving(true)
+
+    const account = accounts.find(a => a.id === accountId)
+
+    // 1. Insert into payroll_payments
+    await supabase.from('payroll_payments').insert({
+      run_id: run.id,
+      account_id: accountId,
+      amount: amtNum,
+      currency,
+      amount_usd: amtUsd,
+      amount_uah: amtUah,
+      exchange_rate: runRate,
+    })
+
+    // 2. Debit account
+    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -amtNum })
+
+    // 3. Create proportional expense transactions per project
+    const items = run.payroll_items ?? []
+    const uniqueProjectIds = [...new Set(items.map(i => i.project_id).filter(Boolean))] as string[]
+    if (uniqueProjectIds.length > 0 && totalUsd > 0) {
+      let txAmount: number
+      let txCurrency: string
+      if (account?.currency === 'UAH') {
+        txAmount = amtUah; txCurrency = 'UAH'
+      } else if (account?.currency === 'USD') {
+        txAmount = amtUsd; txCurrency = 'USD'
+      } else {
+        txAmount = amtNum; txCurrency = currency
+      }
+
+      for (const projectId of uniqueProjectIds) {
+        const projUsd = items
+          .filter(i => i.project_id === projectId)
+          .reduce((s, i) => s + i.amount, 0)
+        const share = projUsd / totalUsd
+        const projTxAmount = Math.round(txAmount * share * 100) / 100
+        if (projTxAmount <= 0) continue
+        await supabase.from('transactions').insert({
+          type: 'expense',
+          amount: projTxAmount,
+          currency: txCurrency,
+          account_id: accountId,
+          project_id: projectId,
+          date: new Date().toISOString(),
+          comment: `ЗП — ${run.label}`,
+          is_planned: false,
+        })
+      }
+    }
+
+    // 4. Mark run as paid if fully paid
+    if (amtUsd >= remUsd - 0.01) {
+      await supabase.from('payroll_runs').update({
+        status: 'paid',
+        paid_at: new Date().toISOString(),
+      }).eq('id', run.id)
+    }
+
+    setSaving(false)
+    onSuccess()
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">Оплата зарплати</h2>
+          <h2 className="font-semibold text-gray-900">Виплатити зарплату</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <div className="bg-gray-50 rounded-xl px-4 py-3 flex justify-between items-center">
-            <p className="text-sm font-semibold text-gray-800">{empName}</p>
-            <p className="font-bold text-gray-900">{empTotal.toFixed(2)} {runCurrency}</p>
+          <div className="bg-gray-50 rounded-xl px-4 py-3">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-gray-500">Всього</span>
+              <span className="font-semibold text-gray-800">${totalUsd.toFixed(2)} / ₴{totalUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Залишок</span>
+              <span className="font-bold text-red-600">${remUsd.toFixed(2)} / ₴{remUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}</span>
+            </div>
           </div>
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-lg">
-            Рахунок у <strong>{accountCurrency}</strong>, зарплата у <strong>{runCurrency}</strong> — вкажіть курс конвертації
-          </div>
+
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">
-              1 {runCurrency} = ? {accountCurrency}
-            </label>
-            <input
-              type="number" step="0.01" min="0"
-              value={rate}
-              onChange={e => setRate(e.target.value)}
-              autoFocus
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-            {converted > 0 && (
-              <p className="text-xs text-gray-600 mt-1 text-right">
-                = {converted.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {accountCurrency}
-              </p>
-            )}
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Рахунок списання</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            </select>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Сума виплати</label>
+            <div className="flex gap-2">
+              <input
+                type="number" step="0.01" min="0"
+                value={amountStr}
+                onChange={e => setAmountStr(e.target.value)}
+                autoFocus
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              <select value={currency} onChange={e => setCurrency(e.target.value as 'UAH' | 'USD')}
+                className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 focus:outline-none bg-white">
+                <option value="USD">USD</option>
+                <option value="UAH">UAH</option>
+              </select>
+            </div>
+          </div>
+
+          {amtNum > 0 && (
+            <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-800">
+              <p className="font-medium">
+                {currency === 'UAH'
+                  ? `₴${amtNum.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} = $${amtUsd.toFixed(2)}`
+                  : `$${amtNum.toFixed(2)} = ₴${amtUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}`
+                }
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Залишиться: ${afterRemUsd.toFixed(2)} / ₴{afterRemUah.toLocaleString('uk-UA', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+          )}
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
           <button onClick={onClose}
@@ -1052,10 +1073,10 @@ function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defa
             Скасувати
           </button>
           <button
-            onClick={() => { if (rateNum > 0) onConfirm(rateNum) }}
-            disabled={!(rateNum > 0)}
+            onClick={pay}
+            disabled={saving || amtNum <= 0 || !accountId}
             className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
-            {converted > 0 ? `Оплатити ${converted.toFixed(2)} ${accountCurrency}` : 'Оплатити'}
+            {saving ? 'Виплата...' : 'Виплатити'}
           </button>
         </div>
       </div>
@@ -1079,15 +1100,17 @@ function entryAmount(e: ManualEntry) {
   return (hd > 0 && !isNaN(r) && r > 0) ? Math.round(hd * r * 100) / 100 : 0
 }
 
-function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess }: {
+function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onSuccess }: {
   employees: Employee[]; projects: Project[]; accounts: Account[]
+  rates: { USD: number; EUR: number }
   onClose: () => void; onSuccess: () => void
 }) {
   const defaultLabel = `ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`
-  const [label, setLabel]         = useState(defaultLabel)
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [entries, setEntries]     = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
-  const [saving, setSaving]       = useState(false)
+  const [label, setLabel]             = useState(defaultLabel)
+  const [accountId, setAccountId]     = useState(accounts[0]?.id ?? '')
+  const [exchangeRateStr, setExchangeRateStr] = useState(String(Math.round(rates.USD * 100) / 100))
+  const [entries, setEntries]         = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
+  const [saving, setSaving]           = useState(false)
 
   function addRow() {
     setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
@@ -1115,12 +1138,15 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
     setSaving(true)
 
     const total = valid.reduce((s, e) => s + entryAmount(e), 0)
+    const runRate = parseFloat(exchangeRateStr) || rates.USD
     const { data: run } = await supabase.from('payroll_runs').insert({
       label: label.trim() || defaultLabel,
       status: 'draft',
       total_amount: Math.round(total * 100) / 100,
       currency: 'USD',
       account_id: accountId || null,
+      exchange_rate: runRate,
+      total_amount_uah: Math.round(total * runRate * 100) / 100,
     }).select('id').single()
 
     if (!run) { setSaving(false); return }
@@ -1134,6 +1160,8 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
         hours_decimal: Math.round(entryHoursDecimal(e) * 100) / 100,
         rate_usd: parseFloat(e.rate) || 0,
         amount: entryAmount(e),
+        amount_uah: Math.round(entryAmount(e) * runRate * 100) / 100,
+        exchange_rate: runRate,
       }))
     )
     onSuccess()
@@ -1161,6 +1189,12 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white">
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
             </select>
+          </div>
+          <div className="w-32">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Курс USD→UAH</label>
+            <input type="number" step="0.01" min="0"
+              value={exchangeRateStr} onChange={e => setExchangeRateStr(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
           </div>
         </div>
 
@@ -1266,9 +1300,10 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
 
 // ── Upload Modal ───────────────────────────────────────────────────────────────
 
-function UploadModal({ projects, accounts, employees, projectRates, onClose, onSuccess }: {
+function UploadModal({ projects, accounts, employees, projectRates, rates, onClose, onSuccess }: {
   projects: Project[]; accounts: Account[]
   employees: Employee[]; projectRates: EmployeeProjectRate[]
+  rates: { USD: number; EUR: number }
   onClose: () => void; onSuccess: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -1278,6 +1313,7 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
   const [label, setLabel]           = useState(`ЗП ${new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric' }).format(new Date())}`)
   const [accountId, setAccountId]   = useState(accounts[0]?.id ?? '')
   const [globalRate, setGlobalRate] = useState('7')
+  const [exchangeRateStr, setExchangeRateStr] = useState(String(Math.round(rates.USD * 100) / 100))
   const [saving, setSaving]         = useState(false)
   const [dragging, setDragging]     = useState(false)
 
@@ -1323,11 +1359,14 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
     if (!label.trim()) return
     setSaving(true)
     const total = items.reduce((s, i) => s + i.amount, 0)
+    const runRate = parseFloat(exchangeRateStr) || rates.USD
 
     const { data: run, error } = await supabase.from('payroll_runs').insert({
       label: label.trim(), status: 'draft',
       total_amount: Math.round(total * 100) / 100,
       currency: 'USD', account_id: accountId || null,
+      exchange_rate: runRate,
+      total_amount_uah: Math.round(total * runRate * 100) / 100,
     }).select('id').single()
 
     if (error || !run) { setSaving(false); return }
@@ -1341,6 +1380,8 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
         hours_decimal: i.hoursDecimal,
         rate_usd:      i.rate,
         amount:        i.amount,
+        amount_uah:    Math.round(i.amount * runRate * 100) / 100,
+        exchange_rate: runRate,
       }))
     )
     onSuccess()
@@ -1432,6 +1473,12 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
                   value={accountId} onChange={e => setAccountId(e.target.value)}>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
+              </div>
+              <div className="w-32">
+                <label className="block text-xs font-medium text-gray-700 mb-0.5">Курс USD→UAH</label>
+                <input type="number" step="0.01" min="0"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  value={exchangeRateStr} onChange={e => setExchangeRateStr(e.target.value)} />
               </div>
               {unmatched > 0 && (
                 <div className="flex items-center gap-1 text-amber-600 text-xs bg-amber-50 px-2 py-1 rounded-lg">

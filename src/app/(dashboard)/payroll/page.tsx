@@ -716,7 +716,9 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
   async function saveItemToDb(itemId: string) {
     const edit = edits[itemId]
     if (!edit) return
-    const runRate = run.exchange_rate || rates.USD
+    const runRate = (run.total_amount_uah > 0 && run.total_amount > 0)
+      ? run.total_amount_uah / run.total_amount
+      : rates.USD
     await supabase.from('payroll_items').update({
       project_id:    edit.projectId || null,
       rate_usd:      edit.rate,
@@ -728,9 +730,14 @@ function RunCard({ run, expanded, onToggle, onDelete, projects, onRefresh, accou
   }
 
   // Compute totals from payments
-  const runRate = run.exchange_rate || rates.USD
-  const totalUsd = Math.round(items.reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0) * 100) / 100
-  const totalUah = Math.round(totalUsd * runRate * 100) / 100
+  // Use saved UAH total if available (new runs); fall back to live NBU rate for old runs
+  const runRate  = (run.total_amount_uah > 0 && run.total_amount > 0)
+    ? run.total_amount_uah / run.total_amount
+    : rates.USD
+  const totalUsd = Math.round((run.total_amount > 0 ? run.total_amount : items.reduce((s, i) => s + (edits[i.id]?.amount ?? i.amount), 0)) * 100) / 100
+  const totalUah = run.total_amount_uah > 0
+    ? run.total_amount_uah
+    : Math.round(totalUsd * rates.USD * 100) / 100
   const paidUsd  = Math.round(payments.reduce((s, p) => s + p.amount_usd, 0) * 100) / 100
   const paidUah  = Math.round(payments.reduce((s, p) => s + p.amount_uah, 0) * 100) / 100
   const remUsd   = Math.max(0, Math.round((totalUsd - paidUsd) * 100) / 100)
@@ -930,7 +937,9 @@ function RunPayModal({ run, totalUsd, totalUah, remUsd, remUah, accounts, rates,
   accounts: Account[]; rates: { USD: number; EUR: number }
   onClose: () => void; onSuccess: () => void
 }) {
-  const runRate = run.exchange_rate || rates.USD
+  const runRate = (run.total_amount_uah > 0 && run.total_amount > 0)
+    ? run.total_amount_uah / run.total_amount
+    : rates.USD
   const [accountId, setAccountId] = useState(run.account_id ?? accounts[0]?.id ?? '')
   const [amountStr, setAmountStr] = useState(remUsd.toFixed(2))
   const [currency, setCurrency]   = useState<'UAH' | 'USD'>('USD')

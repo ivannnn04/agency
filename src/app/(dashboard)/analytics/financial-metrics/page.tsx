@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -9,8 +10,9 @@ export default function FinancialMetricsPage() {
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [year, setYear] = useState(new Date().getFullYear())
   const [metrics, setMetrics] = useState({ grossProfit: 0, marginalProfit: 0, margin: 0, ebitda: 0, income: 0, expense: 0 })
+  const { toUAH, loading: ratesLoading } = useRates()
 
-  useEffect(() => { fetchData() }, [month, year])
+  useEffect(() => { if (!ratesLoading) fetchData() }, [month, year, ratesLoading])
 
   async function fetchData() {
     const start = `${year}-${String(month).padStart(2,'0')}-01`
@@ -20,15 +22,15 @@ export default function FinancialMetricsPage() {
 
     const { data } = await supabase
       .from('transactions')
-      .select('type, amount')
+      .select('type, amount, currency')
       .gte('date', start)
       .lt('date', end)
       .eq('is_planned', false)
 
     if (!data) return
 
-    const income = data.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const expense = data.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+    const income  = data.filter(t => t.type === 'income').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+    const expense = data.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
     const grossProfit = income - expense
     const marginalProfit = grossProfit
     const margin = income > 0 ? (grossProfit / income) * 100 : 0

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -17,13 +18,14 @@ export default function PlanFactPage() {
   const [rows, setRows] = useState<PlanFactRow[]>([])
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [year, setYear] = useState(new Date().getFullYear())
+  const { toUAH, loading: ratesLoading } = useRates()
 
-  useEffect(() => { fetchData() }, [month, year])
+  useEffect(() => { if (!ratesLoading) fetchData() }, [month, year, ratesLoading])
 
   async function fetchData() {
     const [budgets, txs, cats] = await Promise.all([
       supabase.from('budgets').select('*, category:categories(id, name, type)').eq('year', year).eq('month', month),
-      supabase.from('transactions').select('type, amount, category_id')
+      supabase.from('transactions').select('type, amount, currency, category_id')
         .gte('date', `${year}-${String(month).padStart(2,'0')}-01`)
         .lt('date', `${year}-${String(month < 12 ? month + 1 : 1).padStart(2,'0')}-01`)
         .eq('is_planned', false),
@@ -33,7 +35,7 @@ export default function PlanFactPage() {
     const factMap: Record<string, number> = {}
     txs.data?.forEach(t => {
       if (t.category_id) {
-        factMap[t.category_id] = (factMap[t.category_id] ?? 0) + t.amount
+        factMap[t.category_id] = (factMap[t.category_id] ?? 0) + toUAH(t.amount, t.currency)
       }
     })
 

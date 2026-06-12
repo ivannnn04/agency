@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { ArrowLeft, Download } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 export default function CashFlowPage() {
@@ -11,15 +12,16 @@ export default function CashFlowPage() {
   const [incomeByCategory, setIncomeByCategory] = useState<any[]>([])
   const [expenseByCategory, setExpenseByCategory] = useState<any[]>([])
   const [year, setYear] = useState(new Date().getFullYear())
+  const { toUAH, loading: ratesLoading } = useRates()
 
   useEffect(() => {
-    fetchData()
-  }, [year])
+    if (!ratesLoading) fetchData()
+  }, [year, ratesLoading])
 
   async function fetchData() {
     const { data: txs } = await supabase
       .from('transactions')
-      .select('*, category:categories(name, type)')
+      .select('type, amount, currency, date, category:categories(name, type)')
       .gte('date', `${year}-01-01`)
       .lte('date', `${year}-12-31`)
       .eq('is_planned', false)
@@ -29,39 +31,36 @@ export default function CashFlowPage() {
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1
       const monthTxs = txs.filter(t => new Date(t.date).getMonth() + 1 === month)
-      const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+      const income  = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
       return {
         name: new Date(year, i, 1).toLocaleString('uk-UA', { month: 'short' }),
-        Надходження: income,
-        Списання: expense,
-        Сальдо: income - expense,
+        Надходження: Math.round(income * 100) / 100,
+        Списання:    Math.round(expense * 100) / 100,
+        Сальдо:      Math.round((income - expense) * 100) / 100,
       }
     })
     setData(months)
 
-    const incomeTxs = txs.filter(t => t.type === 'income')
-    const expenseTxs = txs.filter(t => t.type === 'expense')
-
-    const incomeCat = groupByCategory(incomeTxs)
-    const expenseCat = groupByCategory(expenseTxs)
-    setIncomeByCategory(incomeCat)
-    setExpenseByCategory(expenseCat)
+    setIncomeByCategory(groupByCategory(txs.filter(t => t.type === 'income')))
+    setExpenseByCategory(groupByCategory(txs.filter(t => t.type === 'expense')))
   }
 
   function groupByCategory(txs: any[]) {
     const map: Record<string, number> = {}
     txs.forEach(t => {
       const name = t.category?.name ?? 'Без категорії'
-      map[name] = (map[name] ?? 0) + t.amount
+      map[name] = (map[name] ?? 0) + toUAH(t.amount, t.currency)
     })
     return Object.entries(map)
-      .map(([name, amount]) => ({ name, amount }))
+      .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
       .sort((a, b) => b.amount - a.amount)
   }
 
-  const totalIncome = incomeByCategory.reduce((s, c) => s + c.amount, 0)
+  const totalIncome  = incomeByCategory.reduce((s, c) => s + c.amount, 0)
   const totalExpense = expenseByCategory.reduce((s, c) => s + c.amount, 0)
+
+  const fmt = (v: number) => `₴ ${Math.round(v).toLocaleString('uk-UA')}`
 
   return (
     <div className="p-6">
@@ -71,7 +70,7 @@ export default function CashFlowPage() {
         </Link>
         <div>
           <h1 className="text-xl font-bold text-gray-800">Гроші</h1>
-          <p className="text-sm text-gray-400">Звіт про рух грошових коштів (cash flow)</p>
+          <p className="text-sm text-gray-400">Звіт про рух грошових коштів (cash flow) · всі суми в ₴ UAH</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <select
@@ -92,11 +91,11 @@ export default function CashFlowPage() {
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-            <Tooltip formatter={(v) => `₴ ${Number(v).toLocaleString('uk-UA')}`} />
+            <Tooltip formatter={(v) => fmt(Number(v))} />
             <Legend />
             <Line type="monotone" dataKey="Надходження" stroke="#14b8a6" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Списання" stroke="#ef4444" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Сальдо" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+            <Line type="monotone" dataKey="Списання"    stroke="#ef4444" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="Сальдо"      stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -104,13 +103,13 @@ export default function CashFlowPage() {
       <div className="grid grid-cols-2 gap-6">
         <div>
           <h3 className="font-semibold text-gray-700 mb-3">
-            Надходження ₴ {totalIncome.toLocaleString('uk-UA')}
+            Надходження {fmt(totalIncome)}
           </h3>
           <div className="space-y-2">
             {incomeByCategory.map(c => (
               <div key={c.name} className="flex justify-between items-center py-1.5 border-b border-gray-50">
                 <span className="text-sm text-gray-600">{c.name}</span>
-                <span className="text-sm font-medium text-teal-600">₴ {c.amount.toLocaleString('uk-UA')}</span>
+                <span className="text-sm font-medium text-teal-600">{fmt(c.amount)}</span>
               </div>
             ))}
             {incomeByCategory.length === 0 && <p className="text-sm text-gray-400">Немає даних</p>}
@@ -118,13 +117,13 @@ export default function CashFlowPage() {
         </div>
         <div>
           <h3 className="font-semibold text-gray-700 mb-3">
-            Списання ₴ {totalExpense.toLocaleString('uk-UA')}
+            Списання {fmt(totalExpense)}
           </h3>
           <div className="space-y-2">
             {expenseByCategory.map(c => (
               <div key={c.name} className="flex justify-between items-center py-1.5 border-b border-gray-50">
                 <span className="text-sm text-gray-600">{c.name}</span>
-                <span className="text-sm font-medium text-red-500">₴ {c.amount.toLocaleString('uk-UA')}</span>
+                <span className="text-sm font-medium text-red-500">{fmt(c.amount)}</span>
               </div>
             ))}
             {expenseByCategory.length === 0 && <p className="text-sm text-gray-400">Немає даних</p>}

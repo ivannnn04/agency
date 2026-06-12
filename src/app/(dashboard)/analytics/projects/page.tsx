@@ -49,7 +49,7 @@ const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','
 const SYM: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 function fmt(n: number) {
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  return '₴' + Math.round(n).toLocaleString('uk-UA')
 }
 
 export default function AnalyticsProjectsPage() {
@@ -60,7 +60,7 @@ export default function AnalyticsProjectsPage() {
   const [loadingId, setLoadingId]     = useState<string | null>(null)
   const [showPlanned, setShowPlanned] = useState(true)
   const [editProject, setEditProject] = useState<ProjectStats | null>(null)
-  const { toUSD, loading: ratesLoading } = useRates()
+  const { toUAH, loading: ratesLoading } = useRates()
 
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
@@ -83,13 +83,13 @@ export default function AnalyticsProjectsPage() {
 
       const cur = p.contract_currency ?? 'USD'
 
-      const txIncome        = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const txExpense       = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
-      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const txIncome        = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUAH(t.amount, t.currency), 0)
+      const txExpense       = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUAH(t.amount, t.currency), 0)
+      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
 
-      const received_before_app = toUSD(p.received_before_app ?? 0, cur)
-      const spent_before_app    = toUSD(p.spent_before_app    ?? 0, cur)
+      const received_before_app = toUAH(p.received_before_app ?? 0, cur)
+      const spent_before_app    = toUAH(p.spent_before_app    ?? 0, cur)
 
       const income  = txIncome  + received_before_app
       const expense = txExpense + spent_before_app
@@ -100,7 +100,7 @@ export default function AnalyticsProjectsPage() {
       const margin = totalIncome  > 0 ? Math.round((profit / totalIncome)  * 100) : 0
       const roi    = totalExpense > 0 ? Math.round((profit / totalExpense) * 100) : 0
 
-      const contract_amount = p.contract_amount ? toUSD(p.contract_amount, cur) : null
+      const contract_amount = p.contract_amount ? toUAH(p.contract_amount, cur) : null
 
       return {
         id: p.id, name: p.name, status: p.status,
@@ -137,8 +137,8 @@ export default function AnalyticsProjectsPage() {
       const mo = txs.filter(t => new Date(t.date).getMonth() === i)
       return {
         month: m,
-        income:  mo.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0),
-        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0),
+        income:  mo.filter(t => t.type === 'income').reduce((s, t)  => s + toUAH(t.amount, t.currency), 0),
+        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0),
       }
     }).filter(m => m.income > 0 || m.expense > 0)
 
@@ -162,7 +162,7 @@ export default function AnalyticsProjectsPage() {
       }
       if (!name) name = 'Без контрагента'
       if (!personMap[name]) personMap[name] = { name, income: 0, expense: 0, profit: 0 }
-      const amtUSD = toUSD(t.amount, t.currency)
+      const amtUSD = toUAH(t.amount, t.currency)
       if (t.type === 'income')  personMap[name].income  += amtUSD
       if (t.type === 'expense') personMap[name].expense += amtUSD
     }
@@ -406,8 +406,7 @@ export default function AnalyticsProjectsPage() {
                                         <td className="py-2 px-4 text-gray-700 max-w-xs truncate">{t.comment || '—'}</td>
                                         <td className="py-2 px-4 text-gray-500">{(t.category as any)?.name || '—'}</td>
                                         <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
-                                          {t.type === 'income' ? '+' : '−'}{fmt(toUSD(t.amount, t.currency))}
-                                          {t.currency !== 'USD' && <span className="text-xs text-gray-400 ml-1">({t.currency})</span>}
+                                          {t.type === 'income' ? '+' : '−'}{t.amount.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {t.currency}
                                         </td>
                                         <td className="py-2 px-4 text-right">
                                           <span className={`text-xs px-2 py-0.5 rounded-full ${t.is_planned ? 'bg-amber-50 text-amber-600' : 'bg-teal-50 text-teal-600'}`}>

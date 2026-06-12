@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -10,36 +11,32 @@ export default function BalancePage() {
   const [receivables, setReceivables] = useState(0)
   const [payables, setPayables] = useState(0)
   const [profit, setProfit] = useState(0)
+  const { toUAH, loading: ratesLoading } = useRates()
 
-  useEffect(() => {
-    async function fetchData() {
-      const { data: accounts } = await supabase.from('accounts').select('balance, currency')
-      const { data: txs } = await supabase.from('transactions').select('type, amount, counterparty_id').eq('is_planned', false)
+  useEffect(() => { if (!ratesLoading) fetchData() }, [ratesLoading])
 
-      if (accounts) {
-        const totalCash = accounts.reduce((s, a) => s + a.balance, 0)
-        setCash(totalCash)
-      }
+  async function fetchData() {
+    const { data: accounts } = await supabase.from('accounts').select('balance, currency')
+    const { data: txs } = await supabase.from('transactions').select('type, amount, currency, counterparty_id').eq('is_planned', false)
 
-      if (txs) {
-        const incomeWithCP = txs.filter(t => t.type === 'income' && t.counterparty_id)
-        const expenseWithCP = txs.filter(t => t.type === 'expense' && t.counterparty_id)
-
-        const rec = incomeWithCP.reduce((s, t) => s + t.amount, 0)
-        const pay = expenseWithCP.reduce((s, t) => s + t.amount, 0)
-        const totalIncome = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-        const totalExpense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-
-        setReceivables(rec)
-        setPayables(pay)
-        setProfit(totalIncome - totalExpense)
-      }
+    if (accounts) {
+      const totalCash = accounts.reduce((s, a) => s + toUAH(a.balance, a.currency), 0)
+      setCash(totalCash)
     }
-    fetchData()
-  }, [])
 
-  const workingCapital = receivables + cash
-  const totalAssets = workingCapital
+    if (txs) {
+      const rec = txs.filter(t => t.type === 'income'  && t.counterparty_id).reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      const pay = txs.filter(t => t.type === 'expense' && t.counterparty_id).reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      const totalIncome  = txs.filter(t => t.type === 'income').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      const totalExpense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+      setReceivables(rec)
+      setPayables(pay)
+      setProfit(totalIncome - totalExpense)
+    }
+  }
+
+  const workingCapital   = receivables + cash
+  const totalAssets      = workingCapital
   const totalLiabilities = profit + payables
 
   return (
@@ -49,13 +46,13 @@ export default function BalancePage() {
           <ArrowLeft size={20} />
         </Link>
         <h1 className="text-xl font-bold text-gray-800">Баланс</h1>
+        <p className="text-sm text-gray-400 ml-1">· всі суми в ₴ UAH</p>
       </div>
 
       <div className="grid grid-cols-2 gap-8">
-        {/* Assets */}
         <div>
           <h2 className="text-lg font-bold text-center text-gray-800 mb-4">
-            Активи ₴ {totalAssets.toLocaleString('uk-UA')}
+            Активи ₴ {Math.round(totalAssets).toLocaleString('uk-UA')}
           </h2>
           <div className="space-y-3">
             <BalanceRow label="I. Необоротні активи" value={0} bold />
@@ -71,10 +68,9 @@ export default function BalancePage() {
           </div>
         </div>
 
-        {/* Liabilities */}
         <div>
           <h2 className="text-lg font-bold text-center text-gray-800 mb-4">
-            Пасиви ₴ {totalLiabilities.toLocaleString('uk-UA')}
+            Пасиви ₴ {Math.round(totalLiabilities).toLocaleString('uk-UA')}
           </h2>
           <div className="space-y-3">
             <BalanceRow label="I. Капітал власника" value={profit} bold />
@@ -97,7 +93,7 @@ function BalanceRow({ label, value, bold, indent }: { label: string; value: numb
     <div className={`flex justify-between items-center py-1.5 ${indent ? 'pl-4' : ''}`}>
       <span className={`text-sm ${bold ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>{label}</span>
       <span className={`text-sm ${bold ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
-        ₴ {value.toLocaleString('uk-UA')}
+        ₴ {Math.round(value).toLocaleString('uk-UA')}
       </span>
     </div>
   )

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { ArrowLeft, Download } from 'lucide-react'
 import Link from 'next/link'
 import { Transaction } from '@/types'
@@ -18,6 +19,8 @@ export default function StatementPage() {
       if (data) setAccounts(data)
     })
   }, [])
+
+  const { toUAH } = useRates()
 
   useEffect(() => { fetchData() }, [selectedAccount, year])
 
@@ -37,10 +40,10 @@ export default function StatementPage() {
     if (data) setTransactions(data as Transaction[])
   }
 
-  const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const expense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-  const transferIn = transactions.filter(t => t.type === 'transfer' && (selectedAccount === 'all' || t.to_account_id === selectedAccount)).reduce((s, t) => s + t.amount, 0)
-  const transferOut = transactions.filter(t => t.type === 'transfer' && (selectedAccount === 'all' || t.account_id === selectedAccount)).reduce((s, t) => s + t.amount, 0)
+  const income      = transactions.filter(t => t.type === 'income').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+  const expense     = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+  const transferIn  = transactions.filter(t => t.type === 'transfer' && (selectedAccount === 'all' || t.to_account_id === selectedAccount)).reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
+  const transferOut = transactions.filter(t => t.type === 'transfer' && (selectedAccount === 'all' || t.account_id === selectedAccount)).reduce((s, t) => s + toUAH(t.amount, t.currency), 0)
 
   function exportCSV() {
     const rows = [
@@ -138,7 +141,8 @@ export default function StatementPage() {
                 <td className="py-3 px-4 text-gray-600">{formatDate(t.date)}</td>
                 <td className="py-3 px-4 font-medium">
                   <span className={t.type === 'income' ? 'text-teal-600' : t.type === 'transfer' ? 'text-gray-600' : 'text-red-500'}>
-                    {t.type === 'income' ? '+' : t.type === 'transfer' ? '⇄' : '-'} {t.amount.toLocaleString('uk-UA')} ₴
+                    {t.type === 'income' ? '+' : t.type === 'transfer' ? '⇄' : '−'}{' '}
+                    {t.amount.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {t.currency}
                   </span>
                 </td>
                 <td className="py-3 px-4 text-gray-700">{(t as any).account?.name}</td>

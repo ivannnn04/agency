@@ -40,11 +40,14 @@ interface PayrollRun {
   label: string
   status: 'draft' | 'paid'
   total_amount: number
+  total_amount_uah: number
+  exchange_rate: number
   currency: string
   account_id: string | null
   paid_at: string | null
   created_at: string
   payroll_items?: PayrollItemRow[]
+  payroll_payments?: PayrollPayment[]
   accounts?: { name: string } | null
 }
 
@@ -55,9 +58,24 @@ interface PayrollItemRow {
   hours_decimal: number
   rate_usd: number
   amount: number
+  amount_uah: number
+  exchange_rate: number
   project_id: string | null
   transaction_id: string | null
   projects?: { name: string } | null
+}
+
+interface PayrollPayment {
+  id: string
+  run_id: string
+  account_id: string | null
+  amount: number
+  currency: string
+  amount_usd: number
+  amount_uah: number
+  exchange_rate: number
+  created_at: string
+  accounts?: { name: string; currency: string } | null
 }
 
 interface LeadManager {
@@ -255,7 +273,7 @@ export default function PayrollPage() {
     setLoading(true)
     const [{ data: r }, { data: a }, { data: p }, { data: e }, { data: pr }, { data: mgrs }, { data: unpaidLeads }] = await Promise.all([
       supabase.from('payroll_runs')
-        .select('*, payroll_items(*, projects(name)), accounts(name)')
+        .select('*, payroll_items(*, projects(name)), payroll_payments(*, accounts(name,currency)), accounts(name)')
         .order('created_at', { ascending: false }),
       supabase.from('accounts').select('id,name,currency').order('created_at'),
       supabase.from('projects').select('id,name').neq('status', 'archived').order('name'),
@@ -396,6 +414,7 @@ export default function PayrollPage() {
         <UploadModal
           projects={projects} accounts={accounts}
           employees={employees} projectRates={projectRates}
+          rates={rates}
           onClose={() => setUploadOpen(false)}
           onSuccess={() => { setUploadOpen(false); fetchAll() }}
         />
@@ -403,6 +422,7 @@ export default function PayrollPage() {
       {manualOpen && (
         <ManualPayrollModal
           employees={employees} projects={projects} accounts={accounts}
+          rates={rates}
           onClose={() => setManualOpen(false)}
           onSuccess={() => { setManualOpen(false); fetchAll() }}
         />

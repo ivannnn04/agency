@@ -1009,7 +1009,7 @@ function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defa
             Рахунок у <strong>{accountCurrency}</strong>, зарплата у <strong>{runCurrency}</strong> — вкажіть курс конвертації
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
               1 {runCurrency} = ? {accountCurrency}
             </label>
             <input
@@ -1017,10 +1017,10 @@ function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defa
               value={rate}
               onChange={e => setRate(e.target.value)}
               autoFocus
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
             {converted > 0 && (
-              <p className="text-xs text-gray-500 mt-1 text-right">
+              <p className="text-xs text-gray-600 mt-1 text-right">
                 = {converted.toLocaleString('uk-UA', { maximumFractionDigits: 2 })} {accountCurrency}
               </p>
             )}
@@ -1028,7 +1028,7 @@ function PayConfirmModal({ empName, empTotal, runCurrency, accountCurrency, defa
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
           <button onClick={onClose}
-            className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
             Скасувати
           </button>
           <button
@@ -1131,14 +1131,14 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
 
         <div className="px-5 py-4 border-b border-gray-100 flex gap-4 flex-shrink-0 bg-gray-50">
           <div className="flex-1">
-            <label className="block text-xs text-gray-500 mb-1">Назва виплати</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Назва виплати</label>
             <input value={label} onChange={e => setLabel(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" />
           </div>
           <div className="w-52">
-            <label className="block text-xs text-gray-500 mb-1">Рахунок для списання</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок для списання</label>
             <select value={accountId} onChange={e => setAccountId(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white">
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none bg-white">
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
             </select>
           </div>
@@ -1147,16 +1147,16 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
         <div className="flex-1 overflow-y-auto p-5">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-gray-400 border-b border-gray-100">
-                <th className="text-left pb-2 font-medium">Співробітник</th>
-                <th className="text-left pb-2 font-medium">Проект</th>
-                <th className="text-right pb-2 font-medium w-36">Час</th>
-                <th className="text-right pb-2 font-medium w-24">$/год</th>
-                <th className="text-right pb-2 font-medium w-24">Сума ($)</th>
+              <tr className="text-xs text-gray-600 border-b border-gray-200">
+                <th className="text-left pb-2 font-semibold">Співробітник</th>
+                <th className="text-left pb-2 font-semibold">Проект</th>
+                <th className="text-right pb-2 font-semibold w-36">Час</th>
+                <th className="text-right pb-2 font-semibold w-24">$/год</th>
+                <th className="text-right pb-2 font-semibold w-24">Сума ($)</th>
                 <th className="w-6 pb-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-100">
               {entries.map(entry => {
                 const amt = entryAmount(entry)
                 return (
@@ -1167,7 +1167,7 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
                         placeholder="Ім'я"
                         value={entry.employee}
                         onChange={e => updateRow(entry.id, { employee: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
                       />
                       <datalist id={`emp-list-${entry.id}`}>
                         {employees.map(e => <option key={e.id} value={e.name} />)}
@@ -1175,7 +1175,7 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
                     </td>
                     <td className="py-2 pr-2">
                       <select value={entry.projectId} onChange={e => updateRow(entry.id, { projectId: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none bg-white">
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none bg-white">
                         <option value="">— без проекту —</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
@@ -1185,29 +1185,29 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
                         <input type="number" min="0" placeholder="0"
                           value={entry.hours}
                           onChange={e => updateRow(entry.id, { hours: e.target.value })}
-                          className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                        <span className="text-xs text-gray-400 shrink-0">г</span>
+                          className="w-12 border border-gray-300 rounded-lg px-1.5 py-1.5 text-sm text-right text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <span className="text-xs text-gray-600 shrink-0">г</span>
                         <input type="number" min="0" max="59" placeholder="0"
                           value={entry.minutes}
                           onChange={e => updateRow(entry.id, { minutes: e.target.value })}
-                          className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                        <span className="text-xs text-gray-400 shrink-0">хв</span>
+                          className="w-12 border border-gray-300 rounded-lg px-1.5 py-1.5 text-sm text-right text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        <span className="text-xs text-gray-600 shrink-0">хв</span>
                       </div>
                     </td>
                     <td className="py-2 pr-2">
                       <input type="number" step="0.5" min="0" placeholder="0"
                         value={entry.rate}
                         onChange={e => updateRow(entry.id, { rate: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-right text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900" />
                     </td>
                     <td className="py-2 pr-2 text-right">
-                      <span className={`text-sm font-semibold ${amt > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                      <span className={`text-sm font-semibold ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
                         ${amt.toFixed(2)}
                       </span>
                     </td>
                     <td className="py-2 text-center">
                       {entries.length > 1 && (
-                        <button onClick={() => removeRow(entry.id)} className="text-gray-300 hover:text-red-400 transition-colors p-1">
+                        <button onClick={() => removeRow(entry.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1">
                           <X size={13} />
                         </button>
                       )}
@@ -1218,19 +1218,19 @@ function ManualPayrollModal({ employees, projects, accounts, onClose, onSuccess 
             </tbody>
           </table>
           <button onClick={addRow}
-            className="mt-3 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors">
+            className="mt-3 flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
             <Plus size={14} /> Додати рядок
           </button>
         </div>
 
         <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
           <div className="text-sm">
-            <span className="text-gray-500">Всього: </span>
+            <span className="text-gray-600">Всього: </span>
             <span className="font-bold text-gray-900">${total.toFixed(2)}</span>
           </div>
           <div className="flex gap-3">
             <button onClick={onClose}
-              className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+              className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
               Скасувати
             </button>
             <button onClick={save} disabled={saving || total === 0}
@@ -1338,7 +1338,7 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
               {step === 'upload' ? 'Завантажити табель' : 'Перевірка перед збереженням'}
             </h2>
             {step === 'preview' && (
-              <p className="text-xs text-gray-400 mt-0.5">{items.length} рядків · ${total.toFixed(2)}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{items.length} рядків · ${total.toFixed(2)}</p>
             )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -1378,12 +1378,12 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
                   {employees.length > 0 && <span className="font-normal text-gray-400 ml-1">— якщо не вказано</span>}
                 </label>
                 <input type="number" step="0.5" min="0"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={globalRate} onChange={e => setGlobalRate(e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Рахунок для списання</label>
-                <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+                <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок для списання</label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
                   value={accountId} onChange={e => setAccountId(e.target.value)}>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
                 </select>
@@ -1402,13 +1402,13 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
           <>
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4 flex-shrink-0 bg-gray-50">
               <div className="flex-1">
-                <label className="block text-xs text-gray-500 mb-0.5">Назва виплати</label>
-                <input className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                <label className="block text-xs font-medium text-gray-700 mb-0.5">Назва виплати</label>
+                <input className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={label} onChange={e => setLabel(e.target.value)} />
               </div>
               <div className="w-48">
-                <label className="block text-xs text-gray-500 mb-0.5">Рахунок</label>
-                <select className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none bg-white"
+                <label className="block text-xs font-medium text-gray-700 mb-0.5">Рахунок</label>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none bg-white"
                   value={accountId} onChange={e => setAccountId(e.target.value)}>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
@@ -1423,23 +1423,23 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
 
             <div className="flex-1 overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
+                <thead className="sticky top-0 bg-white border-b border-gray-200 z-10">
                   <tr>
-                    <th className="text-left py-2 px-4 text-xs font-medium text-gray-500">Виконавець</th>
-                    <th className="text-left py-2 px-4 text-xs font-medium text-gray-500">Проект</th>
-                    <th className="text-right py-2 px-4 text-xs font-medium text-gray-500">Год.</th>
-                    <th className="text-right py-2 px-4 text-xs font-medium text-gray-500">$/год</th>
-                    <th className="text-right py-2 px-4 text-xs font-medium text-gray-500">Сума</th>
+                    <th className="text-left py-2 px-4 text-xs font-semibold text-gray-600">Виконавець</th>
+                    <th className="text-left py-2 px-4 text-xs font-semibold text-gray-600">Проект</th>
+                    <th className="text-right py-2 px-4 text-xs font-semibold text-gray-600">Год.</th>
+                    <th className="text-right py-2 px-4 text-xs font-semibold text-gray-600">$/год</th>
+                    <th className="text-right py-2 px-4 text-xs font-semibold text-gray-600">Сума</th>
                     <th className="w-6 py-2 px-2" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-gray-100">
                   {items.map(item => (
                     <tr key={item.key} className={`${!item.matched && item.projectRaw ? 'bg-amber-50/50' : ''}`}>
-                      <td className="py-2 px-4 text-gray-700 font-medium">{item.employee}</td>
+                      <td className="py-2 px-4 text-gray-800 font-medium">{item.employee}</td>
                       <td className="py-2 px-4">
                         <select
-                          className={`w-full border rounded-lg px-2 py-1 text-xs focus:outline-none bg-white ${!item.projectId && item.projectRaw ? 'border-amber-300 text-amber-700' : 'border-gray-200 text-gray-700'}`}
+                          className={`w-full border rounded-lg px-2 py-1 text-xs focus:outline-none bg-white ${!item.projectId && item.projectRaw ? 'border-amber-300 text-amber-700' : 'border-gray-300 text-gray-800'}`}
                           value={item.projectId}
                           onChange={e => {
                             const p = projects.find(p => p.id === e.target.value)
@@ -1451,19 +1451,19 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
                       </td>
                       <td className="py-2 px-4 text-right">
                         <input type="number" step="0.01" min="0"
-                          className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          className="w-16 border border-gray-300 rounded px-2 py-1 text-xs text-right text-gray-900 focus:outline-none focus:ring-1 focus:ring-teal-400"
                           value={item.hoursDecimal}
                           onChange={e => updateItem(item.key, { hoursDecimal: parseFloat(e.target.value) || 0 })} />
                       </td>
                       <td className="py-2 px-4 text-right">
                         <input type="number" step="0.5" min="0"
-                          className="w-14 border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-teal-400"
+                          className="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-right text-gray-900 focus:outline-none focus:ring-1 focus:ring-teal-400"
                           value={item.rate}
                           onChange={e => updateItem(item.key, { rate: parseFloat(e.target.value) || 0 })} />
                       </td>
-                      <td className="py-2 px-4 text-right font-semibold text-red-500">${item.amount.toFixed(2)}</td>
+                      <td className="py-2 px-4 text-right font-semibold text-red-600">${item.amount.toFixed(2)}</td>
                       <td className="py-2 px-2">
-                        <button onClick={() => removeItem(item.key)} className="text-gray-300 hover:text-red-400 transition-colors">
+                        <button onClick={() => removeItem(item.key)} className="text-gray-400 hover:text-red-500 transition-colors">
                           <X size={13} />
                         </button>
                       </td>
@@ -1475,13 +1475,13 @@ function UploadModal({ projects, accounts, employees, projectRates, onClose, onS
 
             <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
               <div className="text-sm">
-                <span className="text-gray-500">Всього: </span>
+                <span className="text-gray-600">Всього: </span>
                 <span className="font-bold text-gray-900">${total.toFixed(2)}</span>
-                <span className="text-gray-400 ml-2">({items.length} рядків)</span>
+                <span className="text-gray-500 ml-2">({items.length} рядків)</span>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => setStep('upload')}
-                  className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+                  className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
                   Назад
                 </button>
                 <button onClick={save} disabled={saving || items.length === 0}
@@ -1642,7 +1642,7 @@ function LeadManagerPayModal({ manager, accounts, usdRate, onClose, onSuccess }:
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок списання</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Рахунок списання</label>
             <select value={accountId} onChange={e => setAccountId(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
@@ -1650,7 +1650,7 @@ function LeadManagerPayModal({ manager, accounts, usdRate, onClose, onSuccess }:
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Сума виплати (UAH)</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Сума виплати (UAH)</label>
             <input
               type="number" step="0.01" min="0"
               value={uahAmount}
@@ -1661,7 +1661,7 @@ function LeadManagerPayModal({ manager, accounts, usdRate, onClose, onSuccess }:
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
           <button onClick={onClose}
-            className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
             Скасувати
           </button>
           <button onClick={pay} disabled={saving || !accountId || !parseFloat(uahAmount)}

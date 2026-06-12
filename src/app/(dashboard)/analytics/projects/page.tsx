@@ -142,6 +142,16 @@ export default function AnalyticsProjectsPage() {
       }
     }).filter(m => m.income > 0 || m.expense > 0)
 
+    // Prepend pre-app amounts as a "до старту" data point
+    const proj = projects.find(p => p.id === projectId)
+    if (proj && (proj.received_before_app > 0 || proj.spent_before_app > 0)) {
+      monthly.unshift({
+        month: 'до старту',
+        income:  proj.received_before_app,
+        expense: proj.spent_before_app,
+      })
+    }
+
     const personMap: Record<string, ByPerson> = {}
     for (const t of txs) {
       const raw = (t.counterparty as any)?.name

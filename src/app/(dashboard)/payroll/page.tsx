@@ -1111,6 +1111,7 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
   const [exchangeRateStr, setExchangeRateStr] = useState(String(Math.round(rates.USD * 100) / 100))
   const [entries, setEntries]         = useState<ManualEntry[]>([{ id: '1', employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
   const [saving, setSaving]           = useState(false)
+  const [saveError, setSaveError]     = useState('')
 
   function addRow() {
     setEntries(prev => [...prev, { id: String(Date.now()), employee: '', projectId: '', hours: '', minutes: '', rate: '' }])
@@ -1136,10 +1137,11 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
     const valid = entries.filter(e => e.employee.trim() && entryAmount(e) > 0)
     if (valid.length === 0) return
     setSaving(true)
+    setSaveError('')
 
     const total = valid.reduce((s, e) => s + entryAmount(e), 0)
     const runRate = parseFloat(exchangeRateStr) || rates.USD
-    const { data: run } = await supabase.from('payroll_runs').insert({
+    const { data: run, error: runErr } = await supabase.from('payroll_runs').insert({
       label: label.trim() || defaultLabel,
       status: 'draft',
       total_amount: Math.round(total * 100) / 100,
@@ -1149,7 +1151,11 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
       total_amount_uah: Math.round(total * runRate * 100) / 100,
     }).select('id').single()
 
-    if (!run) { setSaving(false); return }
+    if (runErr || !run) {
+      setSaveError(runErr?.message ?? 'Помилка збереження. Можливо, не виконана міграція 007.')
+      setSaving(false)
+      return
+    }
 
     await supabase.from('payroll_items').insert(
       valid.map(e => ({
@@ -1278,9 +1284,9 @@ function ManualPayrollModal({ employees, projects, accounts, rates, onClose, onS
         </div>
 
         <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-shrink-0">
-          <div className="text-sm">
-            <span className="text-gray-600">Всього: </span>
-            <span className="font-bold text-gray-900">${total.toFixed(2)}</span>
+          <div className="text-sm flex flex-col gap-1">
+            <span className="text-gray-600">Всього: <span className="font-bold text-gray-900">${total.toFixed(2)}</span></span>
+            {saveError && <span className="text-xs text-red-600">{saveError}</span>}
           </div>
           <div className="flex gap-3">
             <button onClick={onClose}

@@ -18,6 +18,8 @@ export default function Sidebar() {
   const [plannedIncome, setPlannedIncome]   = useState(0)
   const [plannedExpense, setPlannedExpense] = useState(0)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
+  const [editingId, setEditingId]   = useState<string | null>(null)
+  const [editValue, setEditValue]   = useState('')
   const { rates, loading: ratesLoading, toUSD, fmtUSD, toUAH } = useRates()
 
   const totalUSD = accounts.reduce((s, a) => s + toUSD(a.balance, a.currency), 0)
@@ -34,6 +36,19 @@ export default function Sidebar() {
 
   async function deleteAccount(id: string) {
     await supabase.from('accounts').delete().eq('id', id)
+    fetchAccounts()
+  }
+
+  function startEdit(account: Account) {
+    setEditingId(account.id)
+    setEditValue(String(account.balance))
+  }
+
+  async function saveEdit(account: Account) {
+    const newBalance = parseFloat(editValue)
+    setEditingId(null)
+    if (isNaN(newBalance) || newBalance === account.balance) return
+    await supabase.from('accounts').update({ balance: newBalance }).eq('id', account.id)
     fetchAccounts()
   }
 
@@ -115,11 +130,28 @@ export default function Sidebar() {
                   <span className="text-sm text-gray-200 truncate">{account.name}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="text-right">
-                    <div className="text-xs text-gray-400">
-                      {currencySymbol(account.currency)}{account.balance.toLocaleString('en-US')}
-                    </div>
-                    {account.currency !== 'USD' && rates.USD > 0 && (
+                  <div className="text-right" onClick={() => startEdit(account)} title="Клікніть щоб змінити баланс">
+                    {editingId === account.id ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        autoFocus
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        onBlur={() => saveEdit(account)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveEdit(account)
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        className="w-24 text-xs text-right bg-white/10 text-white border border-white/30 rounded px-1.5 py-0.5 focus:outline-none focus:border-teal-400"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div className="text-xs text-gray-400 cursor-pointer hover:text-white transition-colors">
+                        {currencySymbol(account.currency)}{account.balance.toLocaleString('en-US')}
+                      </div>
+                    )}
+                    {editingId !== account.id && account.currency !== 'USD' && rates.USD > 0 && (
                       <div className="text-[10px] text-gray-600">
                         ≈ {fmtUSD(toUSD(account.balance, account.currency))}
                       </div>

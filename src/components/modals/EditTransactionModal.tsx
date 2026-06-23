@@ -30,7 +30,7 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
   const [categories, setCategories] = useState<Category[]>([])
   const [projects, setProjects]     = useState<Project[]>([])
 
-  const { rates } = useRates()
+  const { rates, loading: ratesLoading } = useRates()
   const [amount, setAmount]           = useState(String(tx.amount))
   const [currency, setCurrency]       = useState<Currency>(tx.currency as Currency)
   const [rateStr, setRateStr]         = useState('')
@@ -65,43 +65,50 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
     try {
       const newAmount = parseFloat(amount)
 
-      // Currency conversion: when transaction currency ≠ account currency
-      const selAccount  = accounts.find(a => a.id === accountId)
-      const accCurrency = selAccount?.currency ?? currency
-      const effectiveRate = parseFloat(rateStr) > 0 ? parseFloat(rateStr) : calcDefaultRate(currency, accCurrency, rates)
-      const needsConv   = type !== 'transfer' && accCurrency !== currency && effectiveRate > 0
-      const savedAmount   = needsConv ? Math.round(newAmount * effectiveRate * 100) / 100 : newAmount
-      const savedCurrency = needsConv ? accCurrency as Currency : currency
+      // Determine OLD account currency and compute reversal delta
+      const oldAccount     = accounts.find(a => a.id === tx.account_id)
+      const oldAccCurrency = oldAccount?.currency ?? tx.currency
+      const oldRate        = calcDefaultRate(tx.currency, oldAccCurrency, rates)
+      const oldBalanceDelta = tx.currency !== oldAccCurrency && oldRate > 0
+        ? Math.round(tx.amount * oldRate * 100) / 100
+        : tx.amount
 
-      // Update transaction record
+      // Determine NEW account currency and compute new balance delta
+      const newSelAccount  = accounts.find(a => a.id === accountId)
+      const newAccCurrency = newSelAccount?.currency ?? currency
+      const newEffRate     = parseFloat(rateStr) > 0 ? parseFloat(rateStr) : calcDefaultRate(currency, newAccCurrency, rates)
+      const newNeedsConv   = type !== 'transfer' && newAccCurrency !== currency && newEffRate > 0
+      const newBalanceDelta = newNeedsConv ? Math.round(newAmount * newEffRate * 100) / 100 : newAmount
+
+      // Save transaction in ORIGINAL currency
       await supabase.from('transactions').update({
-        type, amount: savedAmount, currency: savedCurrency,
+        type,
+        amount: newAmount,
+        currency,
         account_id: accountId,
         to_account_id: type === 'transfer' ? (toAccountId || null) : null,
         category_id: categoryId || null,
         project_id: projectId || null,
         date: new Date(date).toISOString(),
-        comment: needsConv
-          ? `${comment ? comment + ' · ' : ''}${newAmount} ${currency} @ ${effectiveRate.toFixed(4)}`
-          : (comment || null),
+        comment: comment || null,
         is_planned: isPlanned,
       }).eq('id', tx.id)
 
-      // Reverse old balance effect
+      // Reverse old balance effect (using converted delta)
       if (tx.type === 'income') {
-        await supabase.rpc('update_account_balance', { p_account_id: tx.account_id, p_delta: -tx.amount })
+        await supabase.rpc('update_account_balance', { p_account_id: tx.account_id, p_delta: -oldBalanceDelta })
       } else if (tx.type === 'expense') {
-        await supabase.rpc('update_account_balance', { p_account_id: tx.account_id, p_delta: tx.amount })
+        await supabase.rpc('update_account_balance', { p_account_id: tx.account_id, p_delta: oldBalanceDelta })
       } else if (tx.type === 'transfer') {
         await supabase.rpc('update_account_balance', { p_account_id: tx.account_id, p_delta: tx.amount })
         if (tx.to_account_id) await supabase.rpc('update_account_balance', { p_account_id: tx.to_account_id, p_delta: -tx.amount })
       }
 
-      // Apply new balance effect (with converted amount)
+      // Apply new balance effect (with converted delta)
       if (type === 'income') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: savedAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: newBalanceDelta })
       } else if (type === 'expense') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -savedAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -newBalanceDelta })
       } else if (type === 'transfer' && toAccountId) {
         await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -newAmount })
         await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: newAmount })
@@ -217,13 +224,13 @@ export default function EditTransactionModal({ transaction: tx, onClose, onSucce
             <span className="text-sm text-gray-600">Плановий платіж</span>
           </label>
 
-          <button type="submit" disabled={loading}
+          <button type="submit" disabled={loading || (ratesLoading && needsConv)}
             className={cn('w-full py-3.5 rounded-xl font-semibold text-white transition-opacity',
-              loading ? 'opacity-50' : '',
+              loading || (ratesLoading && needsConv) ? 'opacity-50' : '',
               type === 'income' ? 'bg-gradient-to-r from-teal-400 to-teal-600'
                 : type === 'expense' ? 'bg-gradient-to-r from-red-400 to-red-600'
                 : 'bg-gradient-to-r from-gray-500 to-gray-700')}>
-            {loading ? 'Збереження...' : 'Зберегти зміни'}
+            {ratesLoading && needsConv ? 'Завантаження курсів...' : loading ? 'Збереження...' : 'Зберегти зміни'}
           </button>
         </form>
       </div>

@@ -32,7 +32,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
   const [projects, setProjects] = useState<Project[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
 
-  const { rates } = useRates()
+  const { rates, loading: ratesLoading } = useRates()
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UAH')
   const [rateStr, setRateStr] = useState('')
@@ -93,26 +93,25 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
       const txAmount = parseFloat(amount)
       const toTxAmount = type === 'transfer' ? parseFloat(toAmount || amount) : txAmount
 
-      // Currency conversion: when transaction currency ≠ account currency
+      // Determine account currency and compute balance delta (in account's native currency)
       const selAccount = accounts.find(a => a.id === accountId)
       const accCurrency = selAccount?.currency ?? currency
       const effectiveRate = parseFloat(rateStr) > 0 ? parseFloat(rateStr) : calcDefaultRate(currency, accCurrency, rates)
       const needsConv = type !== 'transfer' && accCurrency !== currency && effectiveRate > 0
-      const savedAmount   = needsConv ? Math.round(txAmount * effectiveRate * 100) / 100 : txAmount
-      const savedCurrency = needsConv ? accCurrency as Currency : currency
+      // Balance delta is always in the account's currency
+      const balanceDelta = needsConv ? Math.round(txAmount * effectiveRate * 100) / 100 : txAmount
 
+      // Always save transaction in its ORIGINAL currency so analytics can display it correctly
       const payload: Record<string, unknown> = {
         type,
-        amount: savedAmount,
-        currency: savedCurrency,
+        amount: txAmount,
+        currency,
         account_id: accountId,
         category_id: categoryId || null,
         project_id: projectId || null,
         counterparty_id: finalCounterpartyId,
         date: new Date(date).toISOString(),
-        comment: needsConv
-          ? `${comment ? comment + ' · ' : ''}${txAmount} ${currency} @ ${effectiveRate.toFixed(4)}`
-          : (comment || null),
+        comment: comment || null,
         is_planned: isPlanned,
       }
 
@@ -124,11 +123,11 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
       await supabase.from('transactions').insert(payload)
 
-      // Update account balance with converted amount
+      // Update account balance with the converted delta (in account's currency)
       if (type === 'income') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: savedAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: balanceDelta })
       } else if (type === 'expense') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -savedAmount })
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -balanceDelta })
       } else if (type === 'transfer' && toAccountId) {
         await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -txAmount })
         await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: toTxAmount })
@@ -372,10 +371,10 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (ratesLoading && needsConv)}
             className={cn(
               'w-full py-3.5 rounded-xl font-semibold text-white transition-opacity',
-              loading ? 'opacity-50' : '',
+              loading || (ratesLoading && needsConv) ? 'opacity-50' : '',
               type === 'income'
                 ? 'bg-gradient-to-r from-teal-400 to-teal-600'
                 : type === 'expense'
@@ -383,7 +382,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
                 : 'bg-gradient-to-r from-gray-500 to-gray-700'
             )}
           >
-            {loading ? 'Збереження...' : 'Зберегти'}
+            {ratesLoading && needsConv ? 'Завантаження курсів...' : loading ? 'Збереження...' : 'Зберегти'}
           </button>
         </form>
       </div>

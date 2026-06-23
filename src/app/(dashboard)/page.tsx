@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Transaction } from '@/types'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { useRates } from '@/lib/use-rates'
 import { Search, Download, Edit2, Trash2 } from 'lucide-react'
 import EditTransactionModal from '@/components/modals/EditTransactionModal'
 
@@ -16,6 +17,7 @@ export default function PaymentsPage() {
   const [editTx, setEditTx]             = useState<Transaction | null>(null)
   const [deleteTx, setDeleteTx]         = useState<Transaction | null>(null)
   const [deleting, setDeleting]         = useState(false)
+  const { rates } = useRates()
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -70,11 +72,23 @@ export default function PaymentsPage() {
     if (!deleteTx) return
     setDeleting(true)
     const t = deleteTx
+    // Compute how much this transaction actually affected the account balance
+    // (transactions may be stored in original currency or already converted)
+    const accCurrency = t.account?.currency ?? t.currency
+    let delta = t.amount
+    if (t.currency !== accCurrency) {
+      const r = accCurrency === 'UAH'
+        ? (t.currency === 'USD' ? rates.USD : t.currency === 'EUR' ? rates.EUR : 1)
+        : accCurrency === 'USD' && t.currency === 'UAH'
+          ? (rates.USD > 0 ? 1 / rates.USD : 1)
+          : 1
+      delta = Math.round(t.amount * r * 100) / 100
+    }
     // Reverse balance effect
     if (t.type === 'income') {
-      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: -t.amount })
+      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: -delta })
     } else if (t.type === 'expense') {
-      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: t.amount })
+      await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: delta })
     } else if (t.type === 'transfer') {
       await supabase.rpc('update_account_balance', { p_account_id: t.account_id, p_delta: t.amount })
       if (t.to_account_id) await supabase.rpc('update_account_balance', { p_account_id: t.to_account_id, p_delta: -t.amount })

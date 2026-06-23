@@ -198,7 +198,7 @@ export default function CashFlowPage() {
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} width={45} />
             <Tooltip
-              formatter={(v: any, name: string) => [fmt(Number(v)), name]}
+              formatter={(v: any, name: any) => [fmt(Number(v)), name]}
               contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
             />
             <Area type="monotone" dataKey="Надходження" stroke="#14b8a6" strokeWidth={2.5} fill="url(#gradIncome)" dot={false} activeDot={{ r: 4 }} />

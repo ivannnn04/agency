@@ -5,6 +5,15 @@ import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
 import { Plus, CheckCircle, AlertCircle, Clock, X, FolderOpen } from 'lucide-react'
 
+function toAccountAmount(txAmt: number, txCurrency: string, accCurrency: string, rates: { USD: number; EUR: number }): number {
+  if (txCurrency === accCurrency) return txAmt
+  const inUAH = txCurrency === 'UAH' ? txAmt : txCurrency === 'USD' ? txAmt * rates.USD : txAmt * rates.EUR
+  if (accCurrency === 'UAH') return inUAH
+  if (accCurrency === 'USD') return rates.USD > 0 ? inUAH / rates.USD : txAmt
+  if (accCurrency === 'EUR') return rates.EUR > 0 ? inUAH / rates.EUR : txAmt
+  return txAmt
+}
+
 interface Account { id: string; name: string; currency: string }
 interface Project  { id: string; name: string; status: string }
 
@@ -350,14 +359,20 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
 }) {
   const sym = SYM[p.contract_currency]
   const maxNative = p.remaining_native
+  const { rates, loading: ratesLoading } = useRates()
 
-  const [amount, setAmount]     = useState(maxNative.toFixed(2))
-  const [fee, setFee]           = useState('')
+  const [amount, setAmount]       = useState(maxNative.toFixed(2))
+  const [fee, setFee]             = useState('')
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [error, setError]       = useState('')
-  const [saving, setSaving]     = useState(false)
+  const [error, setError]         = useState('')
+  const [saving, setSaving]       = useState(false)
 
-  const netAmount = Number(amount) - (Number(fee) || 0)
+  const selAccount   = accounts.find(a => a.id === accountId)
+  const accCurrency  = selAccount?.currency ?? p.contract_currency
+  const needsConv    = p.contract_currency !== accCurrency
+  const netTxAmt     = Number(amount) - (Number(fee) || 0)
+  const netAccAmt    = toAccountAmount(netTxAmt, p.contract_currency, accCurrency, rates)
+  const feeAccAmt    = toAccountAmount(Number(fee) || 0, p.contract_currency, accCurrency, rates)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -369,6 +384,7 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
     if (!accountId) { setError('Оберіть рахунок'); return }
     setSaving(true)
 
+    // Save transaction in original project currency
     const { error: txErr } = await supabase.from('transactions').insert({
       type: 'income',
       amount: amt,
@@ -395,7 +411,11 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
       if (feeErr) { setError(feeErr.message); setSaving(false); return }
     }
 
-    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: amt - feeAmt })
+    // Update account balance converted to the account's native currency
+    await supabase.rpc('update_account_balance', {
+      p_account_id: accountId,
+      p_delta: Math.round(netAccAmt * 100) / 100,
+    })
     onSuccess()
   }
 
@@ -446,13 +466,31 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
                 placeholder="0.00"
                 value={fee} onChange={e => setFee(e.target.value)} />
             </div>
-            {(Number(fee) || 0) > 0 && (
-              <div className="mt-1.5 flex items-center justify-between text-xs bg-orange-50 border border-orange-100 rounded-lg px-3 py-1.5">
-                <span className="text-orange-700">На рахунок надійде (нетто):</span>
-                <span className="font-semibold text-orange-800">{sym}{netAmount.toFixed(2)}</span>
-              </div>
-            )}
           </div>
+
+          {/* Conversion preview when account currency ≠ payment currency */}
+          {needsConv && Number(amount) > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex flex-col gap-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-amber-700">Сума від клієнта:</span>
+                <span className="font-semibold text-amber-900">{sym}{Number(amount).toFixed(2)} {p.contract_currency}</span>
+              </div>
+              {(Number(fee) || 0) > 0 && (
+                <div className="flex justify-between text-amber-600">
+                  <span>Комісія:</span>
+                  <span>− {sym}{(Number(fee) || 0).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-amber-200 pt-1.5">
+                <span className="text-amber-700 font-medium">На рахунок ({accCurrency}):</span>
+                <span className="font-bold text-amber-900">
+                  {SYM[accCurrency] ?? accCurrency}{ratesLoading ? '...' : Math.round(netAccAmt).toLocaleString('uk-UA')}
+                </span>
+              </div>
+              {ratesLoading && <p className="text-amber-600 text-[11px]">Завантаження курсу НБУ...</p>}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Зарахувати на рахунок</label>
             <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
@@ -471,9 +509,9 @@ function ReceiveProjectModal({ project: p, accounts, onClose, onSuccess }: {
               className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
               Скасувати
             </button>
-            <button type="submit" disabled={saving}
+            <button type="submit" disabled={saving || (ratesLoading && needsConv)}
               className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
-              {saving ? 'Збереження...' : 'Зарахувати'}
+              {ratesLoading && needsConv ? 'Завантаження курсів...' : saving ? 'Збереження...' : 'Зарахувати'}
             </button>
           </div>
         </form>
@@ -490,14 +528,20 @@ function ReceiveInvoiceModal({ invoice: inv, accounts, onClose, onSuccess }: {
   onClose: () => void
   onSuccess: () => void
 }) {
-  const paidSoFar  = inv.paid_amount ?? 0
-  const remaining  = inv.amount - paidSoFar
-  const sym        = SYM[inv.currency]
+  const paidSoFar = inv.paid_amount ?? 0
+  const remaining = inv.amount - paidSoFar
+  const sym       = SYM[inv.currency]
+  const { rates, loading: ratesLoading } = useRates()
 
-  const [amount, setAmount]     = useState(String(remaining))
+  const [amount, setAmount]       = useState(String(remaining))
   const [accountId, setAccountId] = useState(inv.account_id ?? accounts[0]?.id ?? '')
-  const [error, setError]       = useState('')
-  const [saving, setSaving]     = useState(false)
+  const [error, setError]         = useState('')
+  const [saving, setSaving]       = useState(false)
+
+  const selAccount  = accounts.find(a => a.id === accountId)
+  const accCurrency = selAccount?.currency ?? inv.currency
+  const needsConv   = inv.currency !== accCurrency
+  const accAmt      = toAccountAmount(Number(amount) || 0, inv.currency, accCurrency, rates)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -518,7 +562,11 @@ function ReceiveInvoiceModal({ invoice: inv, accounts, onClose, onSuccess }: {
     })
     if (txErr) { setError(txErr.message); setSaving(false); return }
 
-    await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: amt })
+    // Update balance in account's native currency
+    await supabase.rpc('update_account_balance', {
+      p_account_id: accountId,
+      p_delta: Math.round(accAmt * 100) / 100,
+    })
     await supabase.from('invoices').update({
       paid_amount: newPaid,
       ...(isFull ? { status: 'paid', paid_at: new Date().toISOString() } : {}),
@@ -557,15 +605,23 @@ function ReceiveInvoiceModal({ invoice: inv, accounts, onClose, onSuccess }: {
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
             </select>
           </div>
+          {needsConv && Number(amount) > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex justify-between text-xs">
+              <span className="text-amber-700">На рахунок ({accCurrency}):</span>
+              <span className="font-bold text-amber-900">
+                {SYM[accCurrency] ?? accCurrency}{ratesLoading ? '...' : Math.round(accAmt).toLocaleString('uk-UA')}
+              </span>
+            </div>
+          )}
           {error && <p className="text-red-500 text-xs">{error}</p>}
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
               Скасувати
             </button>
-            <button type="submit" disabled={saving}
+            <button type="submit" disabled={saving || (ratesLoading && needsConv)}
               className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
-              {saving ? 'Збереження...' : 'Зарахувати'}
+              {ratesLoading && needsConv ? 'Завантаження курсів...' : saving ? 'Збереження...' : 'Зарахувати'}
             </button>
           </div>
         </form>

@@ -382,7 +382,7 @@ export default function Sidebar() {
                       isActive ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <Circle size={8} fill={p.color} color={p.color} className="flex-shrink-0" />
+                    <Circle size={8} fill={p.color ?? '#14b8a6'} color={p.color ?? '#14b8a6'} className="flex-shrink-0" />
                     <span className="truncate">{p.name}</span>
                   </button>
                 )

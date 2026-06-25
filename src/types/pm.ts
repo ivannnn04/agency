@@ -80,6 +80,15 @@ export interface PMTaskAttachment {
   created_at: string;
 }
 
+export interface PMColumn {
+  id: string;
+  project_id: string;
+  name: string;
+  color: string;
+  position: number;
+  created_at: string;
+}
+
 export interface PMMessage {
   id: string;
   project_id: string;

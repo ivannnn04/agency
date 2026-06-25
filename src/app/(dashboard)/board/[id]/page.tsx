@@ -233,7 +233,7 @@ function KanbanColumn({
   onDeleteColumn: () => void
   openMenu: string | null
   onOpenMenu: (id: string | null) => void
-  menuRef: React.RefObject<HTMLDivElement>
+  menuRef: React.RefObject<HTMLDivElement | null>
 }) {
   return (
     <div className="flex-shrink-0 w-[280px] flex flex-col">
@@ -380,7 +380,7 @@ function TaskCard({
   onSelect: () => void
   onMove: (colId: string) => void
   onDelete: () => void
-  menuRef?: React.RefObject<HTMLDivElement>
+  menuRef?: React.RefObject<HTMLDivElement | null>
 }) {
   const isOverdue = task.due_date && new Date(task.due_date) < new Date()
 

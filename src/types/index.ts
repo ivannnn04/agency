@@ -26,6 +26,7 @@ export interface Project {
   id: string
   name: string
   status: 'active' | 'inactive' | 'archived'
+  color?: string | null
   contract_amount?: number | null
   contract_currency?: string
   received_before_app?: number | null

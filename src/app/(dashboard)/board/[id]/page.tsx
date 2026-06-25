@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { PMProject, PMColumn, PMTask } from '@/types/pm'
+import { Project } from '@/types'
+import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare,
@@ -28,7 +29,7 @@ function priorityColor(p: string | null) {
 
 export default function BoardPage() {
   const { id } = useParams<{ id: string }>()
-  const [project, setProject]   = useState<PMProject | null>(null)
+  const [project, setProject]   = useState<Project | null>(null)
   const [columns, setColumns]   = useState<PMColumn[]>([])
   const [tasks, setTasks]       = useState<PMTask[]>([])
   const [loading, setLoading]   = useState(true)
@@ -53,7 +54,7 @@ export default function BoardPage() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: proj }, { data: cols }, { data: tx }] = await Promise.all([
-      supabase.from('pm_projects').select('*').eq('id', id).single(),
+      supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('project_id', id).order('created_at'),
     ])

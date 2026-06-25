@@ -3,21 +3,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Project } from '@/types'
-import { Plus, Trash2, FolderOpen, Archive, X, Edit2, FolderKanban, Clock } from 'lucide-react'
+import { Plus, Trash2, FolderOpen, Archive, X, Edit2, LayoutDashboard } from 'lucide-react'
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
-interface PMSummary {
-  finance_project_id: string
-  pm_project_id: string
-  pm_project_name: string
-  pm_status: string
-  total_hours: number
-}
-
 export default function ProjectsPage() {
   const [projects, setProjects]   = useState<Project[]>([])
-  const [pmSummary, setPmSummary] = useState<PMSummary[]>([])
   const [loading, setLoading]     = useState(true)
   const [addOpen, setAddOpen]     = useState(false)
   const [editProject, setEditProject] = useState<Project | null>(null)
@@ -30,15 +21,7 @@ export default function ProjectsPage() {
     const { data, error: err } = await supabase
       .from('projects').select('*').order('created_at', { ascending: false })
     if (err) setError(err.message)
-    else if (data) {
-      setProjects(data)
-      // Fetch PM summary for all projects
-      if (data.length > 0) {
-        const ids = data.map((p: Project) => p.id)
-        const { data: pm } = await supabase.rpc('get_pm_project_summary', { p_finance_project_ids: ids })
-        if (pm) setPmSummary(pm)
-      }
-    }
+    else if (data) setProjects(data)
     setLoading(false)
   }
 
@@ -102,7 +85,6 @@ export default function ProjectsPage() {
               <ProjectRow
                 key={p.id}
                 project={p}
-                pmInfo={pmSummary.find(s => s.finance_project_id === p.id)}
                 onEdit={() => setEditProject(p)}
                 onToggleStatus={() => toggleStatus(p)}
                 onArchive={() => archiveProject(p)}
@@ -141,9 +123,8 @@ export default function ProjectsPage() {
 
 // ── Project row ────────────────────────────────────────────────────────────────
 
-function ProjectRow({ project: p, pmInfo, onEdit, onToggleStatus, onArchive, onDelete }: {
+function ProjectRow({ project: p, onEdit, onToggleStatus, onArchive, onDelete }: {
   project: Project
-  pmInfo?: PMSummary
   onEdit: () => void
   onToggleStatus: () => void
   onArchive: () => void
@@ -181,21 +162,14 @@ function ProjectRow({ project: p, pmInfo, onEdit, onToggleStatus, onArchive, onD
         >
           {p.status === 'active' ? 'Активний' : 'Неактивний'}
         </button>
-        {pmInfo && (
-          <a href={`/pm/projects/${pmInfo.pm_project_id}`}
-            className="flex items-center gap-1 text-xs bg-[#534AB7]/10 text-[#8B7FD4] border border-[#534AB7]/20 px-2 py-0.5 rounded-full hover:bg-[#534AB7]/20 transition-colors flex-shrink-0"
-            title="Open in PM"
-          >
-            <FolderKanban size={10} />
-            PM
-            {(pmInfo.total_hours ?? 0) > 0 && (
-              <span className="flex items-center gap-0.5 ml-1 text-zinc-400">
-                <Clock size={9} />
-                {Number(pmInfo.total_hours).toFixed(1)}h
-              </span>
-            )}
-          </a>
-        )}
+        <a
+          href={`/board/${p.id}`}
+          className="flex items-center gap-1 text-xs bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full hover:bg-teal-50 hover:text-teal-600 hover:border-teal-200 transition-colors flex-shrink-0"
+          title="Відкрити борду"
+        >
+          <LayoutDashboard size={10} />
+          Борда
+        </a>
       </div>
 
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -283,6 +257,7 @@ function ProjectModal({ project, onClose, onSuccess }: {
     if (!name.trim()) { setError('Введіть назву проекту'); return }
     setSaving(true)
 
+    const palette = ['#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#10b981']
     const payload = {
       name: name.trim(),
       contract_amount: contractAmount ? Number(contractAmount) : null,
@@ -292,7 +267,11 @@ function ProjectModal({ project, onClose, onSuccess }: {
 
     const { error: err } = isEdit
       ? await supabase.from('projects').update(payload).eq('id', project!.id)
-      : await supabase.from('projects').insert({ ...payload, status: 'active' })
+      : await supabase.from('projects').insert({
+          ...payload,
+          status: 'active',
+          color: palette[Math.floor(Math.random() * palette.length)],
+        })
 
     setSaving(false)
     if (err) { setError(err.message); return }

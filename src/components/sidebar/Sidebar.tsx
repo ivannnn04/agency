@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
-import { Account } from '@/types'
-import { PMProject } from '@/types/pm'
+import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
@@ -41,7 +40,7 @@ export default function Sidebar() {
     isPMPath(pathname) ? 'projects' : 'finance'
   )
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [pmProjects, setPmProjects] = useState<PMProject[]>([])
+  const [pmProjects, setPmProjects] = useState<Project[]>([])
   const [newPmName, setNewPmName] = useState('')
   const [addingPm, setAddingPm]   = useState(false)
   const [plannedIncome, setPlannedIncome]   = useState(0)
@@ -70,8 +69,9 @@ export default function Sidebar() {
 
   async function fetchPmProjects() {
     const { data } = await supabase
-      .from('pm_projects')
+      .from('projects')
       .select('*')
+      .neq('status', 'archived')
       .order('created_at', { ascending: true })
     if (data) setPmProjects(data)
   }
@@ -79,11 +79,11 @@ export default function Sidebar() {
   async function createPmProject() {
     const name = newPmName.trim()
     if (!name) return
-    const colors = ['#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#10b981']
-    const color = colors[pmProjects.length % colors.length]
+    const palette = ['#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#10b981']
+    const color = palette[pmProjects.length % palette.length]
     const { data } = await supabase
-      .from('pm_projects')
-      .insert({ name, color, status: 'active', description: null, owner_id: 'admin' })
+      .from('projects')
+      .insert({ name, status: 'active', color })
       .select()
       .single()
     setNewPmName('')

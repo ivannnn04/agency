@@ -38,7 +38,8 @@ export interface PMProjectMember {
 
 export interface PMTask {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  finance_project_id: string | null;
   column_id: string | null;
   title: string;
   description: string | null;
@@ -46,7 +47,7 @@ export interface PMTask {
   priority: PMTaskPriority;
   assignee_id: string | null;
   due_date: string | null;
-  created_by: string;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
   assignee?: PMProfile;

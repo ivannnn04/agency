@@ -62,7 +62,7 @@ export default function BoardPage() {
     const [{ data: proj }, { data: cols, error: colErr }, { data: tx }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
-      supabase.from('pm_tasks').select('*').eq('project_id', id).order('created_at'),
+      supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
     ])
     if (proj) setProject(proj)
 
@@ -90,10 +90,10 @@ export default function BoardPage() {
   }
 
   async function addTask(columnId: string, patch: Partial<PMTask> & { title: string }) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('pm_tasks')
       .insert({
-        project_id: id,
+        finance_project_id: id,
         column_id: columnId,
         title: patch.title,
         status: 'todo',
@@ -101,12 +101,15 @@ export default function BoardPage() {
         assignee_id: patch.assignee_id ?? null,
         due_date: patch.due_date ?? null,
         description: null,
-        created_by: 'admin',
       })
       .select()
       .single()
     setAddingInColumn(null)
-    if (data) setTasks(prev => [...prev, data])
+    if (error) {
+      setDbError(`Помилка збереження задачі: ${error.message}`)
+    } else if (data) {
+      setTasks(prev => [...prev, data])
+    }
   }
 
   async function moveTask(taskId: string, toColumnId: string) {

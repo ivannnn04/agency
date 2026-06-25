@@ -39,6 +39,7 @@ export interface PMProjectMember {
 export interface PMTask {
   id: string;
   project_id: string;
+  column_id: string | null;
   title: string;
   description: string | null;
   status: PMTaskStatus;

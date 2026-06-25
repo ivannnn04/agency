@@ -11,10 +11,14 @@ import {
 } from 'lucide-react'
 
 const DEFAULT_COLUMNS = [
-  { name: 'TO DO',       color: '#F59E0B', position: 0 },
-  { name: 'IN PROGRESS', color: '#3B82F6', position: 1 },
-  { name: 'REVIEW',      color: '#8B5CF6', position: 2 },
-  { name: 'DONE',        color: '#10B981', position: 3 },
+  { name: 'TO DO',                 color: '#F59E0B', position: 0 },
+  { name: 'IN PROGRESS',           color: '#6B7280', position: 1 },
+  { name: 'INTERNAL REVIEW',       color: '#F97316', position: 2 },
+  { name: 'READY FOR REPORT',      color: '#8B5CF6', position: 3 },
+  { name: 'WAITING FOR FEEDBACK',  color: '#EF4444', position: 4 },
+  { name: 'READY FOR DEVELOPMENT', color: '#10B981', position: 5 },
+  { name: 'BLOCKED',               color: '#EC4899', position: 6 },
+  { name: 'TO BE INVOICED',        color: '#6366F1', position: 7 },
 ]
 
 const PRIORITY_OPTIONS = [
@@ -33,6 +37,7 @@ export default function BoardPage() {
   const [columns, setColumns]   = useState<PMColumn[]>([])
   const [tasks, setTasks]       = useState<PMTask[]>([])
   const [loading, setLoading]   = useState(true)
+  const [dbError, setDbError]   = useState<string | null>(null)
   const [selectedTask, setSelectedTask] = useState<PMTask | null>(null)
   const [addingInColumn, setAddingInColumn] = useState<string | null>(null)
   const [addingColumn, setAddingColumn]     = useState(false)
@@ -53,20 +58,32 @@ export default function BoardPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: proj }, { data: cols }, { data: tx }] = await Promise.all([
+    setDbError(null)
+    const [{ data: proj }, { data: cols, error: colErr }, { data: tx }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('project_id', id).order('created_at'),
     ])
     if (proj) setProject(proj)
+
+    if (colErr) {
+      setDbError('Таблиця pm_columns не знайдена. Запусти SQL міграцію в Supabase.')
+      setLoading(false)
+      return
+    }
+
     if (cols && cols.length > 0) {
       setColumns(cols)
     } else {
-      const { data: seeded } = await supabase
+      const { data: seeded, error: seedErr } = await supabase
         .from('pm_columns')
         .insert(DEFAULT_COLUMNS.map(c => ({ ...c, project_id: id })))
         .select()
-      if (seeded) setColumns(seeded)
+      if (seedErr) {
+        setDbError(`Помилка створення колонок: ${seedErr.message}`)
+      } else if (seeded) {
+        setColumns(seeded)
+      }
     }
     if (tx) setTasks(tx)
     setLoading(false)
@@ -132,6 +149,37 @@ export default function BoardPage() {
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Завантаження...</div>
+  )
+
+  if (dbError) return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="max-w-md text-center">
+        <p className="text-red-500 font-medium mb-2">Потрібна міграція бази даних</p>
+        <p className="text-sm text-gray-500 mb-4">{dbError}</p>
+        <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-4 text-left overflow-auto whitespace-pre-wrap">
+{`alter table projects add column if not exists color text default '#14b8a6';
+
+drop table if exists pm_columns cascade;
+create table pm_columns (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  name text not null,
+  color text not null default '#6B7280',
+  position int not null default 0,
+  created_at timestamptz default now()
+);
+alter table pm_columns enable row level security;
+create policy "pm_columns_all" on pm_columns for all using (true) with check (true);
+
+alter table pm_tasks add column if not exists column_id uuid references pm_columns(id) on delete set null;
+alter table pm_tasks drop constraint if exists pm_tasks_project_id_fkey;
+alter table pm_tasks add constraint pm_tasks_project_id_fkey foreign key (project_id) references projects(id) on delete cascade;
+alter table pm_tasks alter column created_by drop not null;
+alter table pm_tasks enable row level security;
+create policy "pm_tasks_all" on pm_tasks for all using (true) with check (true);`}
+        </pre>
+      </div>
+    </div>
   )
 
   return (

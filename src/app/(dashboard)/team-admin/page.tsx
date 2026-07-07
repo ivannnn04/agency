@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { Plus, Trash2, Copy, Check, Link, Users } from 'lucide-react'
+import { Plus, Trash2, Users, Eye, EyeOff } from 'lucide-react'
 
 const COLOR_PALETTE = [
   '#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444',
@@ -15,13 +15,14 @@ export default function TeamAdminPage() {
   const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving]     = useState(false)
-  const [copied, setCopied]     = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
 
-  const [name, setName]   = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole]   = useState('designer')
-  const [color, setColor] = useState(COLOR_PALETTE[0])
+  const [name, setName]           = useState('')
+  const [email, setEmail]         = useState('')
+  const [password, setPassword]   = useState('')
+  const [showPwd, setShowPwd]     = useState(false)
+  const [role, setRole]           = useState('designer')
+  const [color, setColor]         = useState(COLOR_PALETTE[0])
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -34,40 +35,44 @@ export default function TeamAdminPage() {
   }
 
   async function addMember() {
-    if (!name.trim()) return
+    if (!name.trim() || !email.trim() || !password) return
     setSaving(true)
     setError(null)
-    const { error: err } = await supabase.from('team_members').insert({
-      name: name.trim(),
-      email: email.trim() || null,
-      role,
-      color,
+
+    const res = await fetch('/api/team/create-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role, color }),
     })
+    const json = await res.json()
+
     setSaving(false)
-    if (err) { setError(err.message); return }
-    setName(''); setEmail(''); setRole('designer'); setColor(COLOR_PALETTE[0])
+    if (!res.ok) { setError(json.error); return }
+
+    setName(''); setEmail(''); setPassword(''); setRole('designer'); setColor(COLOR_PALETTE[0])
     setShowForm(false)
     fetchMembers()
   }
 
   async function deleteMember(id: string) {
-    await supabase.from('team_members').delete().eq('id', id)
+    await fetch('/api/team/delete-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
     setMembers(prev => prev.filter(m => m.id !== id))
   }
 
-  function copyLink(token: string) {
-    const url = `${window.location.origin}/team/${token}`
-    navigator.clipboard.writeText(url)
-    setCopied(token)
-    setTimeout(() => setCopied(null), 2000)
-  }
+  const loginUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/team/login`
+    : '/team/login'
 
   return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Команда</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Управляйте дизайнерами та учасниками команди</p>
+          <p className="text-sm text-gray-500 mt-0.5">Дизайнери та учасники команди</p>
         </div>
         <button
           onClick={() => setShowForm(true)}
@@ -88,18 +93,17 @@ export default function TeamAdminPage() {
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Новий учасник</h2>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Ім'я *</label>
+              <label className="text-xs text-gray-500 mb-1 block">Імʼя *</label>
               <input
                 autoFocus
                 value={name}
                 onChange={e => setName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addMember(); if (e.key === 'Escape') setShowForm(false) }}
-                placeholder="Ім'я Прізвище"
+                placeholder="Імʼя Прізвище"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Email</label>
+              <label className="text-xs text-gray-500 mb-1 block">Email *</label>
               <input
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -109,7 +113,27 @@ export default function TeamAdminPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-4">
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Пароль *</label>
+              <div className="relative">
+                <input
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Мінімум 6 символів"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Роль</label>
               <select
@@ -124,30 +148,32 @@ export default function TeamAdminPage() {
                 <option value="other">Інше</option>
               </select>
             </div>
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Колір</label>
-              <div className="flex items-center gap-2 mt-1">
-                {COLOR_PALETTE.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    className={`w-6 h-6 rounded-full transition-transform ${color === c ? 'ring-2 ring-offset-1 ring-gray-700 scale-110' : 'hover:scale-110'}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="text-xs text-gray-500 mb-1 block">Колір</label>
+            <div className="flex items-center gap-2 mt-1">
+              {COLOR_PALETTE.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  className={`w-6 h-6 rounded-full transition-transform ${color === c ? 'ring-2 ring-offset-1 ring-gray-700 scale-110' : 'hover:scale-110'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
             </div>
           </div>
+
           <div className="flex gap-2">
             <button
               onClick={addMember}
-              disabled={saving || !name.trim()}
+              disabled={saving || !name.trim() || !email.trim() || !password}
               className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-700 transition-colors"
             >
               {saving ? 'Збереження...' : 'Додати'}
             </button>
             <button
-              onClick={() => { setShowForm(false); setName(''); setEmail('') }}
+              onClick={() => { setShowForm(false); setName(''); setEmail(''); setPassword('') }}
               className="text-gray-400 hover:text-gray-600 text-sm px-3"
             >
               Скасувати
@@ -179,24 +205,14 @@ export default function TeamAdminPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900">{m.name}</p>
-                  <p className="text-xs text-gray-400">{m.email || m.role}</p>
+                  <p className="text-xs text-gray-400">{m.email ?? m.role}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Copy link button */}
-                <button
-                  onClick={() => copyLink(m.access_token)}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 px-3 py-1.5 border border-gray-200 rounded-lg transition-colors hover:border-gray-400"
-                  title="Скопіювати посилання для входу"
-                >
-                  {copied === m.access_token ? (
-                    <><Check size={12} className="text-teal-500" /> Скопійовано</>
-                  ) : (
-                    <><Link size={12} /> Посилання</>
-                  )}
-                </button>
-
+                <span className="text-xs text-gray-400 px-2 py-1 border border-gray-100 rounded-lg">
+                  {m.role}
+                </span>
                 <button
                   onClick={() => deleteMember(m.id)}
                   className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all p-1.5 rounded"
@@ -209,20 +225,16 @@ export default function TeamAdminPage() {
         </div>
       )}
 
-      {/* Info box */}
-      {members.length > 0 && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-          <div className="flex items-start gap-2.5">
-            <Link size={15} className="text-blue-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-blue-800">Як учасники входять в систему</p>
-              <p className="text-xs text-blue-600 mt-1">
-                Скопіюйте унікальне посилання кожного учасника і відправте їм. Вони отримають доступ до своїх задач без потреби реєструватися.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Login info box */}
+      <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+        <p className="text-sm font-medium text-blue-800 mb-1">Як увійти в систему</p>
+        <p className="text-xs text-blue-600 mb-2">
+          Надішліть учаснику цей лінк та пароль, який ви встановили під час створення акаунту.
+        </p>
+        <code className="text-xs bg-white border border-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg block break-all">
+          {loginUrl}
+        </code>
+      </div>
     </div>
   )
 }

@@ -10,8 +10,9 @@ export default function BoardIndexPage() {
 
   useEffect(() => {
     supabase
-      .from('pm_projects')
+      .from('projects')
       .select('id')
+      .neq('status', 'archived')
       .order('created_at', { ascending: true })
       .limit(1)
       .single()

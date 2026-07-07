@@ -1,3 +1,13 @@
+export interface TeamMember {
+  id: string
+  name: string
+  email?: string | null
+  role: string
+  color: string
+  access_token: string
+  created_at: string
+}
+
 export type Currency = 'UAH' | 'USD' | 'EUR'
 export type AccountType = 'bank' | 'cash' | 'card' | 'safe'
 export type TransactionType = 'income' | 'expense' | 'transfer'
@@ -25,7 +35,12 @@ export interface Category {
 export interface Project {
   id: string
   name: string
-  status: 'active' | 'inactive'
+  status: 'active' | 'inactive' | 'archived'
+  color?: string | null
+  contract_amount?: number | null
+  contract_currency?: string
+  received_before_app?: number | null
+  archived_at?: string | null
   created_at: string
 }
 

@@ -1,17 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
-import { signOut, useSession } from 'next-auth/react'
+import { signOut } from 'next-auth/react'
 import Sidebar from '@/components/sidebar/Sidebar'
 import AddTransactionModal from '@/components/modals/AddTransactionModal'
 import { Settings, Clock, Plus, Minus, ArrowLeftRight } from 'lucide-react'
 import { TransactionType } from '@/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession()
-  const router = useRouter()
-  const pathname = usePathname()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalType, setModalType] = useState<TransactionType>('income')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -21,33 +17,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setModalOpen(true)
   }
 
-  const tabs = [
-    { label: 'Платежі', href: '/' },
-    { label: 'Аналітика', href: '/analytics' },
-    { label: 'Проекти', href: '/projects' },
-    { label: 'Дебіторка', href: '/receivables' },
-    { label: 'Ліди', href: '/leads' },
-    { label: 'Зарплата команді', href: '/payroll' },
-    { label: 'To-Do', href: '/todo' },
-  ]
-
   return (
     <div className="flex h-screen bg-[#f5f5f5] overflow-hidden">
       <Sidebar key={refreshKey} />
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="bg-[#0f1117] px-6 py-3 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">F</span>
-            </div>
-            <div>
-              <p className="text-white font-semibold text-sm leading-tight">Моя компанія</p>
-              <p className="text-gray-500 text-xs">фінансовий трекер</p>
-            </div>
-          </div>
-
+        <header className="bg-[#0f1117] px-6 py-3 flex items-center justify-between border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-2">
             <button
               onClick={() => openModal('income')}
@@ -78,23 +54,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
         </header>
-
-        {/* Tabs */}
-        <nav className="bg-white border-b border-gray-200 px-6 flex items-center gap-1">
-          {tabs.map(tab => (
-            <button
-              key={tab.href}
-              onClick={() => router.push(tab.href)}
-              className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                pathname === tab.href || (tab.href !== '/' && pathname.startsWith(tab.href))
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto bg-white">

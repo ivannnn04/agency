@@ -47,6 +47,7 @@ export interface PMTask {
   priority: PMTaskPriority;
   assignee_id: string | null;
   team_member_id: string | null;
+  start_date: string | null;
   due_date: string | null;
   created_by: string | null;
   created_at: string;

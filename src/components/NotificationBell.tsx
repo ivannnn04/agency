@@ -10,6 +10,7 @@ interface Notification {
   type: string
   read: boolean
   created_at: string
+  recipient_team_member_id?: string | null
 }
 
 export default function NotificationBell() {
@@ -23,7 +24,10 @@ export default function NotificationBell() {
     const channel = supabase
       .channel('notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
-        setNotifications(prev => [payload.new as Notification, ...prev])
+        const n = payload.new as Notification
+        // Personal designer notifications are shown in their own bell, not here
+        if (n.recipient_team_member_id) return
+        setNotifications(prev => [n, ...prev])
       })
       .subscribe()
 
@@ -42,6 +46,7 @@ export default function NotificationBell() {
     const { data } = await supabase
       .from('notifications')
       .select('*')
+      .is('recipient_team_member_id', null)
       .order('created_at', { ascending: false })
       .limit(30)
     if (data) setNotifications(data)

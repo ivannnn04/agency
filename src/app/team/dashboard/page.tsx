@@ -96,11 +96,25 @@ export default function TeamDashboardPage() {
       }))
     )
 
-    // Fetch my assigned tasks with column info
+    // Fetch my assigned task ids from the assignees join table (source of truth)
+    const { data: myAssignments } = await supabase
+      .from('task_assignees')
+      .select('task_id')
+      .eq('team_member_id', mem.id)
+
+    const myTaskIds = [...new Set((myAssignments ?? []).map((r: { task_id: string }) => r.task_id))]
+
+    if (myTaskIds.length === 0) {
+      setMyTasks([])
+      setLoading(false)
+      return
+    }
+
+    // Fetch those tasks with column info
     const { data: myTaskRows } = await supabase
       .from('pm_tasks')
       .select('id, title, status, priority, due_date, column_id, finance_project_id')
-      .eq('team_member_id', mem.id)
+      .in('id', myTaskIds)
       .order('created_at', { ascending: false })
 
     if (!myTaskRows || myTaskRows.length === 0) {

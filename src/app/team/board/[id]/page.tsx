@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { fetchAssigneesByTask } from '@/lib/assignees'
 import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
@@ -58,6 +59,8 @@ export default function TeamBoardPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [columns, setColumns] = useState<PMColumn[]>([])
   const [tasks, setTasks] = useState<PMTask[]>([])
+  const [assigneesByTask, setAssigneesByTask] = useState<Record<string, string[]>>({})
+  const [allMembers, setAllMembers] = useState<Pick<TeamMember, 'id' | 'name' | 'color'>[]>([])
   const [timeByTask, setTimeByTask] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'board' | 'gantt'>('board')
@@ -95,16 +98,19 @@ export default function TeamBoardPage() {
     if (!mem) { router.replace('/team/login'); return }
     setMember(mem)
 
-    const [{ data: proj }, { data: cols }, { data: tx }] = await Promise.all([
+    const [{ data: proj }, { data: cols }, { data: tx }, { data: mems }] = await Promise.all([
       supabase.from('projects').select('id, name, color').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
+      supabase.from('team_members').select('id, name, color'),
     ])
 
     if (proj) setProject(proj)
     if (cols) setColumns(cols)
+    if (mems) setAllMembers(mems)
     if (tx) {
       setTasks(tx)
+      setAssigneesByTask(await fetchAssigneesByTask(tx.map(t => t.id)))
       // Total tracked time per task
       const taskIds = tx.map(t => t.id)
       if (taskIds.length > 0) {
@@ -199,8 +205,45 @@ export default function TeamBoardPage() {
     if (!res.ok) return
 
     setTasks(prev => [...prev, json.task])
+    // Designer creating a task auto-assigns themselves in task_assignees too
+    await supabase.from('task_assignees').insert({ task_id: json.task.id, team_member_id: member.id })
+    setAssigneesByTask(prev => ({ ...prev, [json.task.id]: [member.id] }))
     setNewTaskTitle('')
     setAddingInColumn(null)
+  }
+
+  // Designer can only add/remove THEMSELVES as an assignee
+  async function addSelfAssignee(taskId: string) {
+    if (!member) return
+    const current = assigneesByTask[taskId] ?? []
+    if (current.includes(member.id)) return
+    await supabase.from('task_assignees').insert({ task_id: taskId, team_member_id: member.id })
+    const next = [...current, member.id]
+    setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
+    const primary = next[0] ?? null
+    await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, team_member_id: primary } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, team_member_id: primary } : prev)
+    const task = tasks.find(t => t.id === taskId)
+    await supabase.from('notifications').insert({
+      type: 'task_assigned',
+      message: `Вам призначено задачу «${task?.title ?? ''}» у проєкті «${project?.name ?? ''}»`,
+      project_id: id,
+      task_id: taskId,
+      team_member_id: member.id,
+      recipient_team_member_id: member.id,
+    })
+  }
+
+  async function removeSelfAssignee(taskId: string) {
+    if (!member) return
+    await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('team_member_id', member.id)
+    const next = (assigneesByTask[taskId] ?? []).filter(mid => mid !== member.id)
+    setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
+    const primary = next[0] ?? null
+    await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, team_member_id: primary } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, team_member_id: primary } : prev)
   }
 
   async function moveTask(taskId: string, toColumnId: string) {
@@ -325,7 +368,8 @@ export default function TeamBoardPage() {
                       const otherTaskActive = activeTimer && activeTimer.taskId !== task.id
                       const isOverdue = task.due_date && new Date(task.due_date) < new Date()
                       const tracked = (timeByTask[task.id] ?? 0) + (isThisTaskActive ? elapsed : 0)
-                      const isMine = task.team_member_id === member?.id
+                      const taskAssignees = assigneesByTask[task.id] ?? []
+                      const isMine = !!member && taskAssignees.includes(member.id)
 
                       return (
                         <div
@@ -359,27 +403,12 @@ export default function TeamBoardPage() {
 
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                              {/* Assignee circle */}
-                              {isMine ? (
-                                <div
-                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-                                  style={{ backgroundColor: member?.color ?? '#14b8a6' }}
-                                  title={`Призначено: ${member?.name}`}
-                                >
-                                  {member?.name.charAt(0)}
-                                </div>
-                              ) : task.team_member_id ? (
-                                <div
-                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 bg-gray-400"
-                                  title="Призначено іншому"
-                                >
-                                  <User size={10} />
-                                </div>
-                              ) : (
-                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center" title="Не призначено">
-                                  <User size={10} className="text-gray-400" />
-                                </div>
-                              )}
+                              {/* Assignee avatars */}
+                              <AssigneeStack
+                                memberIds={taskAssignees}
+                                allMembers={allMembers}
+                                currentMemberId={member?.id}
+                              />
 
                               {/* Due date */}
                               {task.due_date && (
@@ -498,6 +527,10 @@ export default function TeamBoardPage() {
             task={selectedTask}
             columns={columns}
             member={member}
+            allMembers={allMembers}
+            assigneeIds={assigneesByTask[selectedTask.id] ?? []}
+            onAddSelf={() => addSelfAssignee(selectedTask.id)}
+            onRemoveSelf={() => removeSelfAssignee(selectedTask.id)}
             trackedSeconds={(timeByTask[selectedTask.id] ?? 0) + (activeTimer?.taskId === selectedTask.id ? elapsed : 0)}
             isTimerActive={activeTimer?.taskId === selectedTask.id}
             otherTimerActive={!!activeTimer && activeTimer.taskId !== selectedTask.id}
@@ -531,15 +564,63 @@ export default function TeamBoardPage() {
   )
 }
 
+// ── Overlapping stack of assignee avatars (highlights current member) ────────────
+
+function AssigneeStack({ memberIds, allMembers, currentMemberId, max = 3 }: {
+  memberIds: string[]
+  allMembers: Pick<TeamMember, 'id' | 'name' | 'color'>[]
+  currentMemberId?: string
+  max?: number
+}) {
+  const assigned = memberIds
+    .map(mid => allMembers.find(m => m.id === mid))
+    .filter((m): m is Pick<TeamMember, 'id' | 'name' | 'color'> => !!m)
+  if (assigned.length === 0) {
+    return (
+      <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center" title="Не призначено">
+        <User size={10} className="text-gray-400" />
+      </div>
+    )
+  }
+  const shown = assigned.slice(0, max)
+  const extra = assigned.length - shown.length
+  return (
+    <div className="flex items-center">
+      {shown.map(m => (
+        <div
+          key={m.id}
+          title={m.id === currentMemberId ? `${m.name} (ви)` : m.name}
+          className={`w-5 h-5 rounded-full ring-2 -ml-1.5 first:ml-0 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 ${
+            m.id === currentMemberId ? 'ring-teal-400' : 'ring-white'
+          }`}
+          style={{ backgroundColor: m.color }}
+        >
+          {m.name.charAt(0)}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div className="w-5 h-5 rounded-full ring-2 ring-white -ml-1.5 bg-gray-400 flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0">
+          +{extra}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Task detail side panel ──────────────────────────────────────────────────────
 
 function TaskPanel({
-  task, columns, member, trackedSeconds, isTimerActive, otherTimerActive, elapsed,
+  task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
+  trackedSeconds, isTimerActive, otherTimerActive, elapsed,
   onStartTimer, onStopTimer, onClose, onUpdate, onMove,
 }: {
   task: PMTask
   columns: PMColumn[]
   member: TeamMember | null
+  allMembers: Pick<TeamMember, 'id' | 'name' | 'color'>[]
+  assigneeIds: string[]
+  onAddSelf: () => void
+  onRemoveSelf: () => void
   trackedSeconds: number
   isTimerActive: boolean
   otherTimerActive: boolean
@@ -550,7 +631,10 @@ function TaskPanel({
   onUpdate: (patch: Partial<PMTask>) => void
   onMove: (colId: string) => void
 }) {
-  const isMine = task.team_member_id === member?.id
+  const isMine = !!member && assigneeIds.includes(member.id)
+  const assignedMembers = assigneeIds
+    .map(mid => allMembers.find(m => m.id === mid))
+    .filter((m): m is Pick<TeamMember, 'id' | 'name' | 'color'> => !!m)
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc] = useState(task.description ?? '')
   const [estimate, setEstimate] = useState(task.estimate_hours != null ? String(task.estimate_hours) : '')
@@ -658,24 +742,38 @@ function TaskPanel({
 
         {/* Fields */}
         <div className="px-5 pb-4 flex flex-col gap-0.5">
-          {/* Assignee */}
-          <div className="flex items-center gap-3 py-2 px-2 -mx-2">
-            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Виконавець</span>
-            {isMine ? (
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
-                  style={{ backgroundColor: member?.color ?? '#14b8a6' }}
-                >
-                  {member?.name.charAt(0)}
-                </div>
-                <span className="text-sm font-medium text-teal-600">{member?.name} (ви)</span>
-              </div>
-            ) : task.team_member_id ? (
-              <span className="text-sm text-gray-500">Інший учасник</span>
-            ) : (
-              <span className="text-sm text-gray-400">Не призначено</span>
-            )}
+          {/* Assignees */}
+          <div className="flex items-start gap-3 py-2 px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0 pt-1">Виконавці</span>
+            <div className="flex-1 flex flex-col gap-1.5">
+              {assignedMembers.length > 0 ? (
+                assignedMembers.map(m => (
+                  <div key={m.id} className="flex items-center gap-2">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0"
+                      style={{ backgroundColor: m.color }}
+                    >
+                      {m.name.charAt(0)}
+                    </div>
+                    <span className={`text-sm ${m.id === member?.id ? 'font-medium text-teal-600' : 'text-gray-600'}`}>
+                      {m.name}{m.id === member?.id ? ' (ви)' : ''}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <span className="text-sm text-gray-400 pt-1">Не призначено</span>
+              )}
+              <button
+                onClick={isMine ? onRemoveSelf : onAddSelf}
+                className={`mt-1 self-start text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  isMine
+                    ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-teal-500 text-white hover:bg-teal-600'
+                }`}
+              >
+                {isMine ? 'Зняти з себе' : 'Взяти задачу'}
+              </button>
+            </div>
           </div>
 
           {/* Status */}

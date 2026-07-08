@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { fetchAssigneesByTask } from '@/lib/assignees'
 import { Project, TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
@@ -36,11 +37,51 @@ function memberInitial(m: TeamMember) {
   return m.name.charAt(0).toUpperCase()
 }
 
+// Overlapping stack of assignee avatars (up to `max`, then "+N")
+function AvatarStack({ memberIds, members, max = 3 }: {
+  memberIds: string[]
+  members: TeamMember[]
+  max?: number
+}) {
+  const assigned = memberIds
+    .map(mid => members.find(m => m.id === mid))
+    .filter((m): m is TeamMember => !!m)
+  if (assigned.length === 0) {
+    return (
+      <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
+        <User size={10} className="text-gray-400" />
+      </div>
+    )
+  }
+  const shown = assigned.slice(0, max)
+  const extra = assigned.length - shown.length
+  return (
+    <div className="flex items-center">
+      {shown.map(m => (
+        <div
+          key={m.id}
+          title={m.name}
+          className="w-6 h-6 rounded-full ring-2 ring-white -ml-1.5 first:ml-0 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+          style={{ backgroundColor: m.color }}
+        >
+          {m.name.charAt(0)}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div className="w-6 h-6 rounded-full ring-2 ring-white -ml-1.5 bg-gray-400 flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0">
+          +{extra}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function BoardPage() {
   const { id } = useParams<{ id: string }>()
   const [project, setProject]         = useState<Project | null>(null)
   const [columns, setColumns]         = useState<PMColumn[]>([])
   const [tasks, setTasks]             = useState<PMTask[]>([])
+  const [assigneesByTask, setAssigneesByTask] = useState<Record<string, string[]>>({})
   const [members, setMembers]         = useState<TeamMember[]>([])
   const [projectMembers, setProjectMembers] = useState<TeamMember[]>([])
   const [memberPanelOpen, setMemberPanelOpen] = useState(false)
@@ -103,11 +144,16 @@ export default function BoardPage() {
         setColumns(seeded)
       }
     }
-    if (tx) setTasks(tx)
+    if (tx) {
+      setTasks(tx)
+      setAssigneesByTask(await fetchAssigneesByTask(tx.map(t => t.id)))
+    }
     setLoading(false)
   }
 
-  async function addTask(columnId: string, patch: Partial<PMTask> & { title: string }) {
+  async function addTask(columnId: string, patch: Partial<PMTask> & { title: string; team_member_ids?: string[] }) {
+    const memberIds = patch.team_member_ids ?? []
+    const primary = memberIds[0] ?? null
     const { data, error } = await supabase
       .from('pm_tasks')
       .insert({
@@ -116,7 +162,7 @@ export default function BoardPage() {
         title: patch.title,
         status: 'todo',
         priority: patch.priority ?? 'medium',
-        team_member_id: patch.team_member_id ?? null,
+        team_member_id: primary,
         due_date: patch.due_date ?? null,
         description: null,
       })
@@ -127,7 +173,54 @@ export default function BoardPage() {
       setDbError(`Помилка збереження задачі: ${error.message}`)
     } else if (data) {
       setTasks(prev => [...prev, data])
+      if (memberIds.length > 0) {
+        await supabase.from('task_assignees').insert(
+          memberIds.map(mid => ({ task_id: data.id, team_member_id: mid }))
+        )
+        setAssigneesByTask(prev => ({ ...prev, [data.id]: memberIds }))
+        for (const mid of memberIds) {
+          await supabase.from('notifications').insert({
+            type: 'task_assigned',
+            message: `Вам призначено задачу «${data.title ?? ''}» у проєкті «${project?.name ?? ''}»`,
+            project_id: id,
+            task_id: data.id,
+            team_member_id: mid,
+            recipient_team_member_id: mid,
+          })
+        }
+      }
     }
+  }
+
+  async function addAssignee(taskId: string, memberId: string) {
+    const current = assigneesByTask[taskId] ?? []
+    if (current.includes(memberId)) return
+    await supabase.from('task_assignees').insert({ task_id: taskId, team_member_id: memberId })
+    const next = [...current, memberId]
+    setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
+    const primary = next[0] ?? null
+    await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, team_member_id: primary } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, team_member_id: primary } : prev)
+    const task = tasks.find(t => t.id === taskId)
+    await supabase.from('notifications').insert({
+      type: 'task_assigned',
+      message: `Вам призначено задачу «${task?.title ?? ''}» у проєкті «${project?.name ?? ''}»`,
+      project_id: id,
+      task_id: taskId,
+      team_member_id: memberId,
+      recipient_team_member_id: memberId,
+    })
+  }
+
+  async function removeAssignee(taskId: string, memberId: string) {
+    await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('team_member_id', memberId)
+    const next = (assigneesByTask[taskId] ?? []).filter(mid => mid !== memberId)
+    setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
+    const primary = next[0] ?? null
+    await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, team_member_id: primary } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, team_member_id: primary } : prev)
   }
 
   async function moveTask(taskId: string, toColumnId: string) {
@@ -139,6 +232,7 @@ export default function BoardPage() {
   async function deleteTask(taskId: string) {
     await supabase.from('pm_tasks').delete().eq('id', taskId)
     setTasks(prev => prev.filter(t => t.id !== taskId))
+    setAssigneesByTask(prev => { const next = { ...prev }; delete next[taskId]; return next })
     if (selectedTask?.id === taskId) setSelectedTask(null)
     setOpenMenu(null)
   }
@@ -344,6 +438,7 @@ create policy "team_members_all" on team_members for all using (true) with check
                   tasks={colTasks}
                   columns={columns}
                   members={members}
+                  assigneesByTask={assigneesByTask}
                   isAdding={addingInColumn === col.id}
                   onStartAdd={() => setAddingInColumn(col.id)}
                   onCancelAdd={() => setAddingInColumn(null)}
@@ -403,6 +498,9 @@ create policy "team_members_all" on team_members for all using (true) with check
           task={selectedTask}
           columns={columns}
           members={members}
+          assigneeIds={assigneesByTask[selectedTask.id] ?? []}
+          onAddAssignee={memberId => addAssignee(selectedTask.id, memberId)}
+          onRemoveAssignee={memberId => removeAssignee(selectedTask.id, memberId)}
           onClose={() => setSelectedTask(null)}
           onUpdate={patch => updateTask(selectedTask.id, patch)}
           onDelete={() => deleteTask(selectedTask.id)}
@@ -416,7 +514,7 @@ create policy "team_members_all" on team_members for all using (true) with check
 // ── Kanban column ──────────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  col, tasks, columns, members, isAdding, onStartAdd, onCancelAdd, onAddTask,
+  col, tasks, columns, members, assigneesByTask, isAdding, onStartAdd, onCancelAdd, onAddTask,
   onSelectTask, onMoveTask, onDeleteTask, onDeleteColumn,
   openMenu, onOpenMenu, menuRef,
 }: {
@@ -424,10 +522,11 @@ function KanbanColumn({
   tasks: PMTask[]
   columns: PMColumn[]
   members: TeamMember[]
+  assigneesByTask: Record<string, string[]>
   isAdding: boolean
   onStartAdd: () => void
   onCancelAdd: () => void
-  onAddTask: (patch: Partial<PMTask> & { title: string }) => void
+  onAddTask: (patch: Partial<PMTask> & { title: string; team_member_ids?: string[] }) => void
   onSelectTask: (t: PMTask) => void
   onMoveTask: (taskId: string, colId: string) => void
   onDeleteTask: (taskId: string) => void
@@ -465,6 +564,7 @@ function KanbanColumn({
             task={task}
             columns={columns}
             members={members}
+            assigneeIds={assigneesByTask[task.id] ?? []}
             isMenuOpen={openMenu === task.id}
             onOpenMenu={() => onOpenMenu(openMenu === task.id ? null : task.id)}
             onSelect={() => onSelectTask(task)}
@@ -495,22 +595,31 @@ function KanbanColumn({
 
 function AddTaskForm({ members, onSave, onCancel }: {
   members: TeamMember[]
-  onSave: (patch: Partial<PMTask> & { title: string }) => void
+  onSave: (patch: Partial<PMTask> & { title: string; team_member_ids?: string[] }) => void
   onCancel: () => void
 }) {
   const [title, setTitle]             = useState('')
   const [priority, setPriority]       = useState<'low'|'medium'|'high'|null>(null)
   const [dueDate, setDueDate]         = useState('')
-  const [teamMemberId, setTeamMemberId] = useState<string>('')
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const dateRef = useRef<HTMLInputElement>(null)
+
+  function toggleMember(memberId: string) {
+    setSelectedMemberIds(prev =>
+      prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
+    )
+  }
 
   function handleSave() {
     if (!title.trim()) return
-    onSave({ title: title.trim(), priority: priority ?? 'medium', due_date: dueDate || null, team_member_id: teamMemberId || null })
-    setTitle(''); setPriority(null); setDueDate(''); setTeamMemberId('')
+    onSave({
+      title: title.trim(),
+      priority: priority ?? 'medium',
+      due_date: dueDate || null,
+      team_member_ids: selectedMemberIds,
+    })
+    setTitle(''); setPriority(null); setDueDate(''); setSelectedMemberIds([])
   }
-
-  const assignedMember = members.find(m => m.id === teamMemberId)
 
   return (
     <div className="bg-white rounded-xl border-2 border-gray-200 p-3 shadow-sm">
@@ -532,27 +641,33 @@ function AddTaskForm({ members, onSave, onCancel }: {
         </button>
       </div>
 
-      <div className="flex items-center gap-3 mt-3 pt-2 border-t border-gray-100">
-        {/* Assignee */}
-        <div className="flex items-center gap-1.5">
-          {assignedMember ? (
-            <div
-              className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
-              style={{ backgroundColor: assignedMember.color }}
-            >
-              {assignedMember.name.charAt(0)}
-            </div>
-          ) : (
-            <User size={13} className="text-gray-400" />
-          )}
-          <select
-            value={teamMemberId}
-            onChange={e => setTeamMemberId(e.target.value)}
-            className="text-xs text-gray-400 bg-transparent focus:outline-none cursor-pointer hover:text-gray-600"
-          >
-            <option value="">Add assignee</option>
-            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+      <div className="flex flex-col gap-1.5 mt-3 pt-2 border-t border-gray-100">
+        {/* Assignees (multi-select chips) */}
+        <span className="text-[11px] text-gray-400">Виконавці</span>
+        <div className="flex items-center flex-wrap gap-1.5">
+          {members.map(m => {
+            const selected = selectedMemberIds.includes(m.id)
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => toggleMember(m.id)}
+                title={m.name}
+                className={`flex items-center gap-1.5 pl-0.5 pr-2 py-0.5 rounded-full border transition-colors ${
+                  selected ? 'border-teal-400 bg-teal-50' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
+                  style={{ backgroundColor: m.color }}
+                >
+                  {m.name.charAt(0)}
+                </div>
+                <span className={`text-xs ${selected ? 'text-teal-700 font-medium' : 'text-gray-500'}`}>{m.name}</span>
+              </button>
+            )
+          })}
+          {members.length === 0 && <span className="text-xs text-gray-300">Немає учасників</span>}
         </div>
       </div>
 
@@ -597,11 +712,12 @@ function AddTaskForm({ members, onSave, onCancel }: {
 // ── Task card ──────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, columns, members, isMenuOpen, onOpenMenu, onSelect, onMove, onDelete, menuRef,
+  task, columns, members, assigneeIds, isMenuOpen, onOpenMenu, onSelect, onMove, onDelete, menuRef,
 }: {
   task: PMTask
   columns: PMColumn[]
   members: TeamMember[]
+  assigneeIds: string[]
   isMenuOpen: boolean
   onOpenMenu: () => void
   onSelect: () => void
@@ -610,7 +726,6 @@ function TaskCard({
   menuRef?: React.RefObject<HTMLDivElement | null>
 }) {
   const isOverdue = task.due_date && new Date(task.due_date) < new Date()
-  const assignee = members.find(m => m.id === task.team_member_id)
 
   return (
     <div
@@ -630,20 +745,8 @@ function TaskCard({
       {/* Icon row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          {/* Assignee avatar */}
-          {assignee ? (
-            <div
-              title={assignee.name}
-              className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-              style={{ backgroundColor: assignee.color }}
-            >
-              {assignee.name.charAt(0)}
-            </div>
-          ) : (
-            <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
-              <User size={10} className="text-gray-400" />
-            </div>
-          )}
+          {/* Assignee avatars */}
+          <AvatarStack memberIds={assigneeIds} members={members} />
 
           {/* Due date */}
           <button
@@ -704,11 +807,14 @@ function TaskCard({
 // ── Task detail panel ──────────────────────────────────────────────────────────
 
 function TaskDetailPanel({
-  task, columns, members, onClose, onUpdate, onDelete, onMove,
+  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove,
 }: {
   task: PMTask
   columns: PMColumn[]
   members: TeamMember[]
+  assigneeIds: string[]
+  onAddAssignee: (memberId: string) => void
+  onRemoveAssignee: (memberId: string) => void
   onClose: () => void
   onUpdate: (patch: Partial<PMTask>) => void
   onDelete: () => void
@@ -722,8 +828,11 @@ function TaskDetailPanel({
   function saveTitle() { const t = title.trim(); if (t && t !== task.title) onUpdate({ title: t }) }
   function saveDesc()  { const d = desc.trim(); if (d !== (task.description ?? '')) onUpdate({ description: d || null }) }
 
-  const currentCol  = columns.find(c => c.id === task.column_id)
-  const assignee    = members.find(m => m.id === task.team_member_id)
+  const currentCol       = columns.find(c => c.id === task.column_id)
+  const assignedMembers  = assigneeIds
+    .map(mid => members.find(m => m.id === mid))
+    .filter((m): m is TeamMember => !!m)
+  const unassignedMembers = members.filter(m => !assigneeIds.includes(m.id))
 
   return (
     <div className="w-[480px] min-w-[480px] border-l border-gray-100 bg-white flex flex-col h-full overflow-hidden">
@@ -776,25 +885,43 @@ function TaskDetailPanel({
           </div>
 
           {/* Assignees */}
-          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
-            <span className="text-sm text-gray-400 w-32">Assignees</span>
-            <div className="flex items-center gap-2">
-              {assignee && (
+          <div className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-32 flex-shrink-0 pt-1">Assignees</span>
+            <div className="flex items-center flex-wrap gap-1.5">
+              {assignedMembers.map(m => (
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium"
-                  style={{ backgroundColor: assignee.color }}
+                  key={m.id}
+                  className="flex items-center gap-1.5 pl-0.5 pr-1.5 py-0.5 rounded-full border border-gray-200 bg-white"
                 >
-                  {assignee.name.charAt(0)}
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium"
+                    style={{ backgroundColor: m.color }}
+                  >
+                    {m.name.charAt(0)}
+                  </div>
+                  <span className="text-xs text-gray-600">{m.name}</span>
+                  <button
+                    onClick={() => onRemoveAssignee(m.id)}
+                    className="text-gray-300 hover:text-red-400 transition-colors"
+                    title={`Прибрати ${m.name}`}
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
+              ))}
+              {assignedMembers.length === 0 && (
+                <span className="text-sm text-gray-400 pt-1">Не призначено</span>
               )}
-              <select
-                value={task.team_member_id ?? ''}
-                onChange={e => onUpdate({ team_member_id: e.target.value || null })}
-                className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
-              >
-                <option value="">Не призначено</option>
-                {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
+              {unassignedMembers.length > 0 && (
+                <select
+                  value=""
+                  onChange={e => { if (e.target.value) onAddAssignee(e.target.value) }}
+                  className="text-sm text-gray-400 focus:outline-none bg-transparent cursor-pointer hover:text-gray-600"
+                >
+                  <option value="">+ Додати</option>
+                  {unassignedMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              )}
             </div>
           </div>
 

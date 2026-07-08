@@ -56,6 +56,13 @@ export interface PMTask {
   assignee?: PMProfile;
 }
 
+export interface TaskAssignee {
+  id: string;
+  task_id: string;
+  team_member_id: string;
+  created_at: string;
+}
+
 export interface PMTimeLog {
   id: string;
   task_id: string;

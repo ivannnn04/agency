@@ -28,6 +28,7 @@ export default function TeamAdminPage() {
   // Inline rate editing
   const [editingRateId, setEditingRateId] = useState<string | null>(null)
   const [editRateValue, setEditRateValue] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -279,13 +280,25 @@ export default function TeamAdminPage() {
 
       {/* Login info box */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-        <p className="text-sm font-medium text-blue-800 mb-1">Як увійти в систему</p>
+        <p className="text-sm font-medium text-blue-800 mb-1">Єдиний лінк для входу команди</p>
         <p className="text-xs text-blue-600 mb-2">
-          Надішліть учаснику цей лінк та пароль, який ви встановили під час створення акаунту.
+          Один лінк для всіх дизайнерів. Надішліть його разом з email та паролем, які ви встановили при створенні акаунту. Це окремий вхід — адмін-панель їм недоступна.
         </p>
-        <code className="text-xs bg-white border border-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg block break-all">
-          {loginUrl}
-        </code>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-xs bg-white border border-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg break-all">
+            {loginUrl}
+          </code>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(loginUrl)
+              setLinkCopied(true)
+              setTimeout(() => setLinkCopied(false), 2000)
+            }}
+            className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+          >
+            {linkCopied ? 'Скопійовано' : 'Копіювати'}
+          </button>
+        </div>
       </div>
     </div>
   )

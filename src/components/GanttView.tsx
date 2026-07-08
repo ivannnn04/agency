@@ -24,6 +24,8 @@ interface DragState {
   origEnd: string | null
   currentStart: string | null
   currentEnd: string | null
+  // true when the task had no dates in the DB — commit both dates on drop
+  forceBoth: boolean
 }
 
 interface Props {
@@ -91,6 +93,7 @@ export default function GanttView({ tasks, onUpdate }: Props) {
     type: 'start' | 'end' | 'move',
     origStart: string | null,
     origEnd: string | null,
+    forceBoth = false,
   ) {
     e.preventDefault()
     e.stopPropagation()
@@ -100,6 +103,7 @@ export default function GanttView({ tasks, onUpdate }: Props) {
       origStart, origEnd,
       currentStart: origStart,
       currentEnd: origEnd,
+      forceBoth,
     }
   }
 
@@ -157,11 +161,14 @@ export default function GanttView({ tasks, onUpdate }: Props) {
       const drag = dragRef.current
       if (!drag) return
 
-      const patch: { start_date?: string | null; due_date?: string | null } = {}
-      if (drag.currentStart !== drag.origStart) patch.start_date = drag.currentStart
-      if (drag.currentEnd !== drag.origEnd) patch.due_date = drag.currentEnd
-
-      if (Object.keys(patch).length > 0) {
+      const moved = drag.currentStart !== drag.origStart || drag.currentEnd !== drag.origEnd
+      if (moved) {
+        const patch: { start_date?: string | null; due_date?: string | null } = drag.forceBoth
+          ? { start_date: drag.currentStart, due_date: drag.currentEnd }
+          : {
+              ...(drag.currentStart !== drag.origStart ? { start_date: drag.currentStart } : {}),
+              ...(drag.currentEnd !== drag.origEnd ? { due_date: drag.currentEnd } : {}),
+            }
         onUpdateRef.current(drag.taskId, patch)
       }
       dragRef.current = null
@@ -258,14 +265,17 @@ export default function GanttView({ tasks, onUpdate }: Props) {
             )}
 
             {localTasks.map(task => {
-              const startOff = dateToOffset(task.start_date)
-              const endOff = dateToOffset(task.due_date)
-              const hasBar = startOff !== null && endOff !== null
-              const hasDiamond = startOff === null && endOff !== null
+              // Tasks without dates get a 1-day placeholder bar at today —
+              // dragging it commits real dates to the DB
+              const effStart = task.start_date ?? task.due_date ?? toDateStr(today)
+              const effEnd   = task.due_date ?? task.start_date ?? toDateStr(today)
+              const isPlaceholder = !task.start_date || !task.due_date
 
-              // Bar width: at least 1 day
-              const barLeft = hasBar ? startOff! : 0
-              const barWidth = hasBar ? Math.max(DAY_WIDTH, endOff! - startOff! + DAY_WIDTH) : 0
+              const startOff = dateToOffset(effStart) ?? 0
+              const endOff   = dateToOffset(effEnd) ?? 0
+
+              const barLeft = startOff
+              const barWidth = Math.max(DAY_WIDTH, endOff - startOff + DAY_WIDTH)
 
               return (
                 <div
@@ -286,59 +296,46 @@ export default function GanttView({ tasks, onUpdate }: Props) {
                     )
                   })}
 
-                  {hasBar && (
+                  <div
+                    className={`absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden group z-10 ${
+                      isPlaceholder
+                        ? 'bg-teal-500/50 border-2 border-dashed border-teal-500'
+                        : 'bg-teal-500'
+                    }`}
+                    style={{ left: barLeft, width: barWidth, height: 28 }}
+                  >
+                    {/* Left drag handle */}
                     <div
-                      className="absolute top-1/2 -translate-y-1/2 rounded-md bg-teal-500 flex items-center overflow-hidden group z-10"
-                      style={{ left: barLeft, width: barWidth, height: 28 }}
+                      className="w-3 h-full flex-shrink-0 cursor-ew-resize hover:bg-teal-400 flex items-center justify-center"
+                      onMouseDown={e =>
+                        handleMouseDown(e, task.id, 'start', effStart, effEnd, isPlaceholder)
+                      }
                     >
-                      {/* Left drag handle */}
-                      <div
-                        className="w-3 h-full flex-shrink-0 cursor-ew-resize hover:bg-teal-400 flex items-center justify-center"
-                        onMouseDown={e =>
-                          handleMouseDown(e, task.id, 'start', task.start_date, task.due_date)
-                        }
-                      >
-                        <div className="w-0.5 h-3 bg-teal-300 rounded-full" />
-                      </div>
-
-                      {/* Middle: title + move */}
-                      <div
-                        className="flex-1 px-1 overflow-hidden cursor-grab active:cursor-grabbing"
-                        onMouseDown={e =>
-                          handleMouseDown(e, task.id, 'move', task.start_date, task.due_date)
-                        }
-                      >
-                        <span className="text-[11px] text-white font-medium whitespace-nowrap">
-                          {task.title}
-                        </span>
-                      </div>
-
-                      {/* Right drag handle */}
-                      <div
-                        className="w-3 h-full flex-shrink-0 cursor-ew-resize hover:bg-teal-400 flex items-center justify-center"
-                        onMouseDown={e =>
-                          handleMouseDown(e, task.id, 'end', task.start_date, task.due_date)
-                        }
-                      >
-                        <div className="w-0.5 h-3 bg-teal-300 rounded-full" />
-                      </div>
+                      <div className="w-0.5 h-3 bg-teal-200 rounded-full" />
                     </div>
-                  )}
 
-                  {hasDiamond && (
+                    {/* Middle: title + move */}
                     <div
-                      className="absolute top-1/2 z-10 pointer-events-none"
-                      style={{
-                        left: endOff! + DAY_WIDTH / 2 - 8,
-                        transform: 'translateY(-50%)',
-                      }}
+                      className="flex-1 px-1 overflow-hidden cursor-grab active:cursor-grabbing"
+                      onMouseDown={e =>
+                        handleMouseDown(e, task.id, 'move', effStart, effEnd, isPlaceholder)
+                      }
                     >
-                      <div
-                        className="w-4 h-4 bg-amber-400 rotate-45"
-                        title={task.title}
-                      />
+                      <span className="text-[11px] text-white font-medium whitespace-nowrap">
+                        {task.title}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Right drag handle */}
+                    <div
+                      className="w-3 h-full flex-shrink-0 cursor-ew-resize hover:bg-teal-400 flex items-center justify-center"
+                      onMouseDown={e =>
+                        handleMouseDown(e, task.id, 'end', effStart, effEnd, isPlaceholder)
+                      }
+                    >
+                      <div className="w-0.5 h-3 bg-teal-200 rounded-full" />
+                    </div>
+                  </div>
                 </div>
               )
             })}

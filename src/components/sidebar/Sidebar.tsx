@@ -143,11 +143,11 @@ export default function Sidebar() {
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-sm">A</span>
+              <span className="text-white font-bold text-sm">G</span>
             </div>
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">Agency</p>
-              <p className="text-gray-500 text-xs">управління бізнесом</p>
+              <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
+              <p className="text-gray-500 text-xs">Cowork Space</p>
             </div>
           </div>
         </div>

@@ -6,8 +6,8 @@ import { Providers } from './providers'
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 
 export const metadata: Metadata = {
-  title: 'Фінансовий трекер',
-  description: 'Фінансовий трекер для вашої компанії',
+  title: 'Gudrix Cowork Space',
+  description: 'Gudrix Cowork Space',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

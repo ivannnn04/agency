@@ -35,8 +35,8 @@ export default function TeamLoginPage() {
             <span className="text-white font-bold text-sm">A</span>
           </div>
           <div>
-            <p className="font-semibold text-sm text-gray-900">Agency</p>
-            <p className="text-xs text-gray-400">Портал команди</p>
+            <p className="font-semibold text-sm text-gray-900">Gudrix</p>
+            <p className="text-xs text-gray-400">Cowork Space</p>
           </div>
         </div>
 

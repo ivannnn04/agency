@@ -49,6 +49,7 @@ export interface PMTask {
   team_member_id: string | null;
   start_date: string | null;
   due_date: string | null;
+  estimate_hours: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

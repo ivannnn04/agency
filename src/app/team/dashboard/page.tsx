@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import Link from 'next/link'
 
@@ -175,6 +175,13 @@ export default function TeamDashboardPage() {
           <p className="text-xs text-gray-400">{member?.role}</p>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => router.push('/team/reports')}
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-xs"
+            title="Звіт по годинах"
+          >
+            <BarChart2 size={14} /> Звіт
+          </button>
           {member && <TeamNotificationBell memberId={member.id} />}
           <button
             onClick={handleLogout}

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, Clock, Calendar } from 'lucide-react'
+import { LogOut, Clock, Calendar, ArrowLeft } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 
 type Period = 'today' | 'week' | 'month'
@@ -168,6 +168,12 @@ export default function TeamReportsPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-[#0f1117] text-white px-6 py-4 flex items-center gap-3">
+        <button
+          onClick={() => router.push('/team/dashboard')}
+          className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm mr-1"
+        >
+          <ArrowLeft size={15} /> Назад
+        </button>
         {member && (
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
   ArrowLeft, LogOut, Plus, Flag, Calendar, User, Play, Square, Timer,
+  BarChart2, X, Trash2, Clock,
 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
@@ -41,6 +42,14 @@ function formatElapsed(seconds: number): string {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+function formatHours(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h === 0 && m === 0) return `${seconds}с`
+  if (h === 0) return `${m}хв`
+  return m > 0 ? `${h}г ${m}хв` : `${h}г`
+}
+
 export default function TeamBoardPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -49,15 +58,18 @@ export default function TeamBoardPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [columns, setColumns] = useState<PMColumn[]>([])
   const [tasks, setTasks] = useState<PMTask[]>([])
+  const [timeByTask, setTimeByTask] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'board' | 'gantt'>('board')
 
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null)
   const [elapsed, setElapsed] = useState(0)
 
+  const [selectedTask, setSelectedTask] = useState<PMTask | null>(null)
   const [addingInColumn, setAddingInColumn] = useState<string | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [saving, setSaving] = useState(false)
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null)
 
   useEffect(() => {
     if (id) fetchAll()
@@ -91,7 +103,23 @@ export default function TeamBoardPage() {
 
     if (proj) setProject(proj)
     if (cols) setColumns(cols)
-    if (tx) setTasks(tx)
+    if (tx) {
+      setTasks(tx)
+      // Total tracked time per task
+      const taskIds = tx.map(t => t.id)
+      if (taskIds.length > 0) {
+        const { data: entries } = await supabase
+          .from('time_entries')
+          .select('task_id, duration_seconds')
+          .in('task_id', taskIds)
+          .not('ended_at', 'is', null)
+        const sums: Record<string, number> = {}
+        for (const e of entries ?? []) {
+          sums[e.task_id] = (sums[e.task_id] ?? 0) + (e.duration_seconds ?? 0)
+        }
+        setTimeByTask(sums)
+      }
+    }
 
     // Restore any open timer for this member
     const { data: openEntry } = await supabase
@@ -116,16 +144,7 @@ export default function TeamBoardPage() {
   }
 
   async function startTimer(taskId: string) {
-    if (activeTimer) {
-      // Stop current timer first
-      const endedAt = new Date()
-      const duration = Math.floor((endedAt.getTime() - activeTimer.startedAt.getTime()) / 1000)
-      await supabase
-        .from('time_entries')
-        .update({ ended_at: endedAt.toISOString(), duration_seconds: duration })
-        .eq('id', activeTimer.entryId)
-      setActiveTimer(null)
-    }
+    if (activeTimer) await stopTimer()
 
     const { data } = await supabase
       .from('time_entries')
@@ -151,6 +170,10 @@ export default function TeamBoardPage() {
       .from('time_entries')
       .update({ ended_at: endedAt.toISOString(), duration_seconds: duration })
       .eq('id', activeTimer.entryId)
+    setTimeByTask(prev => ({
+      ...prev,
+      [activeTimer.taskId]: (prev[activeTimer.taskId] ?? 0) + duration,
+    }))
     setActiveTimer(null)
     setElapsed(0)
   }
@@ -180,9 +203,20 @@ export default function TeamBoardPage() {
     setAddingInColumn(null)
   }
 
-  async function updateTaskDates(taskId: string, patch: { start_date?: string | null; due_date?: string | null }) {
+  async function moveTask(taskId: string, toColumnId: string) {
+    await supabase.from('pm_tasks').update({ column_id: toColumnId }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, column_id: toColumnId } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, column_id: toColumnId } : prev)
+  }
+
+  async function updateTask(taskId: string, patch: Partial<PMTask>) {
     await supabase.from('pm_tasks').update(patch).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, ...patch } : prev)
+  }
+
+  async function updateTaskDates(taskId: string, patch: { start_date?: string | null; due_date?: string | null }) {
+    await updateTask(taskId, patch)
   }
 
   async function handleLogout() {
@@ -198,7 +232,7 @@ export default function TeamBoardPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="bg-[#0f1117] text-white px-6 py-3 flex items-center gap-3 flex-shrink-0">
         <button
@@ -229,6 +263,13 @@ export default function TeamBoardPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => router.push('/team/reports')}
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-xs"
+            title="Звіт по годинах"
+          >
+            <BarChart2 size={14} /> Звіт
+          </button>
           {member && <TeamNotificationBell memberId={member.id} />}
           <button
             onClick={handleLogout}
@@ -241,164 +282,210 @@ export default function TeamBoardPage() {
       </header>
 
       {/* Content */}
-      {view === 'board' ? (
-        <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
-          {columns.map(col => {
-            const colTasks = tasks.filter(t => t.column_id === col.id)
-            return (
-              <div key={col.id} className="flex-shrink-0 w-[280px] flex flex-col">
-                {/* Column header */}
-                <div className="flex items-center justify-between px-1 mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color }} />
-                    <span className="text-xs font-bold tracking-wide uppercase" style={{ color: col.color }}>
-                      {col.name}
-                    </span>
-                    <span className="text-xs text-gray-400 font-medium">{colTasks.length}</span>
-                  </div>
-                  <button
-                    onClick={() => { setAddingInColumn(col.id); setNewTaskTitle('') }}
-                    className="text-gray-400 hover:text-gray-600 p-1 rounded"
-                    title="Додати задачу"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-
-                {/* Tasks */}
-                <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-200px)]">
-                  {colTasks.map(task => {
-                    const isThisTaskActive = activeTimer?.taskId === task.id
-                    const otherTaskActive = activeTimer && activeTimer.taskId !== task.id
-                    const isOverdue = task.due_date && new Date(task.due_date) < new Date()
-
-                    return (
-                      <div
-                        key={task.id}
-                        className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-300 hover:shadow-sm transition-all"
-                      >
-                        <p className="text-sm text-gray-800 leading-snug mb-3">{task.title}</p>
-
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            {/* Assignee circle */}
-                            {task.team_member_id ? (
-                              <div
-                                className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 bg-teal-500"
-                                title="Призначено"
-                              >
-                                <User size={10} />
-                              </div>
-                            ) : (
-                              <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
-                                <User size={10} className="text-gray-400" />
-                              </div>
-                            )}
-
-                            {/* Due date */}
-                            {task.due_date && (
-                              <span className={`flex items-center gap-1 text-[11px] ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
-                                <Calendar size={11} />
-                                {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
-                              </span>
-                            )}
-
-                            {/* Priority */}
-                            {task.priority && (
-                              <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority] ?? '#9CA3AF' }} />
-                            )}
-                          </div>
-
-                          {/* Timer button */}
-                          {isThisTaskActive ? (
-                            <button
-                              onClick={stopTimer}
-                              className="flex items-center gap-1 text-[11px] font-mono text-red-500 hover:text-red-600 transition-colors"
-                              title="Зупинити таймер"
-                            >
-                              <Square size={11} className="fill-red-500" />
-                              {formatElapsed(elapsed)}
-                            </button>
-                          ) : otherTaskActive ? (
-                            <button
-                              className="p-1 text-gray-200 cursor-not-allowed"
-                              disabled
-                              title="Інший таймер активний"
-                            >
-                              <Play size={12} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => startTimer(task.id)}
-                              className="p-1 text-gray-300 hover:text-teal-500 transition-colors"
-                              title="Почати таймер"
-                            >
-                              <Play size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {/* Inline add task form */}
-                  {addingInColumn === col.id ? (
-                    <div className="bg-white rounded-xl border-2 border-gray-200 p-3 shadow-sm">
-                      <input
-                        autoFocus
-                        value={newTaskTitle}
-                        onChange={e => setNewTaskTitle(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') createTask(col.id)
-                          if (e.key === 'Escape') { setAddingInColumn(null); setNewTaskTitle('') }
-                        }}
-                        placeholder="Назва задачі..."
-                        className="w-full text-sm focus:outline-none mb-2"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => createTask(col.id)}
-                          disabled={!newTaskTitle.trim() || saving}
-                          className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition-colors"
-                        >
-                          {saving ? 'Збереження...' : 'Зберегти'}
-                        </button>
-                        <button
-                          onClick={() => { setAddingInColumn(null); setNewTaskTitle('') }}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Скасувати
-                        </button>
-                      </div>
+      <div className="flex-1 flex overflow-hidden">
+        {view === 'board' ? (
+          <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
+            {columns.map(col => {
+              const colTasks = tasks.filter(t => t.column_id === col.id)
+              return (
+                <div
+                  key={col.id}
+                  className={`flex-shrink-0 w-[280px] flex flex-col rounded-xl transition-colors ${dragOverCol === col.id ? 'bg-teal-50/70 ring-2 ring-teal-300' : ''}`}
+                  onDragOver={e => { e.preventDefault(); setDragOverCol(col.id) }}
+                  onDragLeave={() => setDragOverCol(prev => prev === col.id ? null : prev)}
+                  onDrop={e => {
+                    e.preventDefault()
+                    setDragOverCol(null)
+                    const taskId = e.dataTransfer.getData('text/plain')
+                    if (taskId) moveTask(taskId, col.id)
+                  }}
+                >
+                  {/* Column header */}
+                  <div className="flex items-center justify-between px-1 mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color }} />
+                      <span className="text-xs font-bold tracking-wide uppercase" style={{ color: col.color }}>
+                        {col.name}
+                      </span>
+                      <span className="text-xs text-gray-400 font-medium">{colTasks.length}</span>
                     </div>
-                  ) : (
                     <button
                       onClick={() => { setAddingInColumn(col.id); setNewTaskTitle('') }}
-                      className="w-full flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 py-2 px-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="text-gray-400 hover:text-gray-600 p-1 rounded"
+                      title="Додати задачу"
                     >
-                      <Plus size={14} style={{ color: col.color }} />
-                      <span>Додати задачу</span>
+                      <Plus size={14} />
                     </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                  </div>
 
-          {columns.length === 0 && (
-            <div className="flex-1 flex items-center justify-center py-20 text-gray-400">
-              <p className="text-sm">Немає колонок у цьому проєкті</p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex-1 overflow-hidden">
-          <GanttView tasks={tasks} onUpdate={updateTaskDates} />
-        </div>
-      )}
+                  {/* Tasks */}
+                  <div className="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-200px)] min-h-[40px]">
+                    {colTasks.map(task => {
+                      const isThisTaskActive = activeTimer?.taskId === task.id
+                      const otherTaskActive = activeTimer && activeTimer.taskId !== task.id
+                      const isOverdue = task.due_date && new Date(task.due_date) < new Date()
+                      const tracked = (timeByTask[task.id] ?? 0) + (isThisTaskActive ? elapsed : 0)
+
+                      return (
+                        <div
+                          key={task.id}
+                          draggable
+                          onDragStart={e => {
+                            e.dataTransfer.setData('text/plain', task.id)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onClick={() => setSelectedTask(task)}
+                          className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer active:cursor-grabbing select-none"
+                        >
+                          <p className="text-sm text-gray-800 leading-snug mb-3">{task.title}</p>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              {/* Assignee circle */}
+                              {task.team_member_id ? (
+                                <div
+                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 bg-teal-500"
+                                  title="Призначено"
+                                >
+                                  <User size={10} />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
+                                  <User size={10} className="text-gray-400" />
+                                </div>
+                              )}
+
+                              {/* Due date */}
+                              {task.due_date && (
+                                <span className={`flex items-center gap-1 text-[11px] ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+                                  <Calendar size={11} />
+                                  {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+                                </span>
+                              )}
+
+                              {/* Priority */}
+                              {task.priority && (
+                                <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority] ?? '#9CA3AF' }} />
+                              )}
+
+                              {/* Tracked time */}
+                              {tracked > 0 && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                                  <Clock size={10} />
+                                  {formatHours(tracked)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Timer button */}
+                            {isThisTaskActive ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); stopTimer() }}
+                                className="flex items-center gap-1 text-[11px] font-mono text-red-500 hover:text-red-600 transition-colors"
+                                title="Зупинити таймер"
+                              >
+                                <Square size={11} className="fill-red-500" />
+                                {formatElapsed(elapsed)}
+                              </button>
+                            ) : otherTaskActive ? (
+                              <button
+                                onClick={e => e.stopPropagation()}
+                                className="p-1 text-gray-200 cursor-not-allowed"
+                                disabled
+                                title="Інший таймер активний"
+                              >
+                                <Play size={12} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={e => { e.stopPropagation(); startTimer(task.id) }}
+                                className="p-1 text-gray-300 hover:text-teal-500 transition-colors"
+                                title="Почати таймер"
+                              >
+                                <Play size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* Inline add task form */}
+                    {addingInColumn === col.id ? (
+                      <div className="bg-white rounded-xl border-2 border-gray-200 p-3 shadow-sm">
+                        <input
+                          autoFocus
+                          value={newTaskTitle}
+                          onChange={e => setNewTaskTitle(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') createTask(col.id)
+                            if (e.key === 'Escape') { setAddingInColumn(null); setNewTaskTitle('') }
+                          }}
+                          placeholder="Назва задачі..."
+                          className="w-full text-sm focus:outline-none mb-2"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => createTask(col.id)}
+                            disabled={!newTaskTitle.trim() || saving}
+                            className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition-colors"
+                          >
+                            {saving ? 'Збереження...' : 'Зберегти'}
+                          </button>
+                          <button
+                            onClick={() => { setAddingInColumn(null); setNewTaskTitle('') }}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            Скасувати
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setAddingInColumn(col.id); setNewTaskTitle('') }}
+                        className="w-full flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 py-2 px-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <Plus size={14} style={{ color: col.color }} />
+                        <span>Додати задачу</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+
+            {columns.length === 0 && (
+              <div className="flex-1 flex items-center justify-center py-20 text-gray-400">
+                <p className="text-sm">Немає колонок у цьому проєкті</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-hidden">
+            <GanttView tasks={tasks} onUpdate={updateTaskDates} />
+          </div>
+        )}
+
+        {/* Task detail side panel */}
+        {selectedTask && (
+          <TaskPanel
+            task={selectedTask}
+            columns={columns}
+            trackedSeconds={(timeByTask[selectedTask.id] ?? 0) + (activeTimer?.taskId === selectedTask.id ? elapsed : 0)}
+            isTimerActive={activeTimer?.taskId === selectedTask.id}
+            otherTimerActive={!!activeTimer && activeTimer.taskId !== selectedTask.id}
+            elapsed={elapsed}
+            onStartTimer={() => startTimer(selectedTask.id)}
+            onStopTimer={stopTimer}
+            onClose={() => setSelectedTask(null)}
+            onUpdate={patch => updateTask(selectedTask.id, patch)}
+            onMove={colId => moveTask(selectedTask.id, colId)}
+          />
+        )}
+      </div>
 
       {/* Active timer indicator */}
-      {activeTimer && view === 'board' && (
+      {activeTimer && !selectedTask && (
         <div className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2.5 z-30">
           <Timer size={14} className="text-teal-400" />
           <span className="text-xs text-gray-300">
@@ -413,6 +500,224 @@ export default function TeamBoardPage() {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Task detail side panel ──────────────────────────────────────────────────────
+
+function TaskPanel({
+  task, columns, trackedSeconds, isTimerActive, otherTimerActive, elapsed,
+  onStartTimer, onStopTimer, onClose, onUpdate, onMove,
+}: {
+  task: PMTask
+  columns: PMColumn[]
+  trackedSeconds: number
+  isTimerActive: boolean
+  otherTimerActive: boolean
+  elapsed: number
+  onStartTimer: () => void
+  onStopTimer: () => void
+  onClose: () => void
+  onUpdate: (patch: Partial<PMTask>) => void
+  onMove: (colId: string) => void
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [desc, setDesc] = useState(task.description ?? '')
+  const [estimate, setEstimate] = useState(task.estimate_hours != null ? String(task.estimate_hours) : '')
+
+  useEffect(() => {
+    setTitle(task.title)
+    setDesc(task.description ?? '')
+    setEstimate(task.estimate_hours != null ? String(task.estimate_hours) : '')
+  }, [task.id])
+
+  function saveTitle() {
+    const t = title.trim()
+    if (t && t !== task.title) onUpdate({ title: t })
+  }
+  function saveDesc() {
+    const d = desc.trim()
+    if (d !== (task.description ?? '')) onUpdate({ description: d || null })
+  }
+  function saveEstimate() {
+    const v = estimate.trim() === '' ? null : Number(estimate)
+    if (v !== task.estimate_hours && !(v !== null && isNaN(v))) {
+      onUpdate({ estimate_hours: v })
+    }
+  }
+
+  const currentCol = columns.find(c => c.id === task.column_id)
+  const estimateSec = task.estimate_hours != null ? task.estimate_hours * 3600 : null
+  const overEstimate = estimateSec !== null && trackedSeconds > estimateSec
+
+  return (
+    <div className="w-[400px] min-w-[400px] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
+        {currentCol && (
+          <span
+            style={{ backgroundColor: currentCol.color + '22', color: currentCol.color }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide"
+          >
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: currentCol.color }} />
+            {currentCol.name}
+          </span>
+        )}
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1.5 rounded transition-colors">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* Title */}
+        <div className="px-5 pt-4 pb-2">
+          <textarea
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onBlur={saveTitle}
+            rows={2}
+            className="w-full text-lg font-semibold text-gray-900 resize-none focus:outline-none leading-snug placeholder-gray-300"
+            placeholder="Назва задачі"
+          />
+        </div>
+
+        {/* Timer block */}
+        <div className="mx-5 mb-4 p-4 bg-gray-50 rounded-xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-gray-400 mb-0.5">Затрекано</p>
+              <p className={`text-xl font-bold font-mono ${overEstimate ? 'text-red-500' : 'text-gray-900'}`}>
+                {formatHours(trackedSeconds)}
+              </p>
+              {estimateSec !== null && (
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  з {formatHours(estimateSec)} за естімейтом
+                </p>
+              )}
+            </div>
+            {isTimerActive ? (
+              <button
+                onClick={onStopTimer}
+                className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+              >
+                <Square size={13} className="fill-white" />
+                {formatElapsed(elapsed)}
+              </button>
+            ) : (
+              <button
+                onClick={onStartTimer}
+                disabled={otherTimerActive}
+                className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                title={otherTimerActive ? 'Спочатку зупиніть інший таймер' : 'Почати трекати час'}
+              >
+                <Play size={13} className="fill-white" />
+                Старт
+              </button>
+            )}
+          </div>
+          {/* Progress bar vs estimate */}
+          {estimateSec !== null && estimateSec > 0 && (
+            <div className="mt-3 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${overEstimate ? 'bg-red-400' : 'bg-teal-400'}`}
+                style={{ width: `${Math.min(100, (trackedSeconds / estimateSec) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Fields */}
+        <div className="px-5 pb-4 flex flex-col gap-0.5">
+          {/* Status */}
+          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Статус</span>
+            <select
+              value={task.column_id ?? ''}
+              onChange={e => onMove(e.target.value)}
+              className="flex-1 text-sm font-medium focus:outline-none bg-transparent cursor-pointer"
+              style={{ color: currentCol?.color ?? '#374151' }}
+            >
+              {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          {/* Priority */}
+          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Пріоритет</span>
+            <select
+              value={task.priority ?? 'medium'}
+              onChange={e => onUpdate({ priority: e.target.value as PMTask['priority'] })}
+              className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
+            >
+              <option value="low">Низький</option>
+              <option value="medium">Середній</option>
+              <option value="high">Високий</option>
+            </select>
+          </div>
+
+          {/* Start date */}
+          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Початок</span>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Calendar size={13} />
+              <input
+                type="date"
+                value={task.start_date ? task.start_date.split('T')[0] : ''}
+                onChange={e => onUpdate({ start_date: e.target.value || null })}
+                className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Due date */}
+          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Дедлайн</span>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Calendar size={13} />
+              <input
+                type="date"
+                value={task.due_date ? task.due_date.split('T')[0] : ''}
+                onChange={e => onUpdate({ due_date: e.target.value || null })}
+                className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Estimate */}
+          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Естімейт</span>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Clock size={13} className="text-gray-400" />
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={estimate}
+                onChange={e => setEstimate(e.target.value)}
+                onBlur={saveEstimate}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                placeholder="—"
+                className="w-16 text-sm focus:outline-none bg-transparent border-b border-transparent focus:border-gray-300"
+              />
+              <span className="text-xs text-gray-400">год</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Description */}
+        <div className="px-5 pb-6">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Опис</p>
+          <textarea
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            onBlur={saveDesc}
+            rows={5}
+            placeholder="Додайте опис..."
+            className="w-full text-sm text-gray-700 bg-gray-50 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-200 placeholder-gray-300"
+          />
+        </div>
+      </div>
     </div>
   )
 }

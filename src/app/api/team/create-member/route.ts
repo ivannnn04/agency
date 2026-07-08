@@ -10,7 +10,7 @@ function adminClient() {
 }
 
 export async function POST(req: Request) {
-  const { name, email, password, role, color } = await req.json()
+  const { name, email, password, role, color, hourly_rate_usd } = await req.json()
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: 'Імʼя, email та пароль обовʼязкові' }, { status: 400 })
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       email,
       role: role || 'designer',
       color: color || '#14b8a6',
+      hourly_rate_usd: Number(hourly_rate_usd) || 0,
       supabase_user_id: authData.user.id,
     })
     .select()

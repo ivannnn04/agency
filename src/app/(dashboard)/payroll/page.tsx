@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
-import { Upload, ChevronDown, ChevronUp, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users } from 'lucide-react'
+import { Upload, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle, X, AlertTriangle, DollarSign, Plus, Edit2, Trash2, Users, Clock } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { SalaryPayment } from '@/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -308,6 +309,8 @@ export default function PayrollPage() {
         </div>
       </div>
 
+      <TrackerSalarySection accounts={accounts} />
+
       <EmployeesPanel
         employees={employees}
         projects={projects}
@@ -401,6 +404,346 @@ export default function PayrollPage() {
           onSuccess={() => { setPayingManager(null); fetchAll() }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Tracker Salary Section (time_entries → payroll) ───────────────────────────
+
+interface TrackerMember { id: string; name: string; color: string; hourly_rate_usd: number | null }
+interface TrackerEntry  { team_member_id: string; task_id: string; duration_seconds: number }
+interface TrackerRow {
+  member: TrackerMember
+  totalSeconds: number
+  amountUsd: number
+  payment: SalaryPayment | null
+}
+
+const GENITIVE_MONTHS = [
+  'січня', 'лютого', 'березня', 'квітня', 'травня', 'червня',
+  'липня', 'серпня', 'вересня', 'жовтня', 'листопада', 'грудня',
+]
+
+function fmtDur(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h === 0) return `${m}хв`
+  if (m === 0) return `${h}г`
+  return `${h}г ${m}хв`
+}
+
+function monthTitle(d: Date): string {
+  const s = d.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function TrackerSalarySection({ accounts }: { accounts: Account[] }) {
+  const [month, setMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth() - 1, 1) // previous month by default
+  })
+  const [rows, setRows]             = useState<TrackerRow[]>([])
+  const [entries, setEntries]       = useState<TrackerEntry[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [payingRow, setPayingRow]   = useState<TrackerRow | null>(null)
+
+  const periodKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-01`
+  const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1)
+    const monthEnd   = new Date(month.getFullYear(), month.getMonth() + 1, 1)
+
+    const [{ data: members }, { data: ents }, { data: pays }] = await Promise.all([
+      supabase.from('team_members').select('id,name,color,hourly_rate_usd').order('name'),
+      supabase.from('time_entries')
+        .select('team_member_id,task_id,duration_seconds')
+        .not('ended_at', 'is', null)
+        .gte('started_at', monthStart.toISOString())
+        .lt('started_at', monthEnd.toISOString()),
+      supabase.from('salary_payments').select('*').eq('period_month', periodKey),
+    ])
+
+    const secByMember: Record<string, number> = {}
+    for (const e of (ents ?? []) as TrackerEntry[]) {
+      secByMember[e.team_member_id] = (secByMember[e.team_member_id] ?? 0) + (e.duration_seconds ?? 0)
+    }
+    const payByMember: Record<string, SalaryPayment> = {}
+    for (const p of (pays ?? []) as SalaryPayment[]) payByMember[p.team_member_id] = p
+
+    const list: TrackerRow[] = []
+    for (const m of (members ?? []) as TrackerMember[]) {
+      const totalSeconds = secByMember[m.id] ?? 0
+      const payment = payByMember[m.id] ?? null
+      if (totalSeconds === 0 && !payment) continue
+      const rate = m.hourly_rate_usd ?? 0
+      list.push({
+        member: m,
+        totalSeconds,
+        amountUsd: Math.round((totalSeconds / 3600) * rate * 100) / 100,
+        payment,
+      })
+    }
+    setRows(list)
+    setEntries((ents ?? []) as TrackerEntry[])
+    setLoading(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodKey])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  async function confirm(row: TrackerRow) {
+    setConfirming(row.member.id)
+    await supabase.from('salary_payments').upsert({
+      team_member_id: row.member.id,
+      period_month: periodKey,
+      total_seconds: row.totalSeconds,
+      amount_usd: row.amountUsd,
+      status: 'confirmed',
+      confirmed_at: new Date().toISOString(),
+    }, { onConflict: 'team_member_id,period_month' })
+    setConfirming(null)
+    fetchData()
+  }
+
+  return (
+    <div className="border border-gray-100 rounded-xl mb-6 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 bg-gray-50/50 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Clock size={16} className="text-teal-500" />
+          <h2 className="font-semibold text-gray-800 text-sm">Зарплата команди (трекер)</h2>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+            className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <ChevronLeft size={15} />
+          </button>
+          <span className="text-sm font-medium text-gray-800 w-40 text-center">{monthTitle(month)}</span>
+          <button
+            onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+            className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      </div>
+
+      <p className="px-5 py-2.5 text-xs text-gray-500 bg-teal-50/50 border-b border-gray-100">
+        Виплати за {monthTitle(month).toLowerCase()} — з 1 по 10 {GENITIVE_MONTHS[nextMonth.getMonth()]}
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-gray-400 text-center py-8">Завантаження...</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">Немає затреканих годин за цей місяць</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="text-left py-2.5 px-5 text-xs font-medium text-gray-500">Учасник</th>
+              <th className="text-right py-2.5 px-4 text-xs font-medium text-gray-500">Години</th>
+              <th className="text-right py-2.5 px-4 text-xs font-medium text-gray-500">Рейт</th>
+              <th className="text-right py-2.5 px-4 text-xs font-medium text-gray-500">Сума</th>
+              <th className="text-right py-2.5 px-4 text-xs font-medium text-gray-500">Статус</th>
+              <th className="py-2.5 px-5" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {rows.map(row => {
+              const p = row.payment
+              const isPaid = p?.status === 'paid'
+              const seconds = isPaid ? p!.total_seconds : row.totalSeconds
+              const amount  = isPaid ? p!.amount_usd    : row.amountUsd
+              return (
+                <tr key={row.member.id} className="hover:bg-gray-50/50">
+                  <td className="py-3 px-5">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-white font-semibold text-xs flex-shrink-0"
+                        style={{ backgroundColor: row.member.color }}>
+                        {row.member.name.charAt(0)}
+                      </div>
+                      <span className="font-medium text-gray-800">{row.member.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-right text-gray-700">{fmtDur(seconds)}</td>
+                  <td className="py-3 px-4 text-right text-gray-500">${row.member.hourly_rate_usd ?? 0}/год</td>
+                  <td className="py-3 px-4 text-right font-semibold text-gray-900">${amount.toFixed(2)}</td>
+                  <td className="py-3 px-4 text-right">
+                    {!p ? (
+                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Нараховано</span>
+                    ) : p.status === 'confirmed' ? (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Підтверджено</span>
+                    ) : (
+                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">
+                        <CheckCircle size={10} className="inline mr-0.5" />
+                        Виплачено {p.paid_at ? new Date(p.paid_at).toLocaleDateString('uk-UA') : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3 px-5 text-right">
+                    {!p ? (
+                      <button
+                        onClick={() => confirm(row)}
+                        disabled={confirming !== null || row.totalSeconds === 0}
+                        className="text-xs bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                        {confirming === row.member.id ? 'Збереження...' : 'Підтвердити'}
+                      </button>
+                    ) : p.status === 'confirmed' ? (
+                      <button
+                        onClick={() => setPayingRow(row)}
+                        className="text-xs bg-teal-500 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                        Оплатити
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {payingRow && (
+        <TrackerPayModal
+          row={payingRow}
+          memberEntries={entries.filter(e => e.team_member_id === payingRow.member.id)}
+          monthLabel={monthTitle(month)}
+          accounts={accounts}
+          onClose={() => setPayingRow(null)}
+          onSuccess={() => { setPayingRow(null); fetchData() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Tracker Pay Modal ──────────────────────────────────────────────────────────
+
+function TrackerPayModal({ row, memberEntries, monthLabel, accounts, onClose, onSuccess }: {
+  row: TrackerRow
+  memberEntries: TrackerEntry[]
+  monthLabel: string
+  accounts: Account[]
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [saving, setSaving]       = useState(false)
+
+  const rate = row.member.hourly_rate_usd ?? 0
+
+  async function pay() {
+    if (!accountId || !row.payment) return
+    setSaving(true)
+
+    // 1. Per-project breakdown: time_entries → pm_tasks → finance_project_id
+    const taskIds = [...new Set(memberEntries.map(e => e.task_id))]
+    const { data: tasks } = taskIds.length > 0
+      ? await supabase.from('pm_tasks').select('id, finance_project_id').in('id', taskIds)
+      : { data: [] as { id: string; finance_project_id: string | null }[] }
+
+    const projByTask: Record<string, string | null> = {}
+    for (const t of tasks ?? []) projByTask[t.id] = t.finance_project_id
+
+    const secByProject: Record<string, number> = {}
+    for (const e of memberEntries) {
+      const key = projByTask[e.task_id] ?? '__none__'
+      secByProject[key] = (secByProject[key] ?? 0) + (e.duration_seconds ?? 0)
+    }
+
+    // Category «Зарплата» (expense), if it exists
+    const { data: cats } = await supabase
+      .from('categories').select('id').eq('name', 'Зарплата').eq('type', 'expense').limit(1)
+    const categoryId = cats?.[0]?.id ?? null
+
+    const nowIso = new Date().toISOString()
+
+    // 2. One expense transaction per project (accurate project margins)
+    for (const [key, seconds] of Object.entries(secByProject)) {
+      const amount = Math.round((seconds / 3600) * rate * 100) / 100
+      if (amount <= 0) continue
+      await supabase.from('transactions').insert({
+        type: 'expense',
+        amount,
+        currency: 'USD',
+        account_id: accountId,
+        category_id: categoryId,
+        project_id: key === '__none__' ? null : key,
+        date: nowIso,
+        comment: `ЗП ${row.member.name} — ${monthLabel} (${fmtDur(seconds)} × $${rate}/год)`,
+        is_planned: false,
+      })
+      // Same balance behavior as AddTransactionModal (expense → negative delta)
+      await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -amount })
+    }
+
+    // 3. Mark salary payment as paid
+    await supabase.from('salary_payments').update({
+      status: 'paid',
+      paid_at: nowIso,
+      account_id: accountId,
+      total_seconds: row.totalSeconds,
+      amount_usd: row.amountUsd,
+    }).eq('id', row.payment.id)
+
+    // 4. Notify the designer
+    await supabase.from('notifications').insert({
+      type: 'salary_paid',
+      message: `💰 Виплачено зарплату за ${monthLabel}: $${row.amountUsd.toFixed(2)}`,
+      team_member_id: row.member.id,
+      recipient_team_member_id: row.member.id,
+    })
+
+    setSaving(false)
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">Виплата зарплати</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div className="bg-gray-50 rounded-xl px-4 py-3 flex justify-between items-center">
+            <div>
+              <p className="text-xs text-gray-500">{monthLabel}</p>
+              <p className="font-semibold text-gray-800">{row.member.name}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{fmtDur(row.totalSeconds)} × ${rate}/год</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">До виплати</p>
+              <p className="font-bold text-gray-900 text-lg">${row.amountUsd.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Рахунок списання</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            </select>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            Витрати будуть розбиті по проектах згідно затреканого часу.
+          </p>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <button onClick={onClose}
+            className="border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            Скасувати
+          </button>
+          <button onClick={pay} disabled={saving || !accountId}
+            className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+            {saving ? 'Виплата...' : `Оплатити $${row.amountUsd.toFixed(2)}`}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { TeamMember } from '@/types'
-import { LogOut, Clock, Calendar, ArrowLeft } from 'lucide-react'
+import { TeamMember, SalaryPayment } from '@/types'
+import { LogOut, Clock, Calendar, ArrowLeft, Wallet } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 
 type Period = 'today' | 'week' | 'month'
+type Tab = 'time' | 'salary'
 
 interface TimeEntry {
   id: string
@@ -36,16 +37,30 @@ function formatDuration(seconds: number): string {
   return `${h}г ${m}хв`
 }
 
+function monthLabel(periodMonth: string): string {
+  const [y, m] = periodMonth.split('-')
+  const s = new Date(Number(y), Number(m) - 1, 1)
+    .toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 export default function TeamReportsPage() {
   const router = useRouter()
   const [member, setMember] = useState<TeamMember | null>(null)
+  const [tab, setTab] = useState<Tab>('time')
   const [period, setPeriod] = useState<Period>('today')
   const [groups, setGroups] = useState<ProjectGroup[]>([])
   const [totalSeconds, setTotalSeconds] = useState(0)
   const [loading, setLoading] = useState(true)
 
+  // Salary tab state
+  const [payments, setPayments] = useState<SalaryPayment[]>([])
+  const [currentSeconds, setCurrentSeconds] = useState(0)
+  const [salaryLoading, setSalaryLoading] = useState(true)
+
   useEffect(() => { init() }, [])
   useEffect(() => { if (member) fetchEntries(member.id, period) }, [period])
+  useEffect(() => { if (member && tab === 'salary') fetchSalary(member.id) }, [tab, member])
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -153,6 +168,30 @@ export default function TeamReportsPage() {
     setLoading(false)
   }
 
+  async function fetchSalary(memberId: string) {
+    setSalaryLoading(true)
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const [{ data: pays }, { data: ents }] = await Promise.all([
+      supabase.from('salary_payments')
+        .select('*')
+        .eq('team_member_id', memberId)
+        .order('period_month', { ascending: false }),
+      supabase.from('time_entries')
+        .select('duration_seconds')
+        .eq('team_member_id', memberId)
+        .not('ended_at', 'is', null)
+        .gte('started_at', monthStart.toISOString()),
+    ])
+
+    setPayments((pays ?? []) as SalaryPayment[])
+    setCurrentSeconds((ents ?? []).reduce(
+      (s: number, e: { duration_seconds: number | null }) => s + (e.duration_seconds ?? 0), 0
+    ))
+    setSalaryLoading(false)
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.replace('/team/login')
@@ -198,25 +237,103 @@ export default function TeamReportsPage() {
         </div>
       </header>
 
-      {/* Period tabs */}
+      {/* Top-level tabs: time / salary */}
       <div className="bg-white border-b border-gray-100 px-6">
         <div className="flex gap-1 max-w-3xl mx-auto">
-          {(['today', 'week', 'month'] as Period[]).map(p => (
+          {([
+            { key: 'time' as Tab, label: 'Час', icon: Clock },
+            { key: 'salary' as Tab, label: 'Зарплата', icon: Wallet },
+          ]).map(t => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                period === p
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                tab === t.key
                   ? 'border-teal-500 text-teal-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              {periodLabel[p]}
+              <t.icon size={14} /> {t.label}
             </button>
           ))}
         </div>
       </div>
 
+      {/* Period tabs (time tab only) */}
+      {tab === 'time' && (
+        <div className="bg-white border-b border-gray-100 px-6">
+          <div className="flex gap-1 max-w-3xl mx-auto">
+            {(['today', 'week', 'month'] as Period[]).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  period === p
+                    ? 'border-teal-500 text-teal-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {periodLabel[p]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'salary' && (
+        <main className="max-w-3xl mx-auto p-6">
+          {/* Current month accrual */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6 flex items-center gap-4">
+            <div className="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center">
+              <Wallet size={22} className="text-teal-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs text-gray-400 mb-0.5">Поточний місяць (нараховано)</p>
+              <p className="text-3xl font-bold text-gray-900">
+                ${(Math.round((currentSeconds / 3600) * (member?.hourly_rate_usd ?? 0) * 100) / 100).toFixed(2)}
+                <span className="text-sm font-medium text-gray-400 ml-2">· {formatDuration(currentSeconds)}</span>
+              </p>
+            </div>
+            <p className="text-xs text-gray-400 self-start">
+              Ваш рейт: ${member?.hourly_rate_usd ?? 0}/год
+            </p>
+          </div>
+
+          {salaryLoading ? (
+            <div className="text-center py-10 text-gray-400 text-sm">Завантаження...</div>
+          ) : payments.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
+              <Wallet size={28} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Виплат поки немає</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
+              {payments.map(p => (
+                <div key={p.id} className="flex items-center justify-between px-5 py-4 gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{monthLabel(p.period_month)}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDuration(p.total_seconds)}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-gray-900">${p.amount_usd.toFixed(2)}</span>
+                    {p.status === 'paid' ? (
+                      <span className="text-xs bg-teal-50 text-teal-600 px-2.5 py-1 rounded-full font-medium">
+                        Виплачено {p.paid_at ? new Date(p.paid_at).toLocaleDateString('uk-UA') : ''}
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full font-medium">
+                        Підтверджено, очікує виплати
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {tab === 'time' && (
       <main className="max-w-3xl mx-auto p-6">
         {/* Total time */}
         <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6 flex items-center gap-4">
@@ -277,6 +394,7 @@ export default function TeamReportsPage() {
           </div>
         )}
       </main>
+      )}
     </div>
   )
 }

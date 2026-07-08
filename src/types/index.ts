@@ -5,6 +5,20 @@ export interface TeamMember {
   role: string
   color: string
   access_token: string
+  hourly_rate_usd?: number | null
+  created_at: string
+}
+
+export interface SalaryPayment {
+  id: string
+  team_member_id: string
+  period_month: string
+  total_seconds: number
+  amount_usd: number
+  status: 'confirmed' | 'paid'
+  confirmed_at: string | null
+  paid_at: string | null
+  account_id: string | null
   created_at: string
 }
 

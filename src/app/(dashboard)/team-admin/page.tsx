@@ -22,7 +22,12 @@ export default function TeamAdminPage() {
   const [password, setPassword]   = useState('')
   const [showPwd, setShowPwd]     = useState(false)
   const [role, setRole]           = useState('designer')
+  const [rate, setRate]           = useState('')
   const [color, setColor]         = useState(COLOR_PALETTE[0])
+
+  // Inline rate editing
+  const [editingRateId, setEditingRateId] = useState<string | null>(null)
+  const [editRateValue, setEditRateValue] = useState('')
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -42,14 +47,17 @@ export default function TeamAdminPage() {
     const res = await fetch('/api/team/create-member', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role, color }),
+      body: JSON.stringify({
+        name: name.trim(), email: email.trim(), password, role, color,
+        hourly_rate_usd: parseFloat(rate) || 0,
+      }),
     })
     const json = await res.json()
 
     setSaving(false)
     if (!res.ok) { setError(json.error); return }
 
-    setName(''); setEmail(''); setPassword(''); setRole('designer'); setColor(COLOR_PALETTE[0])
+    setName(''); setEmail(''); setPassword(''); setRole('designer'); setRate(''); setColor(COLOR_PALETTE[0])
     setShowForm(false)
     fetchMembers()
   }
@@ -61,6 +69,18 @@ export default function TeamAdminPage() {
       body: JSON.stringify({ id }),
     })
     setMembers(prev => prev.filter(m => m.id !== id))
+  }
+
+  function startRateEdit(m: TeamMember) {
+    setEditingRateId(m.id)
+    setEditRateValue(String(m.hourly_rate_usd ?? 0))
+  }
+
+  async function saveRate(id: string) {
+    const value = parseFloat(editRateValue) || 0
+    setEditingRateId(null)
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, hourly_rate_usd: value } : m))
+    await supabase.from('team_members').update({ hourly_rate_usd: value }).eq('id', id)
   }
 
   const loginUrl = typeof window !== 'undefined'
@@ -150,6 +170,19 @@ export default function TeamAdminPage() {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Рейт $/год</label>
+              <input
+                type="number" step="0.5" min="0"
+                value={rate}
+                onChange={e => setRate(e.target.value)}
+                placeholder="0"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+          </div>
+
           <div className="mb-4">
             <label className="text-xs text-gray-500 mb-1 block">Колір</label>
             <div className="flex items-center gap-2 mt-1">
@@ -213,6 +246,25 @@ export default function TeamAdminPage() {
                 <span className="text-xs text-gray-400 px-2 py-1 border border-gray-100 rounded-lg">
                   {m.role}
                 </span>
+                {editingRateId === m.id ? (
+                  <input
+                    autoFocus
+                    type="number" step="0.5" min="0"
+                    value={editRateValue}
+                    onChange={e => setEditRateValue(e.target.value)}
+                    onBlur={() => saveRate(m.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveRate(m.id); if (e.key === 'Escape') setEditingRateId(null) }}
+                    className="w-20 border border-teal-300 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                ) : (
+                  <button
+                    onClick={() => startRateEdit(m)}
+                    title="Змінити рейт"
+                    className="text-xs text-teal-600 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded-lg transition-colors"
+                  >
+                    ${m.hourly_rate_usd ?? 0}/год
+                  </button>
+                )}
                 <button
                   onClick={() => deleteMember(m.id)}
                   className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all p-1.5 rounded"

@@ -15,6 +15,7 @@ interface ProjectStats {
   name: string
   income: number
   expense: number
+  accrued_salary: number
   planned_income: number
   planned_expense: number
   profit: number
@@ -58,6 +59,49 @@ export default function ProjectsPage() {
 
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
+  // Accrued (not yet paid) tracker salary per project:
+  // time_entries → pm_tasks.finance_project_id, months without a paid salary_payments row
+  async function fetchAccruedSalary(): Promise<Record<string, number>> {
+    const yearStart = new Date(year, 0, 1)
+    const yearEnd   = new Date(year + 1, 0, 1)
+
+    const [{ data: entries }, { data: tasks }, { data: members }, { data: paidRows }] = await Promise.all([
+      supabase.from('time_entries')
+        .select('team_member_id, task_id, duration_seconds, started_at')
+        .not('ended_at', 'is', null)
+        .gte('started_at', yearStart.toISOString())
+        .lt('started_at', yearEnd.toISOString()),
+      supabase.from('pm_tasks').select('id, finance_project_id'),
+      supabase.from('team_members').select('id, hourly_rate_usd'),
+      supabase.from('salary_payments').select('team_member_id, period_month').eq('status', 'paid'),
+    ])
+
+    const projByTask: Record<string, string | null> = {}
+    for (const t of tasks ?? []) projByTask[t.id] = t.finance_project_id
+
+    const rateByMember: Record<string, number> = {}
+    for (const m of members ?? []) rateByMember[m.id] = m.hourly_rate_usd ?? 0
+
+    // "memberId|YYYY-MM" pairs already paid out
+    const paidSet = new Set(
+      (paidRows ?? []).map(r => `${r.team_member_id}|${String(r.period_month).slice(0, 7)}`)
+    )
+
+    const accrued: Record<string, number> = {}
+    for (const e of entries ?? []) {
+      const projectId = projByTask[e.task_id]
+      if (!projectId) continue
+      const rate = rateByMember[e.team_member_id] ?? 0
+      if (rate <= 0) continue
+      const d = new Date(e.started_at)
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (paidSet.has(`${e.team_member_id}|${monthKey}`)) continue
+      accrued[projectId] = (accrued[projectId] ?? 0) + ((e.duration_seconds ?? 0) / 3600) * rate
+    }
+    for (const k of Object.keys(accrued)) accrued[k] = Math.round(accrued[k] * 100) / 100
+    return accrued
+  }
+
   async function fetchSummary() {
     const { data: projs } = await supabase.from('projects').select('id, name')
     const { data: txs }   = await supabase
@@ -67,6 +111,8 @@ export default function ProjectsPage() {
       .lte('date', `${year}-12-31`)
 
     if (!projs || !txs) return
+
+    const accruedByProject = await fetchAccruedSalary()
 
     const stats = projs.map(p => {
       const ptxs = txs.filter(t => t.project_id === p.id)
@@ -78,13 +124,15 @@ export default function ProjectsPage() {
       const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
       const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
 
+      const accrued_salary = accruedByProject[p.id] ?? 0
+
       const totalIncome  = income + planned_income
-      const totalExpense = expense + planned_expense
+      const totalExpense = expense + planned_expense + accrued_salary
       const profit = totalIncome - totalExpense
       const margin = totalIncome > 0 ? Math.round((profit / totalIncome) * 100) : 0
       const roi    = totalExpense > 0 ? Math.round((profit / totalExpense) * 100) : 0
 
-      return { id: p.id, name: p.name, income, expense, planned_income, planned_expense, profit, margin, roi }
+      return { id: p.id, name: p.name, income, expense, accrued_salary, planned_income, planned_expense, profit, margin, roi }
     })
 
     setProjects(stats.sort((a, b) => b.profit - a.profit))
@@ -148,7 +196,7 @@ export default function ProjectsPage() {
   }
 
   const totalIncome  = projects.reduce((s, p) => s + p.income + p.planned_income, 0)
-  const totalExpense = projects.reduce((s, p) => s + p.expense + p.planned_expense, 0)
+  const totalExpense = projects.reduce((s, p) => s + p.expense + p.planned_expense + p.accrued_salary, 0)
   const totalProfit  = totalIncome - totalExpense
 
   return (
@@ -208,7 +256,7 @@ export default function ProjectsPage() {
             )}
             {projects.map(p => {
               const totalInc = p.income + (showPlanned ? p.planned_income : 0)
-              const totalExp = p.expense + (showPlanned ? p.planned_expense : 0)
+              const totalExp = p.expense + p.accrued_salary + (showPlanned ? p.planned_expense : 0)
               const profit   = totalInc - totalExp
               const margin   = totalInc > 0 ? Math.round((profit / totalInc) * 100) : 0
               const roi      = totalExp > 0 ? Math.round((profit / totalExp) * 100) : 0
@@ -227,7 +275,14 @@ export default function ProjectsPage() {
                     </td>
                     <td className="py-3 px-4 font-medium text-gray-800">{p.name}</td>
                     <td className="py-3 px-4 text-right text-teal-600">{fmt(totalInc)}</td>
-                    <td className="py-3 px-4 text-right text-red-500">{fmt(totalExp)}</td>
+                    <td className="py-3 px-4 text-right text-red-500">
+                      {fmt(totalExp)}
+                      {p.accrued_salary > 0 && (
+                        <p className="text-[10px] text-gray-400 font-normal">
+                          у т.ч. нараховано ЗП: {fmt(p.accrued_salary)}
+                        </p>
+                      )}
+                    </td>
                     <td className={`py-3 px-4 text-right font-semibold ${profit >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
                       {fmt(profit)}
                     </td>
@@ -261,6 +316,14 @@ export default function ProjectsPage() {
                                 </div>
                               ))}
                             </div>
+
+                            {/* Accrued (unpaid) tracker salary */}
+                            {p.accrued_salary > 0 && (
+                              <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
+                                <p className="text-xs text-amber-700 font-medium">Нараховано ЗП (не виплачено)</p>
+                                <p className="text-sm font-bold text-amber-700">{fmt(p.accrued_salary)}</p>
+                              </div>
+                            )}
 
                             {/* Chart */}
                             {det.monthly.length > 0 && (

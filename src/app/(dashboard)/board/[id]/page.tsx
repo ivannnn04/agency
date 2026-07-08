@@ -9,6 +9,7 @@ import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
 } from 'lucide-react'
+import GanttView from '@/components/GanttView'
 
 const DEFAULT_COLUMNS = [
   { name: 'TO DO',                 color: '#F59E0B', position: 0 },
@@ -51,6 +52,7 @@ export default function BoardPage() {
   const [newColName, setNewColName]   = useState('')
   const [newColColor, setNewColColor] = useState('#6B7280')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [view, setView] = useState<'board' | 'gantt'>('board')
   const menuRef    = useRef<HTMLDivElement>(null)
   const memberRef  = useRef<HTMLDivElement>(null)
 
@@ -162,6 +164,13 @@ export default function BoardPage() {
 
   async function addProjectMember(memberId: string) {
     await supabase.from('project_members').insert({ project_id: id, team_member_id: memberId })
+    await supabase.from('notifications').insert({
+      type: 'project_added',
+      message: `Вас додано до проєкту «${project?.name ?? ''}»`,
+      project_id: id,
+      team_member_id: memberId,
+      recipient_team_member_id: memberId,
+    })
     const m = members.find(m => m.id === memberId)
     if (m) setProjectMembers(prev => [...prev, m])
   }
@@ -173,8 +182,25 @@ export default function BoardPage() {
 
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
     await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    // Notify designer when assigned
+    if (patch.team_member_id) {
+      const task = tasks.find(t => t.id === taskId)
+      await supabase.from('notifications').insert({
+        type: 'task_assigned',
+        message: `Вам призначено задачу «${task?.title ?? ''}» у проєкті «${project?.name ?? ''}»`,
+        project_id: id,
+        task_id: taskId,
+        team_member_id: patch.team_member_id,
+        recipient_team_member_id: patch.team_member_id,
+      })
+    }
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
     setSelectedTask(prev => prev?.id === taskId ? { ...prev, ...patch } : prev)
+  }
+
+  async function updateTaskDates(taskId: string, patch: { start_date?: string | null; due_date?: string | null }) {
+    await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
   }
 
   if (loading) return (
@@ -229,7 +255,24 @@ create policy "team_members_all" on team_members for all using (true) with check
       {/* Board area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
-          <h1 className="text-base font-semibold text-gray-900">{project?.name}</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-base font-semibold text-gray-900">{project?.name}</h1>
+            {/* Tab switcher */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setView('board')}
+                className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'board' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Борда
+              </button>
+              <button
+                onClick={() => setView('gantt')}
+                className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'gantt' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Гант
+              </button>
+            </div>
+          </div>
 
           {/* Project member management */}
           <div className="flex items-center gap-1.5 relative" ref={memberRef}>
@@ -290,62 +333,68 @@ create policy "team_members_all" on team_members for all using (true) with check
           </div>
         </div>
 
-        <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
-          {columns.map(col => {
-            const colTasks = tasks.filter(t => t.column_id === col.id)
-            return (
-              <KanbanColumn
-                key={col.id}
-                col={col}
-                tasks={colTasks}
-                columns={columns}
-                members={members}
-                isAdding={addingInColumn === col.id}
-                onStartAdd={() => setAddingInColumn(col.id)}
-                onCancelAdd={() => setAddingInColumn(null)}
-                onAddTask={patch => addTask(col.id, patch)}
-                onSelectTask={t => setSelectedTask(t)}
-                onMoveTask={moveTask}
-                onDeleteTask={deleteTask}
-                onDeleteColumn={() => deleteColumn(col.id)}
-                openMenu={openMenu}
-                onOpenMenu={setOpenMenu}
-                menuRef={menuRef}
-              />
-            )
-          })}
-
-          {/* Add column */}
-          <div className="flex-shrink-0 w-[260px]">
-            {addingColumn ? (
-              <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-                <input
-                  autoFocus
-                  value={newColName}
-                  onChange={e => setNewColName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addColumn(); if (e.key === 'Escape') { setAddingColumn(false); setNewColName('') } }}
-                  placeholder="Назва колонки..."
-                  className="w-full text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-300 mb-2"
+        {view === 'board' ? (
+          <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
+            {columns.map(col => {
+              const colTasks = tasks.filter(t => t.column_id === col.id)
+              return (
+                <KanbanColumn
+                  key={col.id}
+                  col={col}
+                  tasks={colTasks}
+                  columns={columns}
+                  members={members}
+                  isAdding={addingInColumn === col.id}
+                  onStartAdd={() => setAddingInColumn(col.id)}
+                  onCancelAdd={() => setAddingInColumn(null)}
+                  onAddTask={patch => addTask(col.id, patch)}
+                  onSelectTask={t => setSelectedTask(t)}
+                  onMoveTask={moveTask}
+                  onDeleteTask={deleteTask}
+                  onDeleteColumn={() => deleteColumn(col.id)}
+                  openMenu={openMenu}
+                  onOpenMenu={setOpenMenu}
+                  menuRef={menuRef}
                 />
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-xs text-gray-500">Колір:</label>
-                  <input type="color" value={newColColor} onChange={e => setNewColColor(e.target.value)} className="w-8 h-6 rounded cursor-pointer border-0" />
+              )
+            })}
+
+            {/* Add column */}
+            <div className="flex-shrink-0 w-[260px]">
+              {addingColumn ? (
+                <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+                  <input
+                    autoFocus
+                    value={newColName}
+                    onChange={e => setNewColName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addColumn(); if (e.key === 'Escape') { setAddingColumn(false); setNewColName('') } }}
+                    placeholder="Назва колонки..."
+                    className="w-full text-sm text-gray-800 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-300 mb-2"
+                  />
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="text-xs text-gray-500">Колір:</label>
+                    <input type="color" value={newColColor} onChange={e => setNewColColor(e.target.value)} className="w-8 h-6 rounded cursor-pointer border-0" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addColumn} className="flex-1 text-xs bg-gray-900 text-white rounded-lg py-1.5 hover:bg-gray-700">Додати</button>
+                    <button onClick={() => { setAddingColumn(false); setNewColName('') }} className="text-gray-400 hover:text-gray-600 px-2"><X size={14} /></button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={addColumn} className="flex-1 text-xs bg-gray-900 text-white rounded-lg py-1.5 hover:bg-gray-700">Додати</button>
-                  <button onClick={() => { setAddingColumn(false); setNewColName('') }} className="text-gray-400 hover:text-gray-600 px-2"><X size={14} /></button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddingColumn(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
-              >
-                <Plus size={15} /> Нова колонка
-              </button>
-            )}
+              ) : (
+                <button
+                  onClick={() => setAddingColumn(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
+                >
+                  <Plus size={15} /> Нова колонка
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 overflow-hidden">
+            <GanttView tasks={tasks} onUpdate={updateTaskDates} />
+          </div>
+        )}
       </div>
 
       {/* Task detail drawer */}

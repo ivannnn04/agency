@@ -141,8 +141,10 @@ export default function GanttView({ tasks, onUpdate }: Props) {
         if (origEndDate) newEnd = toDateStr(addDays(origEndDate, dayDelta))
       }
 
-      dragRef.current.currentStart = newStart
-      dragRef.current.currentEnd = newEnd
+      if (dragRef.current) {
+        dragRef.current.currentStart = newStart
+        dragRef.current.currentEnd = newEnd
+      }
 
       setLocalTasks(prev =>
         prev.map(t =>

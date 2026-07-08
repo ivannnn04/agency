@@ -325,6 +325,7 @@ export default function TeamBoardPage() {
                       const otherTaskActive = activeTimer && activeTimer.taskId !== task.id
                       const isOverdue = task.due_date && new Date(task.due_date) < new Date()
                       const tracked = (timeByTask[task.id] ?? 0) + (isThisTaskActive ? elapsed : 0)
+                      const isMine = task.team_member_id === member?.id
 
                       return (
                         <div
@@ -335,22 +336,47 @@ export default function TeamBoardPage() {
                             e.dataTransfer.effectAllowed = 'move'
                           }}
                           onClick={() => setSelectedTask(task)}
-                          className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer active:cursor-grabbing select-none"
+                          className={`bg-white rounded-xl border p-3.5 hover:shadow-sm transition-all cursor-pointer active:cursor-grabbing select-none ${
+                            isMine ? 'border-teal-300 ring-1 ring-teal-200' : 'border-gray-100 hover:border-gray-300'
+                          }`}
                         >
+                          {/* "Assigned to you" badge */}
+                          {isMine && (
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div
+                                className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
+                                style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+                              >
+                                {member?.name.charAt(0)}
+                              </div>
+                              <span className="text-[10px] font-semibold text-teal-600 uppercase tracking-wide">
+                                Призначено вам
+                              </span>
+                            </div>
+                          )}
+
                           <p className="text-sm text-gray-800 leading-snug mb-3">{task.title}</p>
 
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
                               {/* Assignee circle */}
-                              {task.team_member_id ? (
+                              {isMine ? (
                                 <div
-                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 bg-teal-500"
-                                  title="Призначено"
+                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+                                  style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+                                  title={`Призначено: ${member?.name}`}
+                                >
+                                  {member?.name.charAt(0)}
+                                </div>
+                              ) : task.team_member_id ? (
+                                <div
+                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 bg-gray-400"
+                                  title="Призначено іншому"
                                 >
                                   <User size={10} />
                                 </div>
                               ) : (
-                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center">
+                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center" title="Не призначено">
                                   <User size={10} className="text-gray-400" />
                                 </div>
                               )}
@@ -471,6 +497,7 @@ export default function TeamBoardPage() {
           <TaskPanel
             task={selectedTask}
             columns={columns}
+            member={member}
             trackedSeconds={(timeByTask[selectedTask.id] ?? 0) + (activeTimer?.taskId === selectedTask.id ? elapsed : 0)}
             isTimerActive={activeTimer?.taskId === selectedTask.id}
             otherTimerActive={!!activeTimer && activeTimer.taskId !== selectedTask.id}
@@ -507,11 +534,12 @@ export default function TeamBoardPage() {
 // ── Task detail side panel ──────────────────────────────────────────────────────
 
 function TaskPanel({
-  task, columns, trackedSeconds, isTimerActive, otherTimerActive, elapsed,
+  task, columns, member, trackedSeconds, isTimerActive, otherTimerActive, elapsed,
   onStartTimer, onStopTimer, onClose, onUpdate, onMove,
 }: {
   task: PMTask
   columns: PMColumn[]
+  member: TeamMember | null
   trackedSeconds: number
   isTimerActive: boolean
   otherTimerActive: boolean
@@ -522,6 +550,7 @@ function TaskPanel({
   onUpdate: (patch: Partial<PMTask>) => void
   onMove: (colId: string) => void
 }) {
+  const isMine = task.team_member_id === member?.id
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc] = useState(task.description ?? '')
   const [estimate, setEstimate] = useState(task.estimate_hours != null ? String(task.estimate_hours) : '')
@@ -629,6 +658,26 @@ function TaskPanel({
 
         {/* Fields */}
         <div className="px-5 pb-4 flex flex-col gap-0.5">
+          {/* Assignee */}
+          <div className="flex items-center gap-3 py-2 px-2 -mx-2">
+            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Виконавець</span>
+            {isMine ? (
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
+                  style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+                >
+                  {member?.name.charAt(0)}
+                </div>
+                <span className="text-sm font-medium text-teal-600">{member?.name} (ви)</span>
+              </div>
+            ) : task.team_member_id ? (
+              <span className="text-sm text-gray-500">Інший учасник</span>
+            ) : (
+              <span className="text-sm text-gray-400">Не призначено</span>
+            )}
+          </div>
+
           {/* Status */}
           <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
             <span className="text-sm text-gray-400 w-28 flex-shrink-0">Статус</span>

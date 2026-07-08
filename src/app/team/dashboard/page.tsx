@@ -4,32 +4,42 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { Calendar, Flag, LogOut } from 'lucide-react'
+import { Calendar, Flag, LogOut, Plus, X } from 'lucide-react'
 
-interface TaskWithMeta {
+interface TaskData {
   id: string
   title: string
   description: string | null
   priority: string | null
   due_date: string | null
-  column_id: string | null
-  project_id: string | null
-  column_name?: string
-  column_color?: string
-  project_name?: string
+  team_member_id: string | null
+}
+
+interface ColumnData {
+  id: string
+  name: string
+  color: string
+  tasks: TaskData[]
+}
+
+interface ProjectData {
+  id: string
+  name: string
+  columns: ColumnData[]
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
-  low:    '#9CA3AF',
-  medium: '#F59E0B',
-  high:   '#EF4444',
+  low: '#9CA3AF', medium: '#F59E0B', high: '#EF4444',
 }
 
 export default function TeamDashboardPage() {
   const router = useRouter()
-  const [member, setMember]   = useState<TeamMember | null>(null)
-  const [tasks, setTasks]     = useState<TaskWithMeta[]>([])
-  const [loading, setLoading] = useState(true)
+  const [member, setMember]     = useState<TeamMember | null>(null)
+  const [projects, setProjects] = useState<ProjectData[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [addingTask, setAddingTask] = useState<{ projectId: string; columnId: string } | null>(null)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -40,47 +50,81 @@ export default function TeamDashboardPage() {
     if (!user) { router.replace('/team/login'); return }
 
     const { data: mem } = await supabase
-      .from('team_members')
-      .select('*')
-      .eq('supabase_user_id', user.id)
-      .single()
-
+      .from('team_members').select('*').eq('supabase_user_id', user.id).single()
     if (!mem) { router.replace('/team/login'); return }
     setMember(mem)
 
-    const { data: rawTasks } = await supabase
-      .from('pm_tasks')
-      .select('id, title, description, priority, due_date, column_id, project_id')
-      .eq('team_member_id', mem.id)
-      .order('due_date', { ascending: true, nullsFirst: false })
+    const { data: pm } = await supabase
+      .from('project_members').select('project_id').eq('team_member_id', mem.id)
 
-    if (!rawTasks || rawTasks.length === 0) {
-      setTasks([]); setLoading(false); return
+    if (!pm || pm.length === 0) { setProjects([]); setLoading(false); return }
+
+    const projectIds = pm.map(r => r.project_id)
+    const { data: projs } = await supabase
+      .from('projects').select('id, name').in('id', projectIds).order('name')
+
+    if (!projs) { setLoading(false); return }
+
+    const projectData = await Promise.all(
+      projs.map(async proj => {
+        const [{ data: cols }, { data: txs }] = await Promise.all([
+          supabase.from('pm_columns').select('id, name, color, position').eq('project_id', proj.id).order('position'),
+          supabase.from('pm_tasks').select('id, title, description, priority, due_date, team_member_id, column_id')
+            .eq('finance_project_id', proj.id).order('created_at'),
+        ])
+        return {
+          id: proj.id,
+          name: proj.name,
+          columns: (cols ?? []).map(col => ({
+            ...col,
+            tasks: (txs ?? []).filter(t => t.column_id === col.id),
+          })),
+        }
+      })
+    )
+
+    setProjects(projectData)
+    setLoading(false)
+  }
+
+  async function createTask(projectId: string, columnId: string) {
+    if (!newTaskTitle.trim() || !member) return
+    setSaving(true)
+
+    const project = projects.find(p => p.id === projectId)
+    const res = await fetch('/api/team/create-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newTaskTitle.trim(),
+        finance_project_id: projectId,
+        column_id: columnId,
+        team_member_id: member.id,
+        created_by: member.name,
+        project_name: project?.name ?? '',
+      }),
+    })
+    const json = await res.json()
+    setSaving(false)
+    if (!res.ok) return
+
+    const newTask: TaskData = {
+      id: json.task.id,
+      title: json.task.title,
+      description: null,
+      priority: json.task.priority,
+      due_date: null,
+      team_member_id: member.id,
     }
 
-    const colIds  = [...new Set(rawTasks.map(t => t.column_id).filter(Boolean))]
-    const projIds = [...new Set(rawTasks.map(t => t.project_id).filter(Boolean))]
-
-    const [{ data: cols }, { data: projs }] = await Promise.all([
-      colIds.length > 0
-        ? supabase.from('pm_columns').select('id, name, color').in('id', colIds)
-        : Promise.resolve({ data: [] }),
-      projIds.length > 0
-        ? supabase.from('projects').select('id, name').in('id', projIds)
-        : Promise.resolve({ data: [] }),
-    ])
-
-    const colMap  = new Map((cols  ?? []).map(c => [c.id, c]))
-    const projMap = new Map((projs ?? []).map(p => [p.id, p]))
-
-    setTasks(rawTasks.map(t => ({
-      ...t,
-      column_name:  t.column_id  ? colMap.get(t.column_id)?.name   : undefined,
-      column_color: t.column_id  ? colMap.get(t.column_id)?.color  : undefined,
-      project_name: t.project_id ? projMap.get(t.project_id)?.name : undefined,
-    })))
-
-    setLoading(false)
+    setProjects(prev => prev.map(p => p.id !== projectId ? p : {
+      ...p,
+      columns: p.columns.map(c => c.id !== columnId ? c : {
+        ...c, tasks: [...c.tasks, newTask],
+      }),
+    }))
+    setNewTaskTitle('')
+    setAddingTask(null)
   }
 
   async function handleLogout() {
@@ -94,12 +138,7 @@ export default function TeamDashboardPage() {
     </div>
   )
 
-  const grouped = tasks.reduce<Record<string, TaskWithMeta[]>>((acc, t) => {
-    const key = t.project_name ?? 'Без проєкту'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(t)
-    return acc
-  }, {})
+  const totalTasks = projects.reduce((s, p) => s + p.columns.reduce((cs, c) => cs + c.tasks.length, 0), 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -116,8 +155,8 @@ export default function TeamDashboardPage() {
         </div>
         <div className="ml-auto flex items-center gap-4">
           <div className="text-right">
-            <p className="text-xs text-gray-400">Мої задачі</p>
-            <p className="text-sm font-medium text-teal-400">{tasks.length} задач</p>
+            <p className="text-xs text-gray-400">Задач у роботі</p>
+            <p className="text-sm font-medium text-teal-400">{totalTasks}</p>
           </div>
           <button
             onClick={handleLogout}
@@ -129,22 +168,75 @@ export default function TeamDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto p-6">
-        {tasks.length === 0 ? (
+      <main className="max-w-3xl mx-auto p-6">
+        {projects.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
-            <p className="text-lg mb-1">🎉</p>
-            <p className="font-medium">Немає призначених задач</p>
-            <p className="text-sm mt-1">Насолоджуйтесь вільним часом!</p>
+            <p className="font-medium">Вас ще не додали до жодного проєкту</p>
+            <p className="text-sm mt-1">Зверніться до адміністратора</p>
           </div>
         ) : (
-          Object.entries(grouped).map(([projectName, projectTasks]) => (
-            <div key={projectName} className="mb-8">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                {projectName}
+          projects.map(project => (
+            <div key={project.id} className="mb-10">
+              <h2 className="text-base font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-100">
+                {project.name}
               </h2>
-              <div className="flex flex-col gap-2">
-                {projectTasks.map(task => (
-                  <TaskRow key={task.id} task={task} />
+
+              <div className="flex flex-col gap-5">
+                {project.columns.map(col => (
+                  <div key={col.id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
+                      <span className="text-xs font-bold uppercase tracking-wide" style={{ color: col.color }}>
+                        {col.name}
+                      </span>
+                      <span className="text-xs text-gray-400 font-medium">{col.tasks.length}</span>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pl-4">
+                      {col.tasks.map(task => <TaskRow key={task.id} task={task} />)}
+
+                      {addingTask?.projectId === project.id && addingTask?.columnId === col.id ? (
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+                          <input
+                            autoFocus
+                            value={newTaskTitle}
+                            onChange={e => setNewTaskTitle(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') createTask(project.id, col.id)
+                              if (e.key === 'Escape') { setAddingTask(null); setNewTaskTitle('') }
+                            }}
+                            placeholder="Назва задачі..."
+                            className="w-full text-sm focus:outline-none"
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => createTask(project.id, col.id)}
+                              disabled={!newTaskTitle.trim() || saving}
+                              className="text-xs bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition-colors"
+                            >
+                              {saving ? 'Збереження...' : 'Зберегти'}
+                            </button>
+                            <button
+                              onClick={() => { setAddingTask(null); setNewTaskTitle('') }}
+                              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                              Скасувати
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setAddingTask({ projectId: project.id, columnId: col.id })
+                            setNewTaskTitle('')
+                          }}
+                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
+                        >
+                          <Plus size={12} /> Додати задачу
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -155,46 +247,31 @@ export default function TeamDashboardPage() {
   )
 }
 
-function TaskRow({ task }: { task: TaskWithMeta }) {
+function TaskRow({ task }: { task: TaskData }) {
   const isOverdue = task.due_date && new Date(task.due_date) < new Date()
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 hover:border-gray-200 transition-colors">
+    <div className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-200 transition-colors">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 leading-snug">{task.title}</p>
-          {task.description && (
-            <p className="text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>
-          )}
-        </div>
-        {task.column_name && (
-          <span
-            className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full flex-shrink-0"
-            style={{
-              backgroundColor: (task.column_color ?? '#6B7280') + '22',
-              color: task.column_color ?? '#6B7280',
-            }}
-          >
-            {task.column_name}
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-4 mt-3">
-        {task.due_date && (
-          <span className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
-            <Calendar size={11} />
-            {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
-            {isOverdue && <span className="ml-1">прострочено</span>}
-          </span>
-        )}
+        <p className="text-sm font-medium text-gray-900 leading-snug">{task.title}</p>
         {task.priority && (
-          <span className="flex items-center gap-1 text-xs text-gray-400">
-            <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority] ?? '#9CA3AF' }} />
-            {task.priority === 'high' ? 'Високий' : task.priority === 'medium' ? 'Середній' : 'Низький'}
-          </span>
+          <Flag
+            size={12}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: PRIORITY_COLOR[task.priority] ?? '#9CA3AF' }}
+          />
         )}
       </div>
+      {task.description && (
+        <p className="text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>
+      )}
+      {task.due_date && (
+        <span className={`flex items-center gap-1 text-xs mt-2 ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+          <Calendar size={11} />
+          {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+          {isOverdue && <span className="ml-1">прострочено</span>}
+        </span>
+      )}
     </div>
   )
 }

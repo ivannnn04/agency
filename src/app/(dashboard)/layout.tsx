@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { signOut } from 'next-auth/react'
 import Sidebar from '@/components/sidebar/Sidebar'
 import AddTransactionModal from '@/components/modals/AddTransactionModal'
-import { Settings, Clock, Plus, Minus, ArrowLeftRight } from 'lucide-react'
+import { Settings, Plus, Minus, ArrowLeftRight } from 'lucide-react'
 import { TransactionType } from '@/types'
+import NotificationBell from '@/components/NotificationBell'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [modalOpen, setModalOpen] = useState(false)
@@ -46,9 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-3">
-            <button className="text-gray-400 hover:text-white transition-colors">
-              <Clock size={18} />
-            </button>
+            <NotificationBell />
             <button onClick={() => signOut()} className="text-gray-400 hover:text-white transition-colors">
               <Settings size={18} />
             </button>

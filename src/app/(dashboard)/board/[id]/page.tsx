@@ -7,7 +7,7 @@ import { Project, TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
-  Tag, User, ChevronRight, AlignLeft, CheckSquare,
+  Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
 } from 'lucide-react'
 
 const DEFAULT_COLUMNS = [
@@ -37,25 +37,29 @@ function memberInitial(m: TeamMember) {
 
 export default function BoardPage() {
   const { id } = useParams<{ id: string }>()
-  const [project, setProject]     = useState<Project | null>(null)
-  const [columns, setColumns]     = useState<PMColumn[]>([])
-  const [tasks, setTasks]         = useState<PMTask[]>([])
-  const [members, setMembers]     = useState<TeamMember[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [dbError, setDbError]     = useState<string | null>(null)
+  const [project, setProject]         = useState<Project | null>(null)
+  const [columns, setColumns]         = useState<PMColumn[]>([])
+  const [tasks, setTasks]             = useState<PMTask[]>([])
+  const [members, setMembers]         = useState<TeamMember[]>([])
+  const [projectMembers, setProjectMembers] = useState<TeamMember[]>([])
+  const [memberPanelOpen, setMemberPanelOpen] = useState(false)
+  const [loading, setLoading]         = useState(true)
+  const [dbError, setDbError]         = useState<string | null>(null)
   const [selectedTask, setSelectedTask]     = useState<PMTask | null>(null)
   const [addingInColumn, setAddingInColumn] = useState<string | null>(null)
   const [addingColumn, setAddingColumn]     = useState(false)
   const [newColName, setNewColName]   = useState('')
   const [newColColor, setNewColColor] = useState('#6B7280')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef    = useRef<HTMLDivElement>(null)
+  const memberRef  = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (id) fetchAll() }, [id])
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null)
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) setMemberPanelOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -64,14 +68,19 @@ export default function BoardPage() {
   async function fetchAll() {
     setLoading(true)
     setDbError(null)
-    const [{ data: proj }, { data: cols, error: colErr }, { data: tx }, { data: mems }] = await Promise.all([
+    const [{ data: proj }, { data: cols, error: colErr }, { data: tx }, { data: mems }, { data: pm }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
       supabase.from('team_members').select('*').order('created_at'),
+      supabase.from('project_members').select('team_member_id').eq('project_id', id),
     ])
     if (proj) setProject(proj)
-    if (mems) setMembers(mems)
+    if (mems) {
+      setMembers(mems)
+      const pmIds = new Set((pm ?? []).map(r => r.team_member_id))
+      setProjectMembers(mems.filter(m => pmIds.has(m.id)))
+    }
 
     if (colErr) {
       setDbError('Таблиця pm_columns не знайдена. Запусти SQL міграцію в Supabase.')
@@ -151,6 +160,17 @@ export default function BoardPage() {
     setTasks(prev => prev.map(t => t.column_id === colId ? { ...t, column_id: null } : t))
   }
 
+  async function addProjectMember(memberId: string) {
+    await supabase.from('project_members').insert({ project_id: id, team_member_id: memberId })
+    const m = members.find(m => m.id === memberId)
+    if (m) setProjectMembers(prev => [...prev, m])
+  }
+
+  async function removeProjectMember(memberId: string) {
+    await supabase.from('project_members').delete().eq('project_id', id).eq('team_member_id', memberId)
+    setProjectMembers(prev => prev.filter(m => m.id !== memberId))
+  }
+
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
     await supabase.from('pm_tasks').update(patch).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
@@ -210,26 +230,64 @@ create policy "team_members_all" on team_members for all using (true) with check
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
           <h1 className="text-base font-semibold text-gray-900">{project?.name}</h1>
-          {/* Member avatars */}
-          {members.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              {members.slice(0, 6).map(m => (
+
+          {/* Project member management */}
+          <div className="flex items-center gap-1.5 relative" ref={memberRef}>
+            {projectMembers.map(m => (
+              <div key={m.id} title={m.name} className="relative group/avatar">
                 <div
-                  key={m.id}
-                  title={m.name}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold ring-2 ring-white"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold ring-2 ring-white cursor-default"
                   style={{ backgroundColor: m.color }}
                 >
                   {memberInitial(m)}
                 </div>
-              ))}
-              {members.length > 6 && (
-                <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xs font-semibold ring-2 ring-white">
-                  +{members.length - 6}
-                </div>
-              )}
-            </div>
-          )}
+                <button
+                  onClick={() => removeProjectMember(m.id)}
+                  className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white rounded-full hidden group-hover/avatar:flex items-center justify-center"
+                  title={`Видалити ${m.name} з проєкту`}
+                >
+                  <X size={8} />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => setMemberPanelOpen(v => !v)}
+              className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 ring-2 ring-white transition-colors"
+              title="Додати учасника до проєкту"
+            >
+              <UserPlus size={12} />
+            </button>
+
+            {memberPanelOpen && (
+              <div className="absolute right-0 top-9 z-30 bg-white rounded-xl shadow-lg border border-gray-100 py-2 min-w-[200px]">
+                <p className="px-3 pb-2 text-[10px] text-gray-400 uppercase tracking-wide font-medium">Додати до проєкту</p>
+                {members.filter(m => !projectMembers.find(pm => pm.id === m.id)).length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-gray-400">Всі учасники вже додані</p>
+                ) : (
+                  members
+                    .filter(m => !projectMembers.find(pm => pm.id === m.id))
+                    .map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => { addProjectMember(m.id); setMemberPanelOpen(false) }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-sm text-gray-700 text-left"
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                          style={{ backgroundColor: m.color }}
+                        >
+                          {memberInitial(m)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{m.name}</p>
+                          <p className="text-xs text-gray-400">{m.role}</p>
+                        </div>
+                      </button>
+                    ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">

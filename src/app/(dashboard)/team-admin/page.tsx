@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { Plus, Trash2, Users, Eye, EyeOff } from 'lucide-react'
+import { Plus, Trash2, Users, Eye, EyeOff, KeyRound, X } from 'lucide-react'
 
 const COLOR_PALETTE = [
   '#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444',
@@ -29,6 +29,7 @@ export default function TeamAdminPage() {
   const [editingRateId, setEditingRateId] = useState<string | null>(null)
   const [editRateValue, setEditRateValue] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
+  const [pwdMemberId, setPwdMemberId] = useState<string | null>(null)
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -267,6 +268,13 @@ export default function TeamAdminPage() {
                   </button>
                 )}
                 <button
+                  onClick={() => setPwdMemberId(m.id)}
+                  title="Встановити / скинути пароль"
+                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors"
+                >
+                  <KeyRound size={12} /> Пароль
+                </button>
+                <button
                   onClick={() => deleteMember(m.id)}
                   className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all p-1.5 rounded"
                 >
@@ -299,6 +307,121 @@ export default function TeamAdminPage() {
             {linkCopied ? 'Скопійовано' : 'Копіювати'}
           </button>
         </div>
+      </div>
+
+      {pwdMemberId && (
+        <SetPasswordModal
+          member={members.find(m => m.id === pwdMemberId)!}
+          onClose={() => setPwdMemberId(null)}
+          onSuccess={() => { setPwdMemberId(null); fetchMembers() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Set / reset password modal ──────────────────────────────────────────────────
+
+function SetPasswordModal({ member, onClose, onSuccess }: {
+  member: TeamMember
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [email, setEmail]       = useState(member.email ?? '')
+  const [showPwd, setShowPwd]   = useState(false)
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState('')
+  const [done, setDone]         = useState(false)
+
+  const needsEmail = !member.email
+
+  async function submit() {
+    if (password.length < 6) { setError('Мінімум 6 символів'); return }
+    if (needsEmail && !email.trim()) { setError('Введіть email'); return }
+    setSaving(true); setError('')
+    const res = await fetch('/api/team/set-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: member.id, password, email: email.trim() || undefined }),
+    })
+    const json = await res.json()
+    setSaving(false)
+    if (!res.ok) { setError(json.error); return }
+    setDone(true)
+    setTimeout(onSuccess, 1200)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Пароль для входу</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{member.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        {done ? (
+          <div className="p-6 text-center">
+            <p className="text-sm font-medium text-teal-600">Пароль встановлено ✓</p>
+            <p className="text-xs text-gray-400 mt-1">Учасник може увійти на /team/login</p>
+          </div>
+        ) : (
+          <div className="p-5 flex flex-col gap-3">
+            {needsEmail && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email для входу *</label>
+                <input
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  type="email"
+                  placeholder="name@example.com"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Новий пароль *</label>
+              <div className="relative">
+                <input
+                  autoFocus
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submit() }}
+                  type={showPwd ? 'text' : 'password'}
+                  placeholder="Мінімум 6 символів"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            {error && <p className="text-red-500 text-xs">{error}</p>}
+
+            <p className="text-[11px] text-gray-400">
+              Учасник входить на <code className="text-gray-500">/team/login</code> зі своїм email та цим паролем.
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={onClose}
+                className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+                Скасувати
+              </button>
+              <button onClick={submit} disabled={saving}
+                className="flex-1 bg-gray-900 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
+                {saving ? 'Збереження...' : 'Встановити'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

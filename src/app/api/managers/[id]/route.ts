@@ -1,0 +1,48 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { decode } from 'next-auth/jwt'
+import supabaseAdmin from '@/lib/supabaseAdmin'
+import { hashPassword } from '../route'
+
+async function requireAdmin() {
+  const jar = await cookies()
+  const sessionToken =
+    jar.get('__Secure-next-auth.session-token')?.value ??
+    jar.get('next-auth.session-token')?.value
+  if (!sessionToken) return false
+  const token = await decode({ token: sessionToken, secret: process.env.NEXTAUTH_SECRET! })
+  return token?.role === 'admin'
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { id } = await params
+  const body = await req.json()
+  const update: Record<string, unknown> = {}
+  if (typeof body.is_active === 'boolean') update.is_active = body.is_active
+  if (typeof body.name === 'string' && body.name.trim()) update.name = body.name.trim()
+  if (typeof body.password === 'string' && body.password.trim()) {
+    update.password_hash = hashPassword(body.password)
+  }
+  const { data, error } = await supabaseAdmin
+    .from('lead_managers')
+    .update(update)
+    .eq('id', id)
+    .select('id,name,email,is_active,created_at')
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json(data)
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  if (!await requireAdmin()) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { id } = await params
+  await supabaseAdmin.from('lead_managers').delete().eq('id', id)
+  return NextResponse.json({ ok: true })
+}

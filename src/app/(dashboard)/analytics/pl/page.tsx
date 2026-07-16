@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -64,16 +64,30 @@ export default function PLPage() {
 
       <div className="border border-gray-100 rounded-xl p-4 mb-6">
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={data}>
+          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gradExpense" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gradProfit" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
             <Tooltip formatter={(v) => `₴ ${Number(v).toLocaleString('uk-UA')}`} />
             <Legend />
-            <Bar dataKey="Дохід" fill="#14b8a6" radius={[4,4,0,0]} />
-            <Bar dataKey="Витрата" fill="#ef4444" radius={[4,4,0,0]} />
-            <Bar dataKey="Прибуток" fill="#f59e0b" radius={[4,4,0,0]} />
-          </BarChart>
+            <Area type="monotone" dataKey="Дохід"    stroke="#14b8a6" strokeWidth={2.5} fill="url(#gradIncome)"  dot={false} activeDot={{ r: 4 }} />
+            <Area type="monotone" dataKey="Витрата"  stroke="#ef4444" strokeWidth={2.5} fill="url(#gradExpense)" dot={false} activeDot={{ r: 4 }} />
+            <Area type="monotone" dataKey="Прибуток" stroke="#f59e0b" strokeWidth={2.5} fill="url(#gradProfit)"  dot={false} activeDot={{ r: 4 }} />
+          </AreaChart>
         </ResponsiveContainer>
       </div>
 

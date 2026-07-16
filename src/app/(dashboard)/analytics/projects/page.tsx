@@ -6,7 +6,7 @@ import { useRates } from '@/lib/use-rates'
 import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
 import Link from 'next/link'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from 'recharts'
 
@@ -330,15 +330,25 @@ export default function ProjectsPage() {
                               <div>
                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">По місяцях</p>
                                 <ResponsiveContainer width="100%" height={200}>
-                                  <BarChart data={det.monthly} barCategoryGap="30%">
+                                  <AreaChart data={det.monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                                    <defs>
+                                      <linearGradient id="projIncome" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.35} />
+                                        <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
+                                      </linearGradient>
+                                      <linearGradient id="projExpense" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#f87171" stopOpacity={0.3} />
+                                        <stop offset="100%" stopColor="#f87171" stopOpacity={0} />
+                                      </linearGradient>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                                     <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                                     <Tooltip formatter={(v) => fmt(Number(v)) + ' ₴'} />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                                    <Bar dataKey="income"  name="Дохід"    fill="#14b8a6" radius={[4,4,0,0]} />
-                                    <Bar dataKey="expense" name="Витрати"  fill="#f87171" radius={[4,4,0,0]} />
-                                  </BarChart>
+                                    <Area type="monotone" dataKey="income"  name="Дохід"   stroke="#14b8a6" strokeWidth={2.5} fill="url(#projIncome)"  dot={false} activeDot={{ r: 4 }} />
+                                    <Area type="monotone" dataKey="expense" name="Витрати" stroke="#f87171" strokeWidth={2.5} fill="url(#projExpense)" dot={false} activeDot={{ r: 4 }} />
+                                  </AreaChart>
                                 </ResponsiveContainer>
                               </div>
                             )}

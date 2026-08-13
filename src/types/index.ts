@@ -55,6 +55,7 @@ export interface Project {
   contract_currency?: string
   received_before_app?: number | null
   archived_at?: string | null
+  client_access_token?: string | null
   created_at: string
 }
 

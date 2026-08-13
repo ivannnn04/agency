@@ -9,6 +9,7 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
+  Link2, Copy,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 
@@ -94,6 +95,9 @@ export default function BoardPage() {
   const [newColColor, setNewColColor] = useState('#6B7280')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [view, setView] = useState<'board' | 'gantt'>('board')
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null)
+  const [clientPanelOpen, setClientPanelOpen] = useState(false)
+  const clientRef = useRef<HTMLDivElement>(null)
   const menuRef    = useRef<HTMLDivElement>(null)
   const memberRef  = useRef<HTMLDivElement>(null)
 
@@ -103,6 +107,7 @@ export default function BoardPage() {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null)
       if (memberRef.current && !memberRef.current.contains(e.target as Node)) setMemberPanelOpen(false)
+      if (clientRef.current && !clientRef.current.contains(e.target as Node)) setClientPanelOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -297,6 +302,12 @@ export default function BoardPage() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
   }
 
+  async function regenerateClientLink() {
+    const token = crypto.randomUUID()
+    const { error } = await supabase.from('projects').update({ client_access_token: token }).eq('id', id)
+    if (!error) setProject(prev => prev ? { ...prev, client_access_token: token } : prev)
+  }
+
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Завантаження...</div>
   )
@@ -368,6 +379,8 @@ create policy "team_members_all" on team_members for all using (true) with check
             </div>
           </div>
 
+          {/* Right side: project members + client access */}
+          <div className="flex items-center gap-3">
           {/* Project member management */}
           <div className="flex items-center gap-1.5 relative" ref={memberRef}>
             {projectMembers.map(m => (
@@ -425,6 +438,57 @@ create policy "team_members_all" on team_members for all using (true) with check
               </div>
             )}
           </div>
+
+          {/* Client access */}
+          <div className="relative" ref={clientRef}>
+            <button
+              onClick={() => setClientPanelOpen(v => !v)}
+              className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 ring-2 ring-white transition-colors"
+              title="Доступ для клієнта"
+            >
+              <Link2 size={12} />
+            </button>
+
+            {clientPanelOpen && (
+              <div className="absolute right-0 top-9 z-30 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-[300px]">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2">Клієнтський доступ (read-only)</p>
+                {project?.client_access_token ? (
+                  <>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <input
+                        readOnly
+                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/client/${project.client_access_token}`}
+                        onFocus={e => e.target.select()}
+                        className="flex-1 min-w-0 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5"
+                      />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/client/${project.client_access_token}`)}
+                        className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-50 flex-shrink-0"
+                        title="Скопіювати"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mb-2">Клієнт бачить статус проєкту та задачі без фінансових даних, без входу.</p>
+                    <button
+                      onClick={regenerateClientLink}
+                      className="text-xs text-red-500 hover:text-red-600"
+                    >
+                      Скинути посилання
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={regenerateClientLink}
+                    className="w-full text-xs bg-gray-900 text-white rounded-lg py-1.5 hover:bg-gray-700"
+                  >
+                    Створити посилання для клієнта
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          </div>
         </div>
 
         {view === 'board' ? (
@@ -450,6 +514,8 @@ create policy "team_members_all" on team_members for all using (true) with check
                   openMenu={openMenu}
                   onOpenMenu={setOpenMenu}
                   menuRef={menuRef}
+                  dragOverCol={dragOverCol}
+                  onDragOverCol={setDragOverCol}
                 />
               )
             })}
@@ -516,7 +582,7 @@ create policy "team_members_all" on team_members for all using (true) with check
 function KanbanColumn({
   col, tasks, columns, members, assigneesByTask, isAdding, onStartAdd, onCancelAdd, onAddTask,
   onSelectTask, onMoveTask, onDeleteTask, onDeleteColumn,
-  openMenu, onOpenMenu, menuRef,
+  openMenu, onOpenMenu, menuRef, dragOverCol, onDragOverCol,
 }: {
   col: PMColumn
   tasks: PMTask[]
@@ -534,9 +600,21 @@ function KanbanColumn({
   openMenu: string | null
   onOpenMenu: (id: string | null) => void
   menuRef: React.RefObject<HTMLDivElement | null>
+  dragOverCol: string | null
+  onDragOverCol: (colId: string | null) => void
 }) {
   return (
-    <div className="flex-shrink-0 w-[280px] flex flex-col">
+    <div
+      className={`flex-shrink-0 w-[280px] flex flex-col rounded-xl transition-colors ${dragOverCol === col.id ? 'bg-teal-50/70 ring-2 ring-teal-300' : ''}`}
+      onDragOver={e => { e.preventDefault(); onDragOverCol(col.id) }}
+      onDragLeave={() => onDragOverCol(dragOverCol === col.id ? null : dragOverCol)}
+      onDrop={e => {
+        e.preventDefault()
+        onDragOverCol(null)
+        const taskId = e.dataTransfer.getData('text/plain')
+        if (taskId) onMoveTask(taskId, col.id)
+      }}
+    >
       {/* Column header */}
       <div className="flex items-center justify-between px-1 mb-3">
         <div className="flex items-center gap-2">
@@ -729,7 +807,12 @@ function TaskCard({
 
   return (
     <div
-      className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-300 hover:shadow-sm transition-all group cursor-pointer select-none"
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', task.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      className="bg-white rounded-xl border border-gray-100 p-3.5 hover:border-gray-300 hover:shadow-sm transition-all group cursor-pointer active:cursor-grabbing select-none"
       onClick={onSelect}
     >
       {/* Title */}

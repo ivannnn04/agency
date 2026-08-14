@@ -33,6 +33,10 @@ function isPMPath(p: string) {
   return p.startsWith('/board') || p.startsWith('/team-admin')
 }
 
+const SIDEBAR_MIN = 200
+const SIDEBAR_MAX = 440
+const SIDEBAR_DEFAULT = 240
+
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
@@ -40,6 +44,8 @@ export default function Sidebar() {
   const [section, setSection] = useState<'finance' | 'projects'>(
     isPMPath(pathname) ? 'projects' : 'finance'
   )
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
+  const [resizing, setResizing] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [pmProjects, setPmProjects] = useState<Project[]>([])
   const [newPmName, setNewPmName] = useState('')
@@ -62,7 +68,32 @@ export default function Sidebar() {
     fetchAccounts()
     fetchPlanned()
     fetchPmProjects()
+    const saved = Number(localStorage.getItem('sidebarWidth'))
+    if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) setSidebarWidth(saved)
   }, [])
+
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault()
+    setResizing(true)
+    const startX = e.clientX
+    const startW = sidebarWidth
+    function onMove(ev: MouseEvent) {
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + ev.clientX - startX))
+      setSidebarWidth(w)
+      localStorage.setItem('sidebarWidth', String(w))
+    }
+    function onUp() {
+      setResizing(false)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
 
   async function fetchAccounts() {
     const { data } = await supabase.from('accounts').select('*').order('created_at')
@@ -138,7 +169,16 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="w-[240px] min-w-[240px] bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5">
+      <aside
+        className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
+        style={{ width: sidebarWidth, minWidth: sidebarWidth }}
+      >
+        {/* Resize handle */}
+        <div
+          onMouseDown={startResize}
+          className={`absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-20 transition-colors ${resizing ? 'bg-teal-500/60' : 'hover:bg-teal-500/40'}`}
+          title="Потягніть, щоб змінити ширину"
+        />
 
         {/* Logo */}
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">

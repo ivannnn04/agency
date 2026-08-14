@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
+import { useChatUnread } from '@/lib/chatUnread'
 import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
@@ -56,6 +57,8 @@ export default function Sidebar() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const { rates, loading: ratesLoading, toUSD, fmtUSD } = useRates()
+  // Chat notifications for the whole admin app: sidebar dots + Slack-style ping
+  const chatUnread = useChatUnread({ self: 'admin', sound: true })
 
   const totalUSD = accounts.reduce((s, a) => s + toUSD(a.balance, a.currency), 0)
 
@@ -446,6 +449,7 @@ export default function Sidebar() {
               )}
               {pmProjects.map(p => {
                 const isActive = pathname.startsWith(`/board/${p.id}`)
+                const u = chatUnread[p.id]
                 return (
                   <button
                     key={p.id}
@@ -456,6 +460,19 @@ export default function Sidebar() {
                   >
                     <Circle size={8} fill={p.color ?? '#14b8a6'} color={p.color ?? '#14b8a6'} className="flex-shrink-0" />
                     <span className="truncate">{p.name}</span>
+                    {u?.clientNew ? (
+                      <span
+                        className="ml-auto flex-shrink-0 text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-bold uppercase animate-pulse"
+                        title="Клієнт написав у чат"
+                      >
+                        клієнт
+                      </span>
+                    ) : (u?.team || u?.client) ? (
+                      <span
+                        className="ml-auto flex-shrink-0 w-2 h-2 rounded-full bg-teal-400 animate-pulse"
+                        title="Нове повідомлення в чаті"
+                      />
+                    ) : null}
                   </button>
                 )
               })}

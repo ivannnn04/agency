@@ -6,6 +6,7 @@ import { MessageSquare, X, Users, UserRound } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
 } from '@/components/chat/shared'
+import { getLastRead, markRead } from '@/lib/chatUnread'
 
 export interface ChatSender {
   type: 'admin' | 'team'
@@ -63,28 +64,50 @@ export default function ProjectChat({ projectId, sender, onClose }: {
   const mentionable = channel === 'team' ? people.filter(p => p.type !== 'client') : people
   const mentionNames = people.map(p => p.name)
 
+  // Both channels come in one poll — the inactive tab can show an unread badge
   const load = useCallback(async () => {
     const { data, error: err } = await supabase
       .from('project_messages')
       .select('*')
       .eq('project_id', projectId)
-      .eq('channel', channel)
       .order('created_at', { ascending: true })
       .limit(500)
     if (err) { setError('Таблиця project_messages не знайдена — запусти міграції з папки supabase/'); return }
     setMessages(data as Message[])
-  }, [projectId, channel])
+  }, [projectId])
 
   useEffect(() => {
-    setMessages([])
     load()
     const interval = setInterval(load, 5000)
     return () => clearInterval(interval)
   }, [load])
 
+  const channelMessages = messages.filter(m => m.channel === channel)
+
+  function isMine(m: Message) {
+    if (sender.type === 'admin') return m.sender_type === 'admin'
+    return m.sender_type === 'team' && m.team_member_id === (sender.teamMemberId ?? null)
+  }
+
+  function channelHasUnread(ch: 'team' | 'client') {
+    const lastRead = getLastRead(projectId, ch)
+    return messages.some(m => m.channel === ch && !isMine(m) && m.created_at > lastRead)
+  }
+
+  const teamTabUnread = channel !== 'team' && channelHasUnread('team')
+  const clientTabUnread = channel !== 'client' && channelHasUnread('client')
+  const clientWrote = messages.some(m =>
+    m.channel === 'client' && m.sender_type === 'client' && m.created_at > getLastRead(projectId, 'client'))
+
+  // Viewing a channel marks it read (and clears the sidebar highlight)
+  useEffect(() => {
+    if (channelHasUnread(channel)) markRead(projectId, channel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, messages.length, projectId])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length])
+  }, [channelMessages.length, channel])
 
   async function insertMessage(content: string, fileUrl?: string, fileName?: string) {
     const { data, error: err } = await supabase
@@ -131,11 +154,6 @@ export default function ProjectChat({ projectId, sender, onClose }: {
     setUploading(false)
   }
 
-  function isMine(m: Message) {
-    if (sender.type === 'admin') return m.sender_type === 'admin'
-    return m.sender_type === 'team' && m.team_member_id === (sender.teamMemberId ?? null)
-  }
-
   return (
     <div className="fixed right-0 top-0 h-full w-[380px] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col">
       {/* Header with channel tabs */}
@@ -148,6 +166,7 @@ export default function ProjectChat({ projectId, sender, onClose }: {
             }`}
           >
             <Users size={12} /> Команда
+            {teamTabUnread && <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />}
           </button>
           <button
             onClick={() => setChannel('client')}
@@ -156,6 +175,12 @@ export default function ProjectChat({ projectId, sender, onClose }: {
             }`}
           >
             <UserRound size={12} /> Клієнт
+            {clientTabUnread && (
+              <span
+                className={`w-1.5 h-1.5 rounded-full animate-pulse ${clientWrote ? 'bg-amber-400' : 'bg-teal-400'}`}
+                title={clientWrote ? 'Клієнт написав' : 'Нове повідомлення'}
+              />
+            )}
           </button>
         </div>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
@@ -169,20 +194,22 @@ export default function ProjectChat({ projectId, sender, onClose }: {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5">
-        {messages.length === 0 && !error && (
+        {channelMessages.length === 0 && !error && (
           <p className="text-xs text-gray-300 text-center mt-8 flex flex-col items-center gap-2">
             <MessageSquare size={22} className="opacity-40" />
             Ще немає повідомлень
           </p>
         )}
-        {messages.map(m => {
+        {channelMessages.map(m => {
           const mine = isMine(m)
           return (
             <div key={m.id} className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
               {!mine && (
                 <p className="text-[10px] text-gray-400 mb-0.5 px-1">
                   {m.sender_name}
-                  {m.sender_type === 'client' && <span className="text-teal-500"> · клієнт</span>}
+                  {m.sender_type === 'client' && (
+                    <span className="ml-1 text-[9px] bg-amber-100 text-amber-700 px-1 py-px rounded font-bold uppercase tracking-wide">клієнт</span>
+                  )}
                   {m.sender_type === 'admin' && ' · адмін'}
                 </p>
               )}

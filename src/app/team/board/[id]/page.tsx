@@ -13,6 +13,7 @@ import {
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
+import { useChatUnread } from '@/lib/chatUnread'
 
 interface Project {
   id: string
@@ -75,6 +76,8 @@ export default function TeamBoardPage() {
   const [saving, setSaving] = useState(false)
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  // Team portal has no global sidebar — this hook also plays the ping sound
+  const chatUnread = useChatUnread({ self: 'team', memberId: member?.id, projectId: id, sound: true, intervalMs: 8000 })
 
   useEffect(() => {
     if (id) fetchAll()
@@ -310,12 +313,17 @@ export default function TeamBoardPage() {
         <div className="ml-auto flex items-center gap-3">
           <button
             onClick={() => setChatOpen(v => !v)}
-            className={`flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
+            className={`relative flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
               chatOpen ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
             }`}
             title="Чат проєкту"
           >
             <MessageSquare size={14} /> Чат
+            {!chatOpen && (chatUnread[id]?.team || chatUnread[id]?.client) && (
+              <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#0f1117] animate-pulse ${
+                chatUnread[id]?.clientNew ? 'bg-amber-400' : 'bg-teal-400'
+              }`} />
+            )}
           </button>
           <button
             onClick={() => router.push('/team/reports')}

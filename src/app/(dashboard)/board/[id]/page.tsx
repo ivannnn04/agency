@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
+import { useChatUnread } from '@/lib/chatUnread'
 
 interface ClientRow { id: string; email: string; name: string | null }
 
@@ -104,6 +105,8 @@ export default function BoardPage() {
   const [newClientEmail, setNewClientEmail] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
+  // Badge only — the Sidebar already plays the notification sound app-wide
+  const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const clientRef = useRef<HTMLDivElement>(null)
   const menuRef    = useRef<HTMLDivElement>(null)
   const memberRef  = useRef<HTMLDivElement>(null)
@@ -605,12 +608,17 @@ create policy "team_members_all" on team_members for all using (true) with check
           {/* Project chat */}
           <button
             onClick={() => { setSelectedTask(null); setChatOpen(v => !v) }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               chatOpen ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
             title="Чат проєкту"
           >
             <MessageSquare size={13} /> Чат
+            {!chatOpen && (chatUnread[id]?.team || chatUnread[id]?.client) && (
+              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2 ring-white animate-pulse ${
+                chatUnread[id]?.clientNew ? 'bg-amber-400' : 'bg-teal-400'
+              }`} />
+            )}
           </button>
           </div>
         </div>

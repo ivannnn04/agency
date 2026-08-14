@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Users, UserRound } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
+  useChatWidth, ChatResizeHandle,
 } from '@/components/chat/shared'
 import { getLastRead, markRead } from '@/lib/chatUnread'
 
@@ -41,6 +42,7 @@ export default function ProjectChat({ projectId, sender, onClose }: {
   const [error, setError] = useState('')
   const [people, setPeople] = useState<ChatPerson[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { width, startResize } = useChatWidth()
 
   // Mentionable people: admin + project team members + project clients
   useEffect(() => {
@@ -155,7 +157,11 @@ export default function ProjectChat({ projectId, sender, onClose }: {
   }
 
   return (
-    <div className="fixed right-0 top-0 h-full w-[380px] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col">
+    <div
+      className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
+      style={{ width }}
+    >
+      <ChatResizeHandle onMouseDown={startResize} />
       {/* Header with channel tabs */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">

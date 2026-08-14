@@ -1,7 +1,52 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Paperclip, Loader2 } from 'lucide-react'
+
+// ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
+
+const CHAT_MIN = 320
+const CHAT_MAX = 720
+const CHAT_DEFAULT = 380
+
+export function useChatWidth() {
+  const [width, setWidth] = useState(CHAT_DEFAULT)
+
+  useEffect(() => {
+    const saved = Number(localStorage.getItem('chatWidth'))
+    if (saved >= CHAT_MIN && saved <= CHAT_MAX) setWidth(saved)
+  }, [])
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const clamp = (x: number) => Math.min(CHAT_MAX, Math.max(CHAT_MIN, window.innerWidth - x))
+    const onMove = (ev: MouseEvent) => setWidth(clamp(ev.clientX))
+    const onUp = (ev: MouseEvent) => {
+      localStorage.setItem('chatWidth', String(clamp(ev.clientX)))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
+
+  return { width, startResize }
+}
+
+// Invisible grab strip on the drawer's left edge.
+export function ChatResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="absolute left-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-teal-400/50 active:bg-teal-400/70 transition-colors z-10"
+      title="Drag to resize"
+    />
+  )
+}
 
 export interface ChatPerson {
   name: string

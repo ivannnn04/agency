@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Calendar, Flag, Clock, MessageSquare, X } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
+  useChatWidth, ChatResizeHandle,
 } from '@/components/chat/shared'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
@@ -192,6 +193,7 @@ function PortalChat({ projectId, token, people, onClose }: {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { width, startResize } = useChatWidth()
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/portal/project/${projectId}/messages`, {
@@ -254,7 +256,11 @@ function PortalChat({ projectId, token, people, onClose }: {
   }
 
   return (
-    <div className="fixed right-0 top-0 h-full w-[380px] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col">
+    <div
+      className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
+      style={{ width }}
+    >
+      <ChatResizeHandle onMouseDown={startResize} />
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2">
           <MessageSquare size={15} className="text-teal-500" />

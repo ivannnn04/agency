@@ -14,7 +14,7 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const [{ data: project }, { data: columns }, { data: tasks }] = await Promise.all([
+  const [{ data: project }, { data: columns }, { data: tasks }, { data: pmRows }] = await Promise.all([
     supabaseAdmin
       .from('projects')
       .select('id, name, color, status, contract_amount, contract_currency, show_tracked_hours')
@@ -26,6 +26,7 @@ export async function GET(
       .select('id, title, description, column_id, priority, due_date, created_at')
       .eq('finance_project_id', id)
       .order('created_at'),
+    supabaseAdmin.from('project_members').select('team_members(name)').eq('project_id', id),
   ])
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -63,11 +64,20 @@ export async function GET(
     }
   }
 
+  // People the client can @mention in chat: admin + team members on the project
+  const people = [
+    'Ivan',
+    ...(pmRows ?? [])
+      .map(r => (r as unknown as { team_members: { name: string } | null }).team_members?.name)
+      .filter((n): n is string => !!n),
+  ]
+
   return NextResponse.json({
     project,
     columns: columns ?? [],
     tasks: tasks ?? [],
     assigneesByTask,
     timeByTask,
+    people,
   })
 }

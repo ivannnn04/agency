@@ -4,7 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Calendar, Flag, Clock, Send, MessageSquare, X } from 'lucide-react'
+import { ArrowLeft, Calendar, Flag, Clock, MessageSquare, X } from 'lucide-react'
+import {
+  MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
+} from '@/components/chat/shared'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
@@ -21,12 +24,15 @@ interface PortalProjectData {
   tasks: PortalTask[]
   assigneesByTask: Record<string, string[]>
   timeByTask: Record<string, number> | null
+  people: string[]
 }
 interface ChatMessage {
   id: string
   sender_type: 'admin' | 'team' | 'client'
   sender_name: string
   content: string
+  file_url: string | null
+  file_name: string | null
   created_at: string
 }
 
@@ -161,7 +167,12 @@ export default function PortalProjectPage() {
       </div>
 
       {chatOpen && token && (
-        <PortalChat projectId={project.id} token={token} onClose={() => setChatOpen(false)} />
+        <PortalChat
+          projectId={project.id}
+          token={token}
+          people={data.people ?? []}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   )
@@ -169,14 +180,17 @@ export default function PortalProjectPage() {
 
 // ── Client-side chat (talks to the portal API only) ────────────────────────────
 
-function PortalChat({ projectId, token, onClose }: {
+function PortalChat({ projectId, token, people, onClose }: {
   projectId: string
   token: string
+  people: string[]
   onClose: () => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -216,6 +230,29 @@ function PortalChat({ projectId, token, onClose }: {
     }
   }
 
+  async function sendFile(f: File) {
+    setError('')
+    if (fileTooBig(f)) { setError(`File is too big — ${MAX_FILE_MB} MB max`); return }
+    setUploading(true)
+    const form = new FormData()
+    form.append('file', f)
+    form.append('content', input.trim())
+    const res = await fetch(`/api/portal/project/${projectId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    })
+    setUploading(false)
+    if (res.ok) {
+      const msg = await res.json()
+      setMessages(prev => [...prev, msg])
+      setInput('')
+    } else {
+      const { error: err } = await res.json().catch(() => ({ error: 'Upload failed' }))
+      setError(err)
+    }
+  }
+
   return (
     <div className="fixed right-0 top-0 h-full w-[380px] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
@@ -242,7 +279,10 @@ function PortalChat({ projectId, token, onClose }: {
               <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
                 mine ? 'bg-teal-500 text-white rounded-br-md' : 'bg-gray-100 text-gray-800 rounded-bl-md'
               }`}>
-                {m.content}
+                <MessageBody content={m.content} names={people} mine={mine} />
+                {m.file_url && (
+                  <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
+                )}
               </div>
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -253,23 +293,20 @@ function PortalChat({ projectId, token, onClose }: {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-gray-100 p-3 flex items-end gap-2 flex-shrink-0">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          rows={2}
-          placeholder="Message..."
-          className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
-        />
-        <button
-          onClick={send}
-          disabled={sending || !input.trim()}
-          className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-xl p-2.5 transition-colors flex-shrink-0"
-        >
-          <Send size={15} />
-        </button>
-      </div>
+      {error && (
+        <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
+      )}
+
+      <MentionComposer
+        value={input}
+        onChange={setInput}
+        onSend={send}
+        onPickFile={sendFile}
+        people={people.map(name => ({ name, type: 'team' as const }))}
+        placeholder="Message... (@ to mention)"
+        uploading={uploading}
+        accent="teal"
+      />
     </div>
   )
 }

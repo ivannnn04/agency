@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, Send, X, Users, UserRound } from 'lucide-react'
+import { MessageSquare, X, Users, UserRound } from 'lucide-react'
+import {
+  MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
+} from '@/components/chat/shared'
 
 export interface ChatSender {
   type: 'admin' | 'team'
@@ -17,6 +20,8 @@ interface Message {
   sender_name: string
   team_member_id: string | null
   content: string
+  file_url: string | null
+  file_name: string | null
   created_at: string
 }
 
@@ -31,18 +36,42 @@ export default function ProjectChat({ projectId, sender, onClose }: {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [dbError, setDbError] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+  const [people, setPeople] = useState<ChatPerson[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Mentionable people: admin + project team members + project clients
+  useEffect(() => {
+    ;(async () => {
+      const [{ data: pm }, { data: pc }] = await Promise.all([
+        supabase.from('project_members').select('team_members(name)').eq('project_id', projectId),
+        supabase.from('project_clients').select('clients(name, email)').eq('project_id', projectId),
+      ])
+      const team: ChatPerson[] = (pm ?? [])
+        .map(r => (r as unknown as { team_members: { name: string } | null }).team_members?.name)
+        .filter((n): n is string => !!n)
+        .map(name => ({ name, type: 'team' as const }))
+      const clients: ChatPerson[] = (pc ?? [])
+        .map(r => (r as unknown as { clients: { name: string | null; email: string } | null }).clients)
+        .filter((c): c is { name: string | null; email: string } => !!c)
+        .map(c => ({ name: c.name || c.email, type: 'client' as const }))
+      setPeople([{ name: 'Ivan', type: 'admin' }, ...team, ...clients])
+    })()
+  }, [projectId])
+
+  const mentionable = channel === 'team' ? people.filter(p => p.type !== 'client') : people
+  const mentionNames = people.map(p => p.name)
+
   const load = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error: err } = await supabase
       .from('project_messages')
       .select('*')
       .eq('project_id', projectId)
       .eq('channel', channel)
       .order('created_at', { ascending: true })
       .limit(500)
-    if (error) { setDbError(true); return }
+    if (err) { setError('Таблиця project_messages не знайдена — запусти міграції з папки supabase/'); return }
     setMessages(data as Message[])
   }, [projectId, channel])
 
@@ -57,11 +86,8 @@ export default function ProjectChat({ projectId, sender, onClose }: {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
-  async function send() {
-    const text = input.trim()
-    if (!text || sending) return
-    setSending(true)
-    const { data, error } = await supabase
+  async function insertMessage(content: string, fileUrl?: string, fileName?: string) {
+    const { data, error: err } = await supabase
       .from('project_messages')
       .insert({
         project_id: projectId,
@@ -69,15 +95,40 @@ export default function ProjectChat({ projectId, sender, onClose }: {
         sender_type: sender.type,
         sender_name: sender.name,
         team_member_id: sender.teamMemberId ?? null,
-        content: text.slice(0, 4000),
+        content: content.slice(0, 4000),
+        file_url: fileUrl ?? null,
+        file_name: fileName ?? null,
       })
       .select()
       .single()
-    setSending(false)
-    if (!error && data) {
+    if (!err && data) {
       setMessages(prev => [...prev, data as Message])
       setInput('')
     }
+  }
+
+  async function send() {
+    const text = input.trim()
+    if (!text || sending) return
+    setSending(true)
+    await insertMessage(text)
+    setSending(false)
+  }
+
+  async function sendFile(f: File) {
+    setError('')
+    if (fileTooBig(f)) { setError(`Файл завеликий — максимум ${MAX_FILE_MB} МБ`); return }
+    setUploading(true)
+    const path = safeStoragePath(projectId, f.name)
+    const { error: upErr } = await supabase.storage.from('chat-files').upload(path, f)
+    if (upErr) {
+      setUploading(false)
+      setError('Не вдалося завантажити файл — перевір, чи запущена міграція chat_files_migration.sql')
+      return
+    }
+    const { data: pub } = supabase.storage.from('chat-files').getPublicUrl(path)
+    await insertMessage(input.trim(), pub.publicUrl, f.name)
+    setUploading(false)
   }
 
   function isMine(m: Message) {
@@ -118,12 +169,7 @@ export default function ProjectChat({ projectId, sender, onClose }: {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5">
-        {dbError && (
-          <p className="text-xs text-red-400 text-center mt-8">
-            Таблиця project_messages не знайдена — запусти supabase/client_portal_migration.sql
-          </p>
-        )}
-        {!dbError && messages.length === 0 && (
+        {messages.length === 0 && !error && (
           <p className="text-xs text-gray-300 text-center mt-8 flex flex-col items-center gap-2">
             <MessageSquare size={22} className="opacity-40" />
             Ще немає повідомлень
@@ -147,7 +193,10 @@ export default function ProjectChat({ projectId, sender, onClose }: {
                     ? 'bg-teal-50 text-gray-800 border border-teal-100 rounded-bl-md'
                     : 'bg-gray-100 text-gray-800 rounded-bl-md'
               }`}>
-                {m.content}
+                <MessageBody content={m.content} names={mentionNames} mine={mine} />
+                {m.file_url && (
+                  <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
+                )}
               </div>
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -158,24 +207,21 @@ export default function ProjectChat({ projectId, sender, onClose }: {
         <div ref={bottomRef} />
       </div>
 
-      {/* Composer */}
-      <div className="border-t border-gray-100 p-3 flex items-end gap-2 flex-shrink-0">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          rows={2}
-          placeholder={channel === 'team' ? 'Повідомлення команді...' : 'Повідомлення клієнту...'}
-          className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"
-        />
-        <button
-          onClick={send}
-          disabled={sending || !input.trim()}
-          className="bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-xl p-2.5 transition-colors flex-shrink-0"
-        >
-          <Send size={15} />
-        </button>
-      </div>
+      {error && (
+        <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
+      )}
+
+      {/* Composer with mentions + attachments */}
+      <MentionComposer
+        value={input}
+        onChange={setInput}
+        onSend={send}
+        onPickFile={sendFile}
+        people={mentionable}
+        placeholder={channel === 'team' ? 'Повідомлення команді... (@ — згадати)' : 'Повідомлення клієнту... (@ — згадати)'}
+        uploading={uploading}
+        accent="dark"
+      />
     </div>
   )
 }

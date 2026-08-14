@@ -16,6 +16,14 @@ import ProjectChat from '@/components/ProjectChat'
 import { useChatUnread } from '@/lib/chatUnread'
 
 interface ClientRow { id: string; email: string; name: string | null }
+interface ChangeRequestRow {
+  id: string
+  content: string
+  files: { url: string; name: string }[]
+  status: 'open' | 'done'
+  client_name: string | null
+  created_at: string
+}
 
 const DEFAULT_COLUMNS = [
   { name: 'TO DO',                 color: '#F59E0B', position: 0 },
@@ -357,6 +365,12 @@ export default function BoardPage() {
     setProject(prev => prev ? { ...prev, show_tracked_hours: next } : prev)
   }
 
+  async function updateCrLimit(limit: number) {
+    const value = Math.max(0, Math.min(99, limit))
+    await supabase.from('projects').update({ change_request_limit: value }).eq('id', id)
+    setProject(prev => prev ? { ...prev, change_request_limit: value } : prev)
+  }
+
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Завантаження...</div>
   )
@@ -565,6 +579,17 @@ create policy "team_members_all" on team_members for all using (true) with check
                       project?.show_tracked_hours ? 'left-[18px]' : 'left-0.5'
                     }`} />
                   </button>
+                </div>
+
+                {/* Change request limit */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-gray-600">Ліміт change requests / задачу</span>
+                  <input
+                    type="number" min={0} max={99}
+                    value={project?.change_request_limit ?? 3}
+                    onChange={e => updateCrLimit(Number(e.target.value))}
+                    className="w-14 text-xs border border-gray-200 rounded-lg px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
                 </div>
 
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2 border-t border-gray-100 pt-2.5">Публічне посилання (read-only)</p>
@@ -1046,8 +1071,23 @@ function TaskDetailPanel({
 }) {
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc]   = useState(task.description ?? '')
+  const [changeRequests, setChangeRequests] = useState<ChangeRequestRow[]>([])
 
   useEffect(() => { setTitle(task.title); setDesc(task.description ?? '') }, [task.id])
+
+  useEffect(() => {
+    supabase.from('change_requests')
+      .select('id, content, files, status, client_name, created_at')
+      .eq('task_id', task.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setChangeRequests((data ?? []) as ChangeRequestRow[]))
+  }, [task.id])
+
+  async function toggleCrStatus(cr: ChangeRequestRow) {
+    const next = cr.status === 'open' ? 'done' : 'open'
+    await supabase.from('change_requests').update({ status: next }).eq('id', cr.id)
+    setChangeRequests(prev => prev.map(c => c.id === cr.id ? { ...c, status: next } : c))
+  }
 
   function saveTitle() { const t = title.trim(); if (t && t !== task.title) onUpdate({ title: t }) }
   function saveDesc()  { const d = desc.trim(); if (d !== (task.description ?? '')) onUpdate({ description: d || null }) }
@@ -1191,6 +1231,54 @@ function TaskDetailPanel({
             className="w-full text-sm text-gray-700 resize-none focus:outline-none placeholder-gray-300 leading-relaxed"
           />
         </div>
+
+        {/* Change requests from the client */}
+        {changeRequests.length > 0 && (
+          <>
+            <div className="border-t border-gray-100 mx-6" />
+            <div className="px-6 py-4">
+              <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2.5">
+                Change requests від клієнта · {changeRequests.length}
+              </p>
+              <div className="flex flex-col gap-2.5">
+                {changeRequests.map(cr => (
+                  <div key={cr.id} className={`rounded-xl border p-3 ${
+                    cr.status === 'open' ? 'border-amber-200 bg-amber-50/50' : 'border-gray-100 bg-gray-50 opacity-70'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[11px] text-gray-500">
+                        <span className="font-semibold text-gray-700">{cr.client_name ?? 'Клієнт'}</span>
+                        {' · '}
+                        {new Date(cr.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                      <button
+                        onClick={() => toggleCrStatus(cr)}
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                          cr.status === 'open'
+                            ? 'bg-white border border-amber-200 text-amber-600 hover:bg-amber-100'
+                            : 'bg-teal-50 border border-teal-200 text-teal-600'
+                        }`}
+                      >
+                        {cr.status === 'open' ? 'Позначити виконаним' : '✓ Виконано'}
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{cr.content}</p>
+                    {cr.files?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {cr.files.map((f, i) => (
+                          <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                            className="text-[11px] bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-600 hover:border-teal-300 hover:text-teal-600 transition-colors truncate max-w-[160px]">
+                            📎 {f.name}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Quick actions */}
         <div className="border-t border-gray-100 mx-6" />

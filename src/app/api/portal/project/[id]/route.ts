@@ -14,19 +14,24 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const [{ data: project }, { data: columns }, { data: tasks }, { data: pmRows }] = await Promise.all([
+  const [{ data: project }, { data: columns }, { data: tasks }, { data: pmRows }, { data: changeRequests }] = await Promise.all([
     supabaseAdmin
       .from('projects')
-      .select('id, name, color, status, contract_amount, contract_currency, show_tracked_hours')
+      .select('id, name, color, status, contract_amount, contract_currency, show_tracked_hours, change_request_limit')
       .eq('id', id)
       .single(),
     supabaseAdmin.from('pm_columns').select('id, name, color, position').eq('project_id', id).order('position'),
     supabaseAdmin
       .from('pm_tasks')
-      .select('id, title, description, column_id, priority, due_date, created_at')
+      .select('id, title, description, column_id, priority, start_date, due_date, created_at')
       .eq('finance_project_id', id)
       .order('created_at'),
     supabaseAdmin.from('project_members').select('team_members(name)').eq('project_id', id),
+    supabaseAdmin
+      .from('change_requests')
+      .select('id, task_id, content, files, status, created_at')
+      .eq('project_id', id)
+      .order('created_at', { ascending: false }),
   ])
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -79,5 +84,6 @@ export async function GET(
     assigneesByTask,
     timeByTask,
     people,
+    changeRequests: changeRequests ?? [],
   })
 }

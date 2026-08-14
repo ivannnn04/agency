@@ -57,6 +57,7 @@ export interface Project {
   archived_at?: string | null
   client_access_token?: string | null
   show_tracked_hours?: boolean
+  change_request_limit?: number
   created_at: string
 }
 

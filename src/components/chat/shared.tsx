@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Paperclip, Loader2 } from 'lucide-react'
+import { Send, Paperclip, Loader2, CalendarDays } from 'lucide-react'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -68,7 +68,7 @@ const TYPE_BADGE: Record<ChatPerson['type'], string> = {
 
 // Composer with @-mention autocomplete and a file attach button.
 export function MentionComposer({
-  value, onChange, onSend, onPickFile, people, placeholder, uploading, accent = 'dark',
+  value, onChange, onSend, onPickFile, people, placeholder, uploading, accent = 'dark', onBookMeeting,
 }: {
   value: string
   onChange: (v: string) => void
@@ -78,6 +78,7 @@ export function MentionComposer({
   placeholder: string
   uploading: boolean
   accent?: 'dark' | 'teal'
+  onBookMeeting?: () => void
 }) {
   const [activeIdx, setActiveIdx] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -136,7 +137,7 @@ export function MentionComposer({
         </div>
       )}
 
-      {/* Attach */}
+      {/* Book meeting + attach */}
       <input
         ref={fileRef}
         type="file"
@@ -147,14 +148,25 @@ export function MentionComposer({
           e.target.value = ''
         }}
       />
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        className="text-gray-400 hover:text-gray-600 disabled:opacity-40 p-2.5 rounded-xl hover:bg-gray-50 transition-colors flex-shrink-0"
-        title="Attach file"
-      >
-        {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
-      </button>
+      <div className="flex flex-col flex-shrink-0">
+        {onBookMeeting && (
+          <button
+            onClick={onBookMeeting}
+            className="text-gray-400 hover:text-teal-600 p-2.5 rounded-xl hover:bg-teal-50 transition-colors"
+            title="Book a meeting"
+          >
+            <CalendarDays size={16} />
+          </button>
+        )}
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="text-gray-400 hover:text-gray-600 disabled:opacity-40 p-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+          title="Attach file"
+        >
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
+        </button>
+      </div>
 
       <textarea
         ref={taRef}

@@ -4,28 +4,42 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Calendar, Flag, Clock, MessageSquare, X } from 'lucide-react'
+import {
+  ArrowLeft, Calendar, Flag, Clock, MessageSquare, X, FilePen, Paperclip, Loader2, CalendarDays,
+} from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle,
 } from '@/components/chat/shared'
+import GanttView from '@/components/GanttView'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
   id: string; title: string; description: string | null
-  column_id: string | null; priority: string | null; due_date: string | null
+  column_id: string | null; priority: string | null
+  start_date: string | null; due_date: string | null
+}
+interface ChangeRequest {
+  id: string
+  task_id: string
+  content: string
+  files: { url: string; name: string }[]
+  status: 'open' | 'done'
+  created_at: string
 }
 interface PortalProjectData {
   project: {
     id: string; name: string; color: string | null; status: string
     contract_amount: number | null; contract_currency: string | null
     show_tracked_hours: boolean
+    change_request_limit: number
   }
   columns: PortalColumn[]
   tasks: PortalTask[]
   assigneesByTask: Record<string, string[]>
   timeByTask: Record<string, number> | null
   people: string[]
+  changeRequests: ChangeRequest[]
 }
 interface ChatMessage {
   id: string
@@ -39,6 +53,7 @@ interface ChatMessage {
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 const PRIORITY_COLOR: Record<string, string> = { low: '#9CA3AF', medium: '#F59E0B', high: '#EF4444' }
+const PRIORITY_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
 function formatHours(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -56,22 +71,27 @@ export default function PortalProjectPage() {
   const [loading, setLoading] = useState(true)
   const [denied, setDenied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [view, setView] = useState<'board' | 'timeline'>('board')
+  const [crTask, setCrTask] = useState<PortalTask | null>(null)
+
+  const refetch = useCallback(async (accessToken: string) => {
+    const res = await fetch(`/api/portal/project/${id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (res.status === 401) { router.replace('/portal/login'); return }
+    if (!res.ok) { setDenied(true); setLoading(false); return }
+    setData(await res.json())
+    setLoading(false)
+  }, [id, router])
 
   useEffect(() => {
     ;(async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.replace('/portal/login'); return }
       setToken(session.access_token)
-
-      const res = await fetch(`/api/portal/project/${id}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      if (res.status === 401) { router.replace('/portal/login'); return }
-      if (!res.ok) { setDenied(true); setLoading(false); return }
-      setData(await res.json())
-      setLoading(false)
+      refetch(session.access_token)
     })()
-  }, [id, router])
+  }, [id, router, refetch])
 
   if (loading) return (
     <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center text-gray-400 text-sm">Loading...</div>
@@ -86,8 +106,13 @@ export default function PortalProjectPage() {
     </div>
   )
 
-  const { project, columns, tasks, assigneesByTask, timeByTask } = data
+  const { project, columns, tasks, assigneesByTask, timeByTask, changeRequests } = data
   const sym = CURRENCY_SYMBOL[project.contract_currency ?? 'USD']
+  const crLimit = project.change_request_limit ?? 3
+  const crCountByTask: Record<string, number> = {}
+  for (const cr of changeRequests ?? []) {
+    crCountByTask[cr.task_id] = (crCountByTask[cr.task_id] ?? 0) + 1
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
@@ -98,6 +123,21 @@ export default function PortalProjectPage() {
           </Link>
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: project.color ?? '#14b8a6' }} />
           <p className="text-white font-semibold text-sm">{project.name}</p>
+          {/* Board / Timeline switcher */}
+          <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5 ml-3">
+            <button
+              onClick={() => setView('board')}
+              className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'board' ? 'bg-white text-gray-900' : 'text-gray-400 hover:text-white'}`}
+            >
+              Board
+            </button>
+            <button
+              onClick={() => setView('timeline')}
+              className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'timeline' ? 'bg-white text-gray-900' : 'text-gray-400 hover:text-white'}`}
+            >
+              Timeline
+            </button>
+          </div>
         </div>
         <button
           onClick={() => setChatOpen(v => !v)}
@@ -107,6 +147,11 @@ export default function PortalProjectPage() {
         </button>
       </header>
 
+      {view === 'timeline' ? (
+        <div className="h-[calc(100vh-64px)] bg-white">
+          <GanttView tasks={tasks} onUpdate={() => {}} readOnly />
+        </div>
+      ) : (
       <div className="px-6 py-6">
         {/* Budget */}
         {(project.contract_amount ?? 0) > 0 && (
@@ -133,6 +178,7 @@ export default function PortalProjectPage() {
                   {colTasks.map(task => {
                     const names = assigneesByTask[task.id] ?? []
                     const secs = timeByTask?.[task.id]
+                    const used = crCountByTask[task.id] ?? 0
                     return (
                       <div key={task.id} className="bg-white rounded-xl border border-gray-100 p-3.5">
                         <p className="text-sm text-gray-800 leading-snug">{task.title}</p>
@@ -149,13 +195,25 @@ export default function PortalProjectPage() {
                               {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           )}
-                          <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority ?? 'medium'] }} />
+                          <span className="flex items-center gap-1 text-[11px] font-medium" style={{ color: PRIORITY_COLOR[task.priority ?? 'medium'] }}>
+                            <Flag size={11} /> {PRIORITY_LABEL[task.priority ?? 'medium']}
+                          </span>
                           {timeByTask && secs != null && secs > 0 && (
                             <span className="flex items-center gap-1 text-[11px] text-teal-600 font-medium">
                               <Clock size={11} /> {formatHours(secs)}
                             </span>
                           )}
                         </div>
+                        {/* Change request */}
+                        <button
+                          onClick={() => setCrTask(task)}
+                          disabled={used >= crLimit}
+                          className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-[11px] font-medium border border-gray-200 rounded-lg py-1.5 text-gray-500 hover:text-teal-600 hover:border-teal-200 hover:bg-teal-50/50 disabled:opacity-40 disabled:hover:text-gray-500 disabled:hover:border-gray-200 disabled:hover:bg-transparent transition-colors"
+                          title={used >= crLimit ? 'Change request limit reached — contact the team in chat' : 'Request changes on this task'}
+                        >
+                          <FilePen size={11} />
+                          Request changes ({used}/{crLimit})
+                        </button>
                       </div>
                     )
                   })}
@@ -166,6 +224,19 @@ export default function PortalProjectPage() {
           })}
         </div>
       </div>
+      )}
+
+      {crTask && token && (
+        <ChangeRequestModal
+          projectId={project.id}
+          task={crTask}
+          token={token}
+          used={crCountByTask[crTask.id] ?? 0}
+          limit={crLimit}
+          onClose={() => setCrTask(null)}
+          onSubmitted={() => { setCrTask(null); refetch(token) }}
+        />
+      )}
 
       {chatOpen && token && (
         <PortalChat
@@ -175,6 +246,127 @@ export default function PortalProjectPage() {
           onClose={() => setChatOpen(false)}
         />
       )}
+    </div>
+  )
+}
+
+// ── Change request modal ───────────────────────────────────────────────────────
+
+function ChangeRequestModal({ projectId, task, token, used, limit, onClose, onSubmitted }: {
+  projectId: string
+  task: PortalTask
+  token: string
+  used: number
+  limit: number
+  onClose: () => void
+  onSubmitted: () => void
+}) {
+  const [content, setContent] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function addFiles(list: FileList | null) {
+    if (!list) return
+    const picked = Array.from(list)
+    for (const f of picked) {
+      if (fileTooBig(f)) { setError(`"${f.name}" is too big — ${MAX_FILE_MB} MB max`); return }
+    }
+    setError('')
+    setFiles(prev => [...prev, ...picked].slice(0, 5))
+  }
+
+  async function submit() {
+    if ((!content.trim() && files.length === 0) || saving) return
+    setSaving(true)
+    setError('')
+    const form = new FormData()
+    form.append('taskId', task.id)
+    form.append('content', content.trim())
+    for (const f of files) form.append('files', f)
+    const res = await fetch(`/api/portal/project/${projectId}/change-requests`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    })
+    setSaving(false)
+    if (res.ok) {
+      onSubmitted()
+    } else {
+      const { error: err } = await res.json().catch(() => ({ error: 'Something went wrong' }))
+      setError(err)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Request changes</h2>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-sm">
+              «{task.title}» · {used + 1} of {limit}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+          <textarea
+            autoFocus
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            rows={6}
+            placeholder="Describe what you'd like to change..."
+            className="w-full text-sm border border-gray-200 rounded-xl px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none leading-relaxed"
+          />
+
+          {/* Files */}
+          <div>
+            <label className="flex items-center gap-2 text-xs font-medium text-teal-600 hover:text-teal-700 cursor-pointer w-fit">
+              <Paperclip size={13} />
+              Attach images or files (up to 5, {MAX_FILE_MB} MB each)
+              <input
+                type="file" multiple className="hidden"
+                accept="*"
+                onChange={e => { addFiles(e.target.files); e.target.value = '' }}
+              />
+            </label>
+            {files.length > 0 && (
+              <div className="flex flex-col gap-1.5 mt-2">
+                {files.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                    <span className="text-xs text-gray-600 truncate">{f.name}</span>
+                    <button
+                      onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="text-gray-300 hover:text-red-400 flex-shrink-0 ml-2"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+
+        <div className="flex gap-3 p-5 border-t border-gray-100">
+          <button onClick={onClose}
+            className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving || (!content.trim() && files.length === 0)}
+            className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {saving ? 'Submitting...' : 'Submit request'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -192,6 +384,7 @@ function PortalChat({ projectId, token, people, onClose }: {
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [bookingOpen, setBookingOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const { width, startResize } = useChatWidth()
 
@@ -312,7 +505,52 @@ function PortalChat({ projectId, token, people, onClose }: {
         placeholder="Message... (@ to mention)"
         uploading={uploading}
         accent="teal"
+        onBookMeeting={() => setBookingOpen(true)}
       />
+
+      {bookingOpen && <BookMeetingModal onClose={() => setBookingOpen(false)} />}
+    </div>
+  )
+}
+
+// ── Cal.com booking popup ──────────────────────────────────────────────────────
+
+const CAL_EMBED_SNIPPET = `
+(function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let d = C.document; C.Cal = C.Cal || function () { let cal = C.Cal; let ar = arguments; if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild(d.createElement("script")).src = A; cal.loaded = true; } if (ar[0] === L) { const api = function () { p(api, arguments); }; const namespace = ar[1]; api.q = api.q || []; if(typeof namespace === "string"){cal.ns[namespace] = cal.ns[namespace] || api;p(cal.ns[namespace], ar);p(cal, ["initNamespace", namespace]);} else p(cal, ar); return;} p(cal, ar); }; })(window, "https://app.cal.com/embed/embed.js", "init");
+Cal("init", "meeting", {origin:"https://app.cal.com"});
+Cal.config = Cal.config || {};
+Cal.config.forwardQueryParams = true;
+Cal.ns.meeting("inline", {
+  elementOrSelector: "#portal-cal-inline",
+  config: {"layout":"month_view","useSlotsViewOnSmallScreen":"true"},
+  calLink: "ivan-fantalin-gudrix/meeting",
+});
+Cal.ns.meeting("ui", {"hideEventTypeDetails":false,"layout":"month_view"});
+`
+
+function BookMeetingModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const script = document.createElement('script')
+    script.type = 'text/javascript'
+    script.textContent = CAL_EMBED_SNIPPET
+    document.body.appendChild(script)
+    return () => { document.body.removeChild(script) }
+  }, [])
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <CalendarDays size={15} className="text-teal-500" />
+            <p className="text-sm font-semibold text-gray-800">Book a meeting with Gudrix</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <div id="portal-cal-inline" style={{ width: '100%', height: '100%', overflow: 'scroll' }} />
+        </div>
+      </div>
     </div>
   )
 }

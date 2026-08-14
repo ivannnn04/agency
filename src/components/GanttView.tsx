@@ -31,6 +31,7 @@ interface DragState {
 interface Props {
   tasks: GanttTask[]
   onUpdate: (taskId: string, patch: { start_date?: string | null; due_date?: string | null }) => void
+  readOnly?: boolean
 }
 
 function toDateStr(d: Date): string {
@@ -52,7 +53,7 @@ function parseDate(s: string | null): Date | null {
   return new Date(s + 'T00:00:00')
 }
 
-export default function GanttView({ tasks, onUpdate }: Props) {
+export default function GanttView({ tasks, onUpdate, readOnly = false }: Props) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const startDate = addDays(today, -DAYS_BEFORE_TODAY)
@@ -95,6 +96,7 @@ export default function GanttView({ tasks, onUpdate }: Props) {
     origEnd: string | null,
     forceBoth = false,
   ) {
+    if (readOnly) return
     e.preventDefault()
     e.stopPropagation()
     dragRef.current = {

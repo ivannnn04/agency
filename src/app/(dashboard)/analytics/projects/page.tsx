@@ -3,12 +3,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
-import { ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
+import {
+  ArrowLeft, ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign,
+  Plus, Edit2, Archive, Trash2, LayoutDashboard,
+} from 'lucide-react'
 import Link from 'next/link'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from 'recharts'
+import { Project } from '@/types'
+import ProjectModal from '@/components/modals/ProjectModal'
 
 interface ProjectStats {
   id: string
@@ -39,24 +44,27 @@ interface Detail {
 }
 
 const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру']
+const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 function fmt(n: number) {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-function usdLabel(tx: TxRow) {
-  return tx.currency !== 'UAH' ? ` (${tx.currency})` : ''
-}
-
 export default function ProjectsPage() {
   const [projects, setProjects]   = useState<ProjectStats[]>([])
+  const [rawById, setRawById]     = useState<Record<string, Project>>({})
+  const [archived, setArchived]   = useState<Project[]>([])
   const [year, setYear]           = useState(new Date().getFullYear())
   const [expanded, setExpanded]   = useState<string | null>(null)
   const [details, setDetails]     = useState<Record<string, Detail>>({})
   const [loading, setLoading]     = useState<string | null>(null)
   const [showPlanned, setShowPlanned] = useState(true)
-  const { toUSD, fmtUSD, rates, loading: ratesLoading } = useRates()
+  const [showArchived, setShowArchived] = useState(false)
+  const [addOpen, setAddOpen]     = useState(false)
+  const [editProject, setEditProject] = useState<Project | null>(null)
+  const { toUSD, loading: ratesLoading } = useRates()
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
 
   // Accrued (not yet paid) tracker salary per project:
@@ -103,7 +111,7 @@ export default function ProjectsPage() {
   }
 
   async function fetchSummary() {
-    const { data: projs } = await supabase.from('projects').select('id, name')
+    const { data: projs } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
     const { data: txs }   = await supabase
       .from('transactions')
       .select('type, amount, currency, project_id, is_planned')
@@ -112,9 +120,15 @@ export default function ProjectsPage() {
 
     if (!projs || !txs) return
 
+    const byId: Record<string, Project> = {}
+    for (const p of projs) byId[p.id] = p
+    setRawById(byId)
+    setArchived(projs.filter(p => p.status === 'archived'))
+
     const accruedByProject = await fetchAccruedSalary()
 
-    const stats = projs.map(p => {
+    const active = projs.filter(p => p.status !== 'archived')
+    const stats = active.map(p => {
       const ptxs = txs.filter(t => t.project_id === p.id)
       const actual  = ptxs.filter(t => !t.is_planned)
       const planned = ptxs.filter(t => t.is_planned)
@@ -167,7 +181,7 @@ export default function ProjectsPage() {
     // By person (counterparty or extracted from comment) — amounts in USD
     const personMap: Record<string, ByPerson> = {}
     for (const t of txs) {
-      const raw = (t.counterparty as any)?.name
+      const raw = (t.counterparty as { name?: string } | null)?.name
       let name = raw ?? ''
       if (!name && t.comment) {
         const match = t.comment.match(/ЗП\s+(.+?)\s*—/)
@@ -195,6 +209,35 @@ export default function ProjectsPage() {
     fetchDetail(id)
   }
 
+  // ── Project management actions ──────────────────────────────────────────────
+
+  async function toggleStatus(p: Project) {
+    await supabase.from('projects')
+      .update({ status: p.status === 'active' ? 'inactive' : 'active' })
+      .eq('id', p.id)
+    fetchSummary()
+  }
+
+  async function archiveProject(p: Project) {
+    await supabase.from('projects')
+      .update({ status: 'archived', archived_at: new Date().toISOString() })
+      .eq('id', p.id)
+    fetchSummary()
+  }
+
+  async function unarchiveProject(p: Project) {
+    await supabase.from('projects')
+      .update({ status: 'active', archived_at: null })
+      .eq('id', p.id)
+    fetchSummary()
+  }
+
+  async function deleteProject(id: string) {
+    if (!confirm('Видалити проект назавжди? Транзакції залишаться, але без привʼязки до проекту.')) return
+    await supabase.from('projects').delete().eq('id', id)
+    fetchSummary()
+  }
+
   const totalIncome  = projects.reduce((s, p) => s + p.income + p.planned_income, 0)
   const totalExpense = projects.reduce((s, p) => s + p.expense + p.planned_expense + p.accrued_salary, 0)
   const totalProfit  = totalIncome - totalExpense
@@ -216,6 +259,12 @@ export default function ProjectsPage() {
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
             {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Plus size={14} /> Новий проект
+          </button>
         </div>
       </div>
 
@@ -248,13 +297,15 @@ export default function ProjectsPage() {
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Прибуток</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">Маржа %</th>
               <th className="text-right py-3 px-4 text-gray-500 font-medium">ROI %</th>
+              <th className="py-3 px-2 w-24"></th>
             </tr>
           </thead>
           <tbody>
             {projects.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-gray-400">Немає проектів</td></tr>
             )}
             {projects.map(p => {
+              const raw = rawById[p.id]
               const totalInc = p.income + (showPlanned ? p.planned_income : 0)
               const totalExp = p.expense + p.accrued_salary + (showPlanned ? p.planned_expense : 0)
               const profit   = totalInc - totalExp
@@ -262,18 +313,53 @@ export default function ProjectsPage() {
               const roi      = totalExp > 0 ? Math.round((profit / totalExp) * 100) : 0
               const isOpen   = expanded === p.id
               const det      = details[p.id]
+              const sym      = CURRENCY_SYMBOL[raw?.contract_currency ?? 'USD']
 
               return (
                 <>
                   <tr
                     key={p.id}
                     onClick={() => toggle(p.id)}
-                    className="border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer"
+                    className="border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer group"
                   >
                     <td className="py-3 px-4 text-gray-400">
                       {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
-                    <td className="py-3 px-4 font-medium text-gray-800">{p.name}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: raw?.color ?? '#14b8a6' }} />
+                        <div>
+                          <span className="font-medium text-gray-800">{p.name}</span>
+                          {(raw?.contract_amount ?? 0) > 0 && (
+                            <p className="text-[11px] text-gray-400">
+                              Контракт: {sym}{raw!.contract_amount!.toLocaleString('en-US')}
+                              {(raw?.received_before_app ?? 0) > 0 && (
+                                <span className="text-teal-600"> · до старту: {sym}{raw!.received_before_app!.toLocaleString('en-US')}</span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                        {raw && (
+                          <button
+                            onClick={e => { e.stopPropagation(); toggleStatus(raw) }}
+                            className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors flex-shrink-0 ${
+                              raw.status === 'active'
+                                ? 'border-teal-200 text-teal-600 hover:bg-teal-50'
+                                : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            {raw.status === 'active' ? 'Активний' : 'Неактивний'}
+                          </button>
+                        )}
+                        <a
+                          href={`/board/${p.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="flex items-center gap-1 text-[11px] bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full hover:bg-teal-50 hover:text-teal-600 hover:border-teal-200 transition-colors flex-shrink-0"
+                        >
+                          <LayoutDashboard size={9} /> Борда
+                        </a>
+                      </div>
+                    </td>
                     <td className="py-3 px-4 text-right text-teal-600">{fmt(totalInc)}</td>
                     <td className="py-3 px-4 text-right text-red-500">
                       {fmt(totalExp)}
@@ -292,11 +378,24 @@ export default function ProjectsPage() {
                     <td className={`py-3 px-4 text-right ${roi >= 0 ? 'text-gray-700' : 'text-red-400'}`}>
                       {roi}%
                     </td>
+                    <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                        <button onClick={() => raw && setEditProject(raw)} className="text-gray-400 hover:text-gray-700 p-1.5 rounded" title="Редагувати">
+                          <Edit2 size={13} />
+                        </button>
+                        <button onClick={() => raw && archiveProject(raw)} className="text-gray-400 hover:text-amber-500 p-1.5 rounded" title="Архівувати">
+                          <Archive size={13} />
+                        </button>
+                        <button onClick={() => deleteProject(p.id)} className="text-gray-400 hover:text-red-400 p-1.5 rounded" title="Видалити">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
 
                   {isOpen && (
                     <tr key={`${p.id}-detail`} className="bg-gray-50/50 border-b border-gray-100">
-                      <td colSpan={7} className="px-6 py-5">
+                      <td colSpan={8} className="px-6 py-5">
                         {loading === p.id ? (
                           <p className="text-sm text-gray-400 text-center py-4">Завантаження...</p>
                         ) : det ? (
@@ -344,7 +443,7 @@ export default function ProjectsPage() {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
                                     <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                                    <Tooltip formatter={(v) => fmt(Number(v)) + ' ₴'} />
+                                    <Tooltip formatter={(v) => fmt(Number(v))} />
                                     <Legend wrapperStyle={{ fontSize: 12 }} />
                                     <Area type="monotone" dataKey="income"  name="Дохід"   stroke="#14b8a6" strokeWidth={2.5} fill="url(#projIncome)"  dot={false} activeDot={{ r: 4 }} />
                                     <Area type="monotone" dataKey="expense" name="Витрати" stroke="#f87171" strokeWidth={2.5} fill="url(#projExpense)" dot={false} activeDot={{ r: 4 }} />
@@ -361,7 +460,7 @@ export default function ProjectsPage() {
                                   <table className="w-full text-sm">
                                     <thead>
                                       <tr className="bg-gray-50 border-b border-gray-100">
-                                        <th className="text-left py-2 px-4 text-gray-400 font-medium">Ім'я</th>
+                                        <th className="text-left py-2 px-4 text-gray-400 font-medium">Імʼя</th>
                                         <th className="text-right py-2 px-4 text-gray-400 font-medium">Дохід</th>
                                         <th className="text-right py-2 px-4 text-gray-400 font-medium">Витрати</th>
                                         <th className="text-right py-2 px-4 text-gray-400 font-medium">Прибуток</th>
@@ -408,7 +507,7 @@ export default function ProjectsPage() {
                                           {t.comment || '—'}
                                         </td>
                                         <td className="py-2 px-4 text-gray-500">
-                                          {(t.category as any)?.name || '—'}
+                                          {(t.category as { name?: string } | null)?.name || '—'}
                                         </td>
                                         <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
                                           {t.type === 'income' ? '+' : '−'}{fmt(toUSD(t.amount, t.currency))}
@@ -437,6 +536,62 @@ export default function ProjectsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Archived projects */}
+      {archived.length > 0 && (
+        <div className="mt-6">
+          <button onClick={() => setShowArchived(v => !v)}
+            className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1.5 mb-3 transition-colors">
+            <Archive size={14} className="text-amber-400" />
+            {showArchived ? 'Сховати' : 'Показати'} архів ({archived.length})
+          </button>
+          {showArchived && (
+            <div className="flex flex-col gap-2">
+              {archived.map(p => (
+                <div key={p.id}
+                  className="flex items-center justify-between p-4 border border-gray-100 rounded-xl bg-gray-50 group opacity-70 hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Archive size={13} className="text-amber-400 flex-shrink-0" />
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">{p.name}</span>
+                      {p.archived_at && (
+                        <p className="text-xs text-gray-400">
+                          Архівовано {new Date(p.archived_at).toLocaleDateString('uk-UA')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => unarchiveProject(p)}
+                      className="text-xs text-gray-500 hover:text-teal-600 px-2 py-1 rounded border border-gray-200 hover:border-teal-200 transition-colors">
+                      Відновити
+                    </button>
+                    <button onClick={() => deleteProject(p.id)}
+                      className="text-gray-400 hover:text-red-400 p-1.5 rounded" title="Видалити назавжди">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add / edit project modals */}
+      {addOpen && (
+        <ProjectModal
+          onClose={() => setAddOpen(false)}
+          onSuccess={() => { setAddOpen(false); fetchSummary() }}
+        />
+      )}
+      {editProject && (
+        <ProjectModal
+          project={editProject}
+          onClose={() => setEditProject(null)}
+          onSuccess={() => { setEditProject(null); fetchSummary() }}
+        />
+      )}
     </div>
   )
 }

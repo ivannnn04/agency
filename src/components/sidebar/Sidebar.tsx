@@ -8,7 +8,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, FolderOpen, Circle, Pencil,
+  DollarSign, Circle, Pencil,
 } from 'lucide-react'
 
 import AddAccountModal from '@/components/modals/AddAccountModal'
@@ -22,7 +22,6 @@ function currencySymbol(currency: string) {
 const financeNav = [
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
-  { label: 'Проекти',   href: '/projects',    icon: FolderOpen },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },
   { label: 'Ліди',      href: '/leads',       icon: Users },
   { label: 'Зарплата',  href: '/payroll',     icon: DollarSign },

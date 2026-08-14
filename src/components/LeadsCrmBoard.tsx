@@ -98,7 +98,10 @@ export default function LeadsCrmBoard() {
         contract_amount: lead.amount,
         contract_currency: lead.currency,
       }).select().single()
-      if (proj) projectPatch = { project_id: proj.id }
+      if (proj) {
+        projectPatch = { project_id: proj.id }
+        window.dispatchEvent(new Event('gudrix:projects-changed'))
+      }
     }
 
     await updateLead(id, { status, ...projectPatch })

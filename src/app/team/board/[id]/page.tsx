@@ -8,10 +8,11 @@ import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
   ArrowLeft, LogOut, Plus, Flag, Calendar, User, Play, Square, Timer,
-  BarChart2, X, Trash2, Clock,
+  BarChart2, X, Trash2, Clock, MessageSquare,
 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
+import ProjectChat from '@/components/ProjectChat'
 
 interface Project {
   id: string
@@ -73,6 +74,7 @@ export default function TeamBoardPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [saving, setSaving] = useState(false)
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     if (id) fetchAll()
@@ -306,6 +308,15 @@ export default function TeamBoardPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => setChatOpen(v => !v)}
+            className={`flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
+              chatOpen ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+            title="Чат проєкту"
+          >
+            <MessageSquare size={14} /> Чат
+          </button>
           <button
             onClick={() => router.push('/team/reports')}
             className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-xs"
@@ -543,6 +554,15 @@ export default function TeamBoardPage() {
           />
         )}
       </div>
+
+      {/* Project chat drawer */}
+      {chatOpen && member && (
+        <ProjectChat
+          projectId={id}
+          sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
 
       {/* Active timer indicator */}
       {activeTimer && !selectedTask && (

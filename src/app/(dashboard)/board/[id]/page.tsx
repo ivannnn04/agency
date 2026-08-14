@@ -9,9 +9,12 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
-  Link2, Copy,
+  Link2, Copy, MessageSquare, Clock,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
+import ProjectChat from '@/components/ProjectChat'
+
+interface ClientRow { id: string; email: string; name: string | null }
 
 const DEFAULT_COLUMNS = [
   { name: 'TO DO',                 color: '#F59E0B', position: 0 },
@@ -97,6 +100,10 @@ export default function BoardPage() {
   const [view, setView] = useState<'board' | 'gantt'>('board')
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [clientPanelOpen, setClientPanelOpen] = useState(false)
+  const [projectClients, setProjectClients] = useState<ClientRow[]>([])
+  const [newClientEmail, setNewClientEmail] = useState('')
+  const [newClientName, setNewClientName] = useState('')
+  const [chatOpen, setChatOpen] = useState(false)
   const clientRef = useRef<HTMLDivElement>(null)
   const menuRef    = useRef<HTMLDivElement>(null)
   const memberRef  = useRef<HTMLDivElement>(null)
@@ -116,14 +123,22 @@ export default function BoardPage() {
   async function fetchAll() {
     setLoading(true)
     setDbError(null)
-    const [{ data: proj }, { data: cols, error: colErr }, { data: tx }, { data: mems }, { data: pm }] = await Promise.all([
+    const [{ data: proj }, { data: cols, error: colErr }, { data: tx }, { data: mems }, { data: pm }, { data: pc }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
       supabase.from('team_members').select('*').order('created_at'),
       supabase.from('project_members').select('team_member_id').eq('project_id', id),
+      supabase.from('project_clients').select('client_id, clients(id, email, name)').eq('project_id', id),
     ])
     if (proj) setProject(proj)
+    if (pc) {
+      setProjectClients(
+        (pc as unknown as { clients: ClientRow | null }[])
+          .map(r => r.clients)
+          .filter((c): c is ClientRow => !!c)
+      )
+    }
     if (mems) {
       setMembers(mems)
       const pmIds = new Set((pm ?? []).map(r => r.team_member_id))
@@ -308,6 +323,37 @@ export default function BoardPage() {
     if (!error) setProject(prev => prev ? { ...prev, client_access_token: token } : prev)
   }
 
+  async function addClient() {
+    const email = newClientEmail.trim().toLowerCase()
+    if (!email) return
+    let { data: client } = await supabase.from('clients').select('id, email, name').eq('email', email).single()
+    if (!client) {
+      const { data: created } = await supabase
+        .from('clients')
+        .insert({ email, name: newClientName.trim() || null })
+        .select('id, email, name')
+        .single()
+      client = created
+    }
+    if (!client) return
+    await supabase.from('project_clients').insert({ project_id: id, client_id: client.id })
+    if (!projectClients.find(c => c.id === client!.id)) {
+      setProjectClients(prev => [...prev, client!])
+    }
+    setNewClientEmail(''); setNewClientName('')
+  }
+
+  async function removeClient(clientId: string) {
+    await supabase.from('project_clients').delete().eq('project_id', id).eq('client_id', clientId)
+    setProjectClients(prev => prev.filter(c => c.id !== clientId))
+  }
+
+  async function toggleShowHours() {
+    const next = !project?.show_tracked_hours
+    await supabase.from('projects').update({ show_tracked_hours: next }).eq('id', id)
+    setProject(prev => prev ? { ...prev, show_tracked_hours: next } : prev)
+  }
+
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Завантаження...</div>
   )
@@ -450,8 +496,75 @@ create policy "team_members_all" on team_members for all using (true) with check
             </button>
 
             {clientPanelOpen && (
-              <div className="absolute right-0 top-9 z-30 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-[300px]">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2">Клієнтський доступ (read-only)</p>
+              <div className="absolute right-0 top-9 z-30 bg-white rounded-xl shadow-lg border border-gray-100 p-3 w-[320px]">
+                {/* Client accounts */}
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2">Акаунти клієнтів</p>
+                <div className="flex flex-col gap-1.5 mb-2">
+                  {projectClients.map(c => (
+                    <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-700 truncate">{c.name || c.email}</p>
+                        {c.name && <p className="text-[10px] text-gray-400 truncate">{c.email}</p>}
+                      </div>
+                      <button onClick={() => removeClient(c.id)} className="text-gray-300 hover:text-red-400 flex-shrink-0 ml-2">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  {projectClients.length === 0 && (
+                    <p className="text-[11px] text-gray-300">Ще не додано жодного клієнта</p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1.5 mb-2">
+                  <input
+                    value={newClientEmail}
+                    onChange={e => setNewClientEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addClient() }}
+                    placeholder="client@email.com"
+                    className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <div className="flex gap-1.5">
+                    <input
+                      value={newClientName}
+                      onChange={e => setNewClientName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addClient() }}
+                      placeholder="Імʼя (опційно)"
+                      className="flex-1 min-w-0 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    />
+                    <button
+                      onClick={addClient}
+                      disabled={!newClientEmail.trim()}
+                      className="text-xs bg-gray-900 text-white rounded-lg px-3 py-1.5 hover:bg-gray-700 disabled:opacity-40 flex-shrink-0"
+                    >
+                      Додати
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mb-3">
+                  Клієнт реєструється на <span className="font-medium text-gray-600">/portal/login</span> з цим email
+                  (пароль або Google) і бачить свої проєкти.
+                </p>
+
+                {/* Tracked hours toggle */}
+                <div className="flex items-center justify-between border-t border-gray-100 pt-2.5 mb-3">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={12} className="text-gray-400" />
+                    <span className="text-xs text-gray-600">Показувати години клієнту</span>
+                  </div>
+                  <button
+                    onClick={toggleShowHours}
+                    className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${
+                      project?.show_tracked_hours ? 'bg-teal-500' : 'bg-gray-200'
+                    }`}
+                    title={project?.show_tracked_hours ? 'Клієнт бачить затрекані години' : 'Години приховані від клієнта'}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${
+                      project?.show_tracked_hours ? 'left-[18px]' : 'left-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2 border-t border-gray-100 pt-2.5">Публічне посилання (read-only)</p>
                 {project?.client_access_token ? (
                   <>
                     <div className="flex items-center gap-1.5 mb-2">
@@ -488,6 +601,17 @@ create policy "team_members_all" on team_members for all using (true) with check
               </div>
             )}
           </div>
+
+          {/* Project chat */}
+          <button
+            onClick={() => { setSelectedTask(null); setChatOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              chatOpen ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Чат проєкту"
+          >
+            <MessageSquare size={13} /> Чат
+          </button>
           </div>
         </div>
 
@@ -507,7 +631,7 @@ create policy "team_members_all" on team_members for all using (true) with check
                   onStartAdd={() => setAddingInColumn(col.id)}
                   onCancelAdd={() => setAddingInColumn(null)}
                   onAddTask={patch => addTask(col.id, patch)}
-                  onSelectTask={t => setSelectedTask(t)}
+                  onSelectTask={t => { setChatOpen(false); setSelectedTask(t) }}
                   onMoveTask={moveTask}
                   onDeleteTask={deleteTask}
                   onDeleteColumn={() => deleteColumn(col.id)}
@@ -557,6 +681,15 @@ create policy "team_members_all" on team_members for all using (true) with check
           </div>
         )}
       </div>
+
+      {/* Project chat drawer */}
+      {chatOpen && (
+        <ProjectChat
+          projectId={id}
+          sender={{ type: 'admin', name: 'Ivan' }}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
 
       {/* Task detail drawer */}
       {selectedTask && (

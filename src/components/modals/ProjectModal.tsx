@@ -44,6 +44,8 @@ export default function ProjectModal({ project, onClose, onSuccess }: {
 
     setSaving(false)
     if (err) { setError(err.message); return }
+    // Let the sidebar (Проєкти section) pick up the new/renamed project immediately
+    window.dispatchEvent(new Event('gudrix:projects-changed'))
     onSuccess()
   }
 

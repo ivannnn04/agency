@@ -56,6 +56,7 @@ export interface Project {
   received_before_app?: number | null
   archived_at?: string | null
   client_access_token?: string | null
+  show_tracked_hours?: boolean
   created_at: string
 }
 

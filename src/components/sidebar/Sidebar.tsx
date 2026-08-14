@@ -71,6 +71,17 @@ export default function Sidebar() {
     if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) setSidebarWidth(saved)
   }, [])
 
+  // Keep the PM project list fresh: refetch on navigation and whenever any page
+  // creates/edits a project (ProjectModal and CRM won-conversion dispatch this event).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchPmProjects() }, [pathname])
+  useEffect(() => {
+    const onChange = () => { fetchPmProjects(); fetchAccounts() }
+    window.addEventListener('gudrix:projects-changed', onChange)
+    return () => window.removeEventListener('gudrix:projects-changed', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function startResize(e: React.MouseEvent) {
     e.preventDefault()
     setResizing(true)

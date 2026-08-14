@@ -32,7 +32,12 @@ export default function PortalLoginPage() {
       router.push('/portal')
     } else {
       if (password.length < 8) { setLoading(false); setError('Password must be at least 8 characters'); return }
-      const { data, error: err } = await supabase.auth.signUp({ email, password })
+      const { data, error: err } = await supabase.auth.signUp({
+        email,
+        password,
+        // Confirmation email must land back on the deployed portal, not localhost
+        options: { emailRedirectTo: `${window.location.origin}/portal` },
+      })
       setLoading(false)
       if (err) { setError(err.message); return }
       if (data.session) {

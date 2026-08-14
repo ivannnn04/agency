@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
+import { Project } from '@/types'
 import {
   TrendingUp, BarChart2, ArrowDownCircle, ArrowUpCircle,
   FileText, FolderOpen, Scale, Target, Activity,
-  Wallet, Clock, PiggyBank,
+  Wallet, Clock, PiggyBank, Pencil,
 } from 'lucide-react'
+import ProjectModal from '@/components/modals/ProjectModal'
 
 const reports = [
   { href: '/analytics/cash-flow',         icon: TrendingUp,      title: 'Гроші / Cash flow',   description: 'Звіт про рух грошових коштів' },
@@ -38,6 +40,8 @@ export default function AnalyticsPage() {
   const { toUSD, fmtUSD, loading: ratesLoading } = useRates()
   const [onAccounts, setOnAccounts] = useState(0)
   const [rows, setRows] = useState<ProjectRow[]>([])
+  const [rawProjects, setRawProjects] = useState<Project[]>([])
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [yearIncome, setYearIncome] = useState(0)
   const [yearExpense, setYearExpense] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -50,9 +54,11 @@ export default function AnalyticsPage() {
 
     const [{ data: accounts }, { data: projects }, { data: txs }] = await Promise.all([
       supabase.from('accounts').select('balance, currency'),
-      supabase.from('projects').select('id, name, status, contract_amount, contract_currency, received_before_app').neq('status', 'archived'),
+      supabase.from('projects').select('id, name, status, contract_amount, contract_currency, received_before_app, created_at').neq('status', 'archived'),
       supabase.from('transactions').select('type, amount, currency, project_id, is_planned, date'),
     ])
+
+    if (projects) setRawProjects(projects)
 
     // Total on accounts (USD)
     setOnAccounts((accounts ?? []).reduce((s, a) => s + toUSD(a.balance ?? 0, a.currency), 0))
@@ -158,6 +164,7 @@ export default function AnalyticsPage() {
                   <th className="text-right px-4 py-3 font-medium">Отримано</th>
                   <th className="text-right px-4 py-3 font-medium">Залишок</th>
                   <th className="px-4 py-3 w-40 font-medium">Прогрес</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -165,7 +172,7 @@ export default function AnalyticsPage() {
                   const pct = r.contractUSD > 0 ? Math.min(100, (r.receivedUSD / r.contractUSD) * 100) : 0
                   const done = r.remainingUSD <= 0.5
                   return (
-                    <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={r.id} className="hover:bg-gray-50 transition-colors group">
                       <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                       <td className="px-4 py-3 text-right text-gray-500">{fmtUSD(r.contractUSD)}</td>
                       <td className="px-4 py-3 text-right text-teal-600">{fmtUSD(r.receivedUSD)}</td>
@@ -176,6 +183,18 @@ export default function AnalyticsPage() {
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${done ? 'bg-teal-400' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} />
                         </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => {
+                            const p = rawProjects.find(rp => rp.id === r.id)
+                            if (p) setEditingProject(p)
+                          }}
+                          className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Редагувати контракт"
+                        >
+                          <Pencil size={13} />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -188,12 +207,21 @@ export default function AnalyticsPage() {
                   <td className="px-4 py-3 text-right text-teal-600">{fmtUSD(totalReceived)}</td>
                   <td className="px-4 py-3 text-right text-amber-600">{fmtUSD(totalRemaining)}</td>
                   <td className="px-4 py-3" />
+                  <td className="px-4 py-3" />
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
       </div>
+
+      {editingProject && (
+        <ProjectModal
+          project={editingProject}
+          onClose={() => setEditingProject(null)}
+          onSuccess={() => { setEditingProject(null); fetchData() }}
+        />
+      )}
 
       {/* Detailed reports */}
       <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Детальні звіти</h2>

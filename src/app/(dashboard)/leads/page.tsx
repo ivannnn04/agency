@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, X, ChevronDown, ChevronUp, Edit2, Trash2, Users, Settings, Check, Download } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp, Trash2, Users, Settings, Check, Download, Kanban, Megaphone } from 'lucide-react'
+import LeadsCrmBoard from '@/components/LeadsCrmBoard'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export default function LeadsPage() {
   const [saving, setSaving]             = useState(false)
   const [expandedLead, setExpandedLead] = useState<string | null>(null)
   const [activeTab, setActiveTab]       = useState<'leads' | 'pings'>('leads')
+  const [view, setView]                 = useState<'crm' | 'outreach'>('crm')
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -203,16 +205,42 @@ export default function LeadsPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Ліди</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Лідогенерація команди</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {view === 'crm' ? 'Воронка продажів' : 'Лідогенерація команди'}
+          </p>
         </div>
-        <button onClick={exportCSV} disabled={filtered.length === 0}
-          className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          <Download size={14} /> Експорт CSV
+        {view === 'outreach' && (
+          <button onClick={exportCSV} disabled={filtered.length === 0}
+            className="flex items-center gap-2 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Download size={14} /> Експорт CSV
+          </button>
+        )}
+      </div>
+
+      {/* View switcher: CRM board vs outreach */}
+      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
+        <button onClick={() => setView('crm')}
+          className={`flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
+            view === 'crm' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          <Kanban size={14} /> Ліди
+        </button>
+        <button onClick={() => setView('outreach')}
+          className={`flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
+            view === 'outreach' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}>
+          <Megaphone size={14} /> Лідогенерація
         </button>
       </div>
+
+      {/* ── CRM board view ── */}
+      {view === 'crm' && <LeadsCrmBoard />}
+
+      {/* ── Outreach view ── */}
+      {view === 'outreach' && <>
 
       {/* Manager performance cards — top of page */}
       {managers.length > 0 && leads.length > 0 && (() => {
@@ -626,6 +654,8 @@ export default function LeadsPage() {
 
 
 </>}{/* end leads tab */}
+
+      </>}{/* end outreach view */}
     </div>
   )
 }

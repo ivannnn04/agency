@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRates } from '@/lib/use-rates'
-import { Plus, CheckCircle, AlertCircle, Clock, X } from 'lucide-react'
+import { Plus, CheckCircle, AlertCircle, Clock, X, Pencil } from 'lucide-react'
 
 interface Project { id: string; name: string }
 interface Account { id: string; name: string; currency: string }
@@ -42,6 +42,7 @@ export default function ReceivablesPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [payInvoice, setPayInvoice] = useState<Invoice | null>(null)
   const { toUSD, fmtUSD } = useRates()
 
@@ -186,6 +187,13 @@ export default function ReceivablesPage() {
                           Отримано
                         </button>
                         <button
+                          onClick={() => setEditInvoice(inv)}
+                          className="text-gray-300 hover:text-gray-500 transition-colors"
+                          title="Редагувати"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
                           onClick={() => deleteInvoice(inv.id)}
                           className="text-gray-300 hover:text-red-400 transition-colors"
                           title="Видалити"
@@ -204,15 +212,25 @@ export default function ReceivablesPage() {
 
       {/* Paid invoices */}
       {paid.length > 0 && (
-        <PaidSection paid={paid} fmtDate={fmtDate} fmtUSD={fmtUSD} toUSD={toUSD} />
+        <PaidSection paid={paid} fmtDate={fmtDate} fmtUSD={fmtUSD} toUSD={toUSD} onEdit={setEditInvoice} />
       )}
 
       {addOpen && (
-        <AddInvoiceModal
+        <InvoiceModal
           projects={projects}
           accounts={accounts}
           onClose={() => setAddOpen(false)}
           onSuccess={() => { setAddOpen(false); fetchAll() }}
+        />
+      )}
+
+      {editInvoice && (
+        <InvoiceModal
+          invoice={editInvoice}
+          projects={projects}
+          accounts={accounts}
+          onClose={() => setEditInvoice(null)}
+          onSuccess={() => { setEditInvoice(null); fetchAll() }}
         />
       )}
 
@@ -367,11 +385,12 @@ function ReceivePaymentModal({ invoice, accounts, onClose, onSuccess }: {
 
 // ── Paid invoices section ──────────────────────────────────────────────────────
 
-function PaidSection({ paid, fmtDate, fmtUSD, toUSD }: {
+function PaidSection({ paid, fmtDate, onEdit }: {
   paid: Invoice[]
   fmtDate: (d: string) => string
   fmtUSD: (n: number) => string
   toUSD: (amount: number, currency: string) => number
+  onEdit: (inv: Invoice) => void
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -390,11 +409,12 @@ function PaidSection({ paid, fmtDate, fmtUSD, toUSD }: {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Проект</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Сума</th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Оплачено</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {paid.map(inv => (
-                <tr key={inv.id} className="opacity-60">
+                <tr key={inv.id} className="opacity-60 hover:opacity-100 transition-opacity group">
                   <td className="px-4 py-3 text-gray-700">{inv.client_name}</td>
                   <td className="px-4 py-3 text-gray-500">{inv.projects?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-700">
@@ -402,6 +422,15 @@ function PaidSection({ paid, fmtDate, fmtUSD, toUSD }: {
                   </td>
                   <td className="px-4 py-3 text-center text-gray-500">
                     {inv.paid_at ? fmtDate(inv.paid_at.split('T')[0]) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => onEdit(inv)}
+                      className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Редагувати"
+                    >
+                      <Pencil size={12} />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -413,25 +442,27 @@ function PaidSection({ paid, fmtDate, fmtUSD, toUSD }: {
   )
 }
 
-// ── Add Invoice Modal ──────────────────────────────────────────────────────────
+// ── Add / Edit Invoice Modal ─────────────────────────────────────────────────
 
-function AddInvoiceModal({ projects, accounts, onClose, onSuccess }: {
+function InvoiceModal({ invoice, projects, accounts, onClose, onSuccess }: {
+  invoice?: Invoice
   projects: Project[]
   accounts: Account[]
   onClose: () => void
   onSuccess: () => void
 }) {
+  const isEdit = !!invoice
   const today = new Date().toISOString().split('T')[0]
   const in30  = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
 
-  const [clientName, setClientName]   = useState('')
-  const [projectId, setProjectId]     = useState('')
-  const [amount, setAmount]           = useState('')
-  const [currency, setCurrency]       = useState('USD')
-  const [invoiceDate, setInvoiceDate] = useState(today)
-  const [dueDate, setDueDate]         = useState(in30)
-  const [accountId, setAccountId]     = useState(accounts[0]?.id ?? '')
-  const [notes, setNotes]             = useState('')
+  const [clientName, setClientName]   = useState(invoice?.client_name ?? '')
+  const [projectId, setProjectId]     = useState(invoice?.project_id ?? '')
+  const [amount, setAmount]           = useState(invoice ? String(invoice.amount) : '')
+  const [currency, setCurrency]       = useState(invoice?.currency ?? 'USD')
+  const [invoiceDate, setInvoiceDate] = useState(invoice?.invoice_date?.split('T')[0] ?? today)
+  const [dueDate, setDueDate]         = useState(invoice?.due_date?.split('T')[0] ?? in30)
+  const [accountId, setAccountId]     = useState(invoice?.account_id ?? accounts[0]?.id ?? '')
+  const [notes, setNotes]             = useState(invoice?.notes ?? '')
   const [error, setError]             = useState('')
   const [saving, setSaving]           = useState(false)
 
@@ -440,18 +471,22 @@ function AddInvoiceModal({ projects, accounts, onClose, onSuccess }: {
     if (!clientName.trim()) { setError('Введіть імʼя клієнта'); return }
     if (!amount || Number(amount) <= 0) { setError('Введіть суму'); return }
     setSaving(true)
-    const { error: err } = await supabase.from('invoices').insert({
+
+    const payload = {
       client_name:  clientName.trim(),
       project_id:   projectId || null,
       amount:       Number(amount),
-      paid_amount:  0,
       currency,
       invoice_date: invoiceDate,
       due_date:     dueDate,
       account_id:   accountId || null,
       notes:        notes || null,
-      status:       'unpaid',
-    })
+    }
+
+    const { error: err } = isEdit
+      ? await supabase.from('invoices').update(payload).eq('id', invoice!.id)
+      : await supabase.from('invoices').insert({ ...payload, paid_amount: 0, status: 'unpaid' })
+
     setSaving(false)
     if (err) { setError(err.message); return }
     onSuccess()
@@ -461,7 +496,9 @@ function AddInvoiceModal({ projects, accounts, onClose, onSuccess }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Новий рахунок до отримання</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            {isEdit ? 'Редагувати рахунок' : 'Новий рахунок до отримання'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <form onSubmit={submit} className="p-5 flex flex-col gap-4">
@@ -546,7 +583,7 @@ function AddInvoiceModal({ projects, accounts, onClose, onSuccess }: {
             </button>
             <button type="submit" disabled={saving}
               className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
-              {saving ? 'Збереження...' : 'Додати рахунок'}
+              {saving ? 'Збереження...' : isEdit ? 'Зберегти зміни' : 'Додати рахунок'}
             </button>
           </div>
         </form>

@@ -72,6 +72,8 @@ export interface Transaction {
   currency: Currency
   account_id: string
   to_account_id?: string
+  to_amount?: number
+  to_currency?: Currency
   category_id?: string
   project_id?: string
   counterparty_id?: string

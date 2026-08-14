@@ -3,17 +3,20 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { Account, Category, Project, Counterparty, Currency, TransactionType } from '@/types'
+import { Account, Category, Project, Counterparty, Currency, TransactionType, Transaction } from '@/types'
 import { cn } from '@/lib/utils'
+import { adjustBalancesForTransaction } from '@/lib/transactionBalances'
 
 interface Props {
   open: boolean
   defaultType?: TransactionType
+  transaction?: Transaction | null
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function AddTransactionModal({ open, defaultType = 'income', onClose, onSuccess }: Props) {
+export default function AddTransactionModal({ open, defaultType = 'income', transaction, onClose, onSuccess }: Props) {
+  const isEdit = !!transaction
   const [type, setType] = useState<TransactionType>(defaultType)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -37,10 +40,29 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
 
   useEffect(() => {
     if (open) {
-      setType(defaultType)
       fetchData()
+      if (transaction) {
+        setType(transaction.type)
+        setAmount(String(transaction.amount))
+        setCurrency(transaction.currency)
+        setToAmount(transaction.to_amount != null ? String(transaction.to_amount) : '')
+        setToCurrency(transaction.to_currency ?? transaction.currency)
+        setAccountId(transaction.account_id)
+        setToAccountId(transaction.to_account_id ?? '')
+        setCategoryId(transaction.category_id ?? '')
+        setProjectId(transaction.project_id ?? '')
+        setCounterpartyId(transaction.counterparty_id ?? '')
+        setNewCounterparty('')
+        setDate(transaction.date.split('T')[0])
+        setComment(transaction.comment ?? '')
+        setIsPlanned(transaction.is_planned)
+      } else {
+        setType(defaultType)
+        resetForm()
+      }
     }
-  }, [open, defaultType])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultType, transaction])
 
   async function fetchData() {
     const [acc, cat, proj, cpart] = await Promise.all([
@@ -53,7 +75,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
     if (cat.data) setCategories(cat.data)
     if (proj.data) setProjects(proj.data)
     if (cpart.data) setCounterparties(cpart.data)
-    if (acc.data?.[0]) setAccountId(acc.data[0].id)
+    if (!isEdit && acc.data?.[0]) setAccountId(acc.data[0].id)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -92,18 +114,27 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
         payload.to_account_id = toAccountId || null
         payload.to_amount = toTxAmount
         payload.to_currency = toCurrency
+      } else {
+        payload.to_account_id = null
+        payload.to_amount = null
       }
 
-      await supabase.from('transactions').insert(payload)
-
-      // Update account balance
-      if (type === 'income') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: txAmount })
-      } else if (type === 'expense') {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -txAmount })
-      } else if (type === 'transfer' && toAccountId) {
-        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -txAmount })
-        await supabase.rpc('update_account_balance', { p_account_id: toAccountId, p_delta: toTxAmount })
+      if (isEdit && transaction) {
+        // Undo the old balance effect, then apply the new one
+        await adjustBalancesForTransaction(transaction, -1)
+        await adjustBalancesForTransaction({
+          type, amount: txAmount, account_id: accountId,
+          to_account_id: type === 'transfer' ? toAccountId || null : null,
+          to_amount: type === 'transfer' ? toTxAmount : null,
+        }, 1)
+        await supabase.from('transactions').update(payload).eq('id', transaction.id)
+      } else {
+        await supabase.from('transactions').insert(payload)
+        await adjustBalancesForTransaction({
+          type, amount: txAmount, account_id: accountId,
+          to_account_id: type === 'transfer' ? toAccountId || null : null,
+          to_amount: type === 'transfer' ? toTxAmount : null,
+        }, 1)
       }
 
       onSuccess()
@@ -345,7 +376,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', onCl
                 : 'bg-gradient-to-r from-gray-500 to-gray-700'
             )}
           >
-            {loading ? 'Збереження...' : 'Зберегти'}
+            {loading ? 'Збереження...' : isEdit ? 'Зберегти зміни' : 'Зберегти'}
           </button>
         </form>
       </div>

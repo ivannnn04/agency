@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Transaction } from '@/types'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Search, Download, Filter } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
+import { adjustBalancesForTransaction } from '@/lib/transactionBalances'
+import { Search, Download, Pencil, Trash2 } from 'lucide-react'
+import AddTransactionModal from '@/components/modals/AddTransactionModal'
 
 export default function PaymentsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -12,6 +14,7 @@ export default function PaymentsPage() {
   const [search, setSearch] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -47,6 +50,13 @@ export default function PaymentsPage() {
   useEffect(() => {
     fetchTransactions()
   }, [fetchTransactions])
+
+  async function deleteTransaction(t: Transaction) {
+    if (!confirm('Видалити цю операцію? Баланс рахунку буде скориговано.')) return
+    await adjustBalancesForTransaction(t, -1)
+    await supabase.from('transactions').delete().eq('id', t.id)
+    fetchTransactions()
+  }
 
   async function exportCSV() {
     const rows = [
@@ -124,27 +134,28 @@ export default function PaymentsPage() {
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Категорія</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Проект</th>
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Коментар</th>
+              <th className="py-3 px-4" />
             </tr>
           </thead>
           <tbody>
             {planned.length > 0 && (
               <>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <td colSpan={7} className="py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <td colSpan={8} className="py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     Планові платежі • {planned.length}
                   </td>
                 </tr>
                 {planned.map(t => (
-                  <TransactionRow key={t.id} transaction={t} />
+                  <TransactionRow key={t.id} transaction={t} onEdit={() => setEditingTx(t)} onDelete={() => deleteTransaction(t)} />
                 ))}
               </>
             )}
             {actual.map(t => (
-              <TransactionRow key={t.id} transaction={t} />
+              <TransactionRow key={t.id} transaction={t} onEdit={() => setEditingTx(t)} onDelete={() => deleteTransaction(t)} />
             ))}
             {transactions.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="text-center py-16 text-gray-400">
+                <td colSpan={8} className="text-center py-16 text-gray-400">
                   <p className="text-4xl mb-3">💸</p>
                   <p>Немає операцій</p>
                 </td>
@@ -153,16 +164,27 @@ export default function PaymentsPage() {
           </tbody>
         </table>
       </div>
+
+      <AddTransactionModal
+        open={!!editingTx}
+        transaction={editingTx}
+        onClose={() => setEditingTx(null)}
+        onSuccess={() => { setEditingTx(null); fetchTransactions() }}
+      />
     </div>
   )
 }
 
-function TransactionRow({ transaction: t }: { transaction: Transaction }) {
+function TransactionRow({ transaction: t, onEdit, onDelete }: {
+  transaction: Transaction
+  onEdit: () => void
+  onDelete: () => void
+}) {
   const isIncome = t.type === 'income'
   const isTransfer = t.type === 'transfer'
 
   return (
-    <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+    <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors group">
       <td className="py-3 px-4 text-gray-600">{formatDate(t.date)}</td>
       <td className="py-3 px-4 font-medium">
         <span className={isIncome ? 'text-teal-600' : isTransfer ? 'text-gray-600' : 'text-red-500'}>
@@ -185,6 +207,16 @@ function TransactionRow({ transaction: t }: { transaction: Transaction }) {
       </td>
       <td className="py-3 px-4 text-gray-600">{t.project?.name ?? '—'}</td>
       <td className="py-3 px-4 text-gray-500 text-xs">{t.comment ?? ''}</td>
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEdit} className="text-gray-400 hover:text-gray-700 p-1 rounded" title="Редагувати">
+            <Pencil size={13} />
+          </button>
+          <button onClick={onDelete} className="text-gray-400 hover:text-red-500 p-1 rounded" title="Видалити">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </td>
     </tr>
   )
 }

@@ -1,19 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AccountType, Currency } from '@/types'
+import { Account, AccountType, Currency } from '@/types'
 import { X } from 'lucide-react'
 
 interface Props {
   open: boolean
+  account?: Account | null
   onClose: () => void
   onSuccess: () => void
 }
 
 const COLORS = ['#14b8a6', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981', '#f97316']
 
-export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
+export default function AddAccountModal({ open, account, onClose, onSuccess }: Props) {
+  const isEdit = !!account
   const [name, setName] = useState('')
   const [type, setType] = useState<AccountType>('bank')
   const [currency, setCurrency] = useState<Currency>('UAH')
@@ -22,29 +24,41 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!open) return
+    if (account) {
+      setName(account.name)
+      setType(account.type)
+      setCurrency(account.currency)
+      setBalance(String(account.balance))
+      setColor(account.color)
+    } else {
+      setName(''); setType('bank'); setCurrency('UAH'); setBalance(''); setColor('#14b8a6')
+    }
+    setError(null)
+  }, [open, account])
+
   if (!open) return null
 
   async function save() {
     if (!name.trim()) return
     setSaving(true)
     setError(null)
-    const { error: err } = await supabase.from('accounts').insert({
+    const payload = {
       name: name.trim(),
       type,
       currency,
       balance: parseFloat(balance) || 0,
       color,
-    })
+    }
+    const { error: err } = isEdit
+      ? await supabase.from('accounts').update(payload).eq('id', account!.id)
+      : await supabase.from('accounts').insert(payload)
     setSaving(false)
     if (err) {
       setError(err.message)
       return
     }
-    setName('')
-    setType('bank')
-    setCurrency('UAH')
-    setBalance('')
-    setColor('#14b8a6')
     onSuccess()
   }
 
@@ -52,7 +66,7 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Новий рахунок</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{isEdit ? 'Редагувати рахунок' : 'Новий рахунок'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={18} />
           </button>
@@ -100,7 +114,7 @@ export default function AddAccountModal({ open, onClose, onSuccess }: Props) {
           </div>
 
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Початковий баланс</label>
+            <label className="text-xs text-gray-500 mb-1 block">{isEdit ? 'Баланс' : 'Початковий баланс'}</label>
             <input
               type="number"
               value={balance}

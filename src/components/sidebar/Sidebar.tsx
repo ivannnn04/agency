@@ -8,7 +8,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, FolderOpen, Circle,
+  DollarSign, FolderOpen, Circle, Pencil,
 } from 'lucide-react'
 
 import AddAccountModal from '@/components/modals/AddAccountModal'
@@ -47,6 +47,7 @@ export default function Sidebar() {
   const [plannedIncome, setPlannedIncome]   = useState(0)
   const [plannedExpense, setPlannedExpense] = useState(0)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const { rates, loading: ratesLoading, toUSD, fmtUSD } = useRates()
@@ -286,6 +287,13 @@ export default function Sidebar() {
                           )}
                         </div>
                         <button
+                          onClick={() => setEditingAccount(account)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-white transition-all ml-1"
+                          title="Редагувати рахунок"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        <button
                           onClick={() => deleteAccount(account.id)}
                           className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all ml-1"
                           title="Видалити рахунок"
@@ -407,9 +415,10 @@ export default function Sidebar() {
       </aside>
 
       <AddAccountModal
-        open={addAccountOpen}
-        onClose={() => setAddAccountOpen(false)}
-        onSuccess={() => { setAddAccountOpen(false); fetchAccounts() }}
+        open={addAccountOpen || !!editingAccount}
+        account={editingAccount}
+        onClose={() => { setAddAccountOpen(false); setEditingAccount(null) }}
+        onSuccess={() => { setAddAccountOpen(false); setEditingAccount(null); fetchAccounts() }}
       />
     </>
   )

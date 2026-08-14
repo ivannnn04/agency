@@ -43,7 +43,7 @@ interface PortalProjectData {
 }
 interface ChatMessage {
   id: string
-  sender_type: 'admin' | 'team' | 'client'
+  sender_type: 'admin' | 'team' | 'client' | 'bot'
   sender_name: string
   content: string
   file_url: string | null
@@ -472,11 +472,19 @@ function PortalChat({ projectId, token, people, onClose }: {
             <div key={m.id} className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
               {!mine && (
                 <p className="text-[10px] text-gray-400 mb-0.5 px-1">
-                  {m.sender_name}{m.sender_type === 'admin' ? ' · Gudrix' : ''}
+                  {m.sender_name}
+                  {m.sender_type === 'admin' && ' · Gudrix'}
+                  {m.sender_type === 'bot' && (
+                    <span className="ml-1 text-[9px] bg-violet-100 text-violet-700 px-1 py-px rounded font-bold uppercase tracking-wide">🤖 AI</span>
+                  )}
                 </p>
               )}
               <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                mine ? 'bg-teal-500 text-white rounded-br-md' : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                mine
+                  ? 'bg-teal-500 text-white rounded-br-md'
+                  : m.sender_type === 'bot'
+                    ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
+                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
               }`}>
                 <MessageBody content={m.content} names={people} mine={mine} />
                 {m.file_url && (

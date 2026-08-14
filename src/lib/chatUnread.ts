@@ -55,7 +55,7 @@ interface MsgRow {
   id: string
   project_id: string
   channel: 'team' | 'client'
-  sender_type: 'admin' | 'team' | 'client'
+  sender_type: 'admin' | 'team' | 'client' | 'bot'
   team_member_id: string | null
   created_at: string
 }
@@ -87,9 +87,10 @@ export function useChatUnread(opts: {
     if (!data) return
 
     const rows = data as MsgRow[]
+    // Bot messages are sent on the admin's approval, so they're "own" for the admin
     const isOwn = (m: MsgRow) =>
       self === 'admin'
-        ? m.sender_type === 'admin'
+        ? m.sender_type === 'admin' || m.sender_type === 'bot'
         : m.sender_type === 'team' && m.team_member_id === (memberId ?? null)
 
     const nowIso = new Date().toISOString()

@@ -28,17 +28,17 @@ export default function PortalLoginPage() {
     if (mode === 'login') {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password })
       setLoading(false)
-      if (err) { setError('Невірний email або пароль'); return }
+      if (err) { setError('Invalid email or password'); return }
       router.push('/portal')
     } else {
-      if (password.length < 8) { setLoading(false); setError('Пароль має бути щонайменше 8 символів'); return }
+      if (password.length < 8) { setLoading(false); setError('Password must be at least 8 characters'); return }
       const { data, error: err } = await supabase.auth.signUp({ email, password })
       setLoading(false)
       if (err) { setError(err.message); return }
       if (data.session) {
         router.push('/portal')
       } else {
-        setInfo('Ми надіслали лист для підтвердження — перевірте пошту і поверніться сюди.')
+        setInfo('We’ve sent you a confirmation email — check your inbox and come back here.')
       }
     }
   }
@@ -58,13 +58,13 @@ export default function PortalLoginPage() {
           <div className="w-14 h-14 bg-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-xl font-bold text-white">G</span>
           </div>
-          <h1 className="text-xl font-bold text-white">Gudrix — Клієнтський портал</h1>
-          <p className="text-gray-400 mt-1 text-sm">Статус ваших проєктів і звʼязок з командою</p>
+          <h1 className="text-xl font-bold text-white">Gudrix — Client Portal</h1>
+          <p className="text-gray-400 mt-1 text-sm">Track your projects and talk to the team</p>
         </div>
 
         {/* Login / Register tabs */}
         <div className="flex bg-[#0f1117] rounded-xl p-1 mb-6">
-          {([['login', 'Вхід'], ['register', 'Реєстрація']] as const).map(([key, label]) => (
+          {([['login', 'Sign in'], ['register', 'Sign up']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => { setMode(key); setError(''); setInfo('') }}
@@ -88,12 +88,12 @@ export default function PortalLoginPage() {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
-          {mode === 'login' ? 'Увійти через Google' : 'Створити акаунт через Google'}
+          {mode === 'login' ? 'Sign in with Google' : 'Sign up with Google'}
         </button>
 
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px bg-white/10" />
-          <span className="text-xs text-gray-500">або з email</span>
+          <span className="text-xs text-gray-500">or with email</span>
           <div className="flex-1 h-px bg-white/10" />
         </div>
 
@@ -108,11 +108,11 @@ export default function PortalLoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Пароль</label>
+            <label className="block text-xs text-gray-400 mb-1">Password</label>
             <input
               type="password" required
               value={password} onChange={e => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? 'Мінімум 8 символів' : '••••••••'}
+              placeholder={mode === 'register' ? 'At least 8 characters' : '••••••••'}
               className="w-full bg-[#0f1117] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
             />
           </div>
@@ -124,7 +124,7 @@ export default function PortalLoginPage() {
             type="submit" disabled={loading}
             className="w-full bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white font-medium py-3 rounded-xl text-sm transition-colors mt-1"
           >
-            {loading ? 'Зачекайте...' : mode === 'login' ? 'Увійти' : 'Створити акаунт'}
+            {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </form>
       </div>

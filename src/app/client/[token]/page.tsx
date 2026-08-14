@@ -67,7 +67,7 @@ export default function ClientStatusPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
-        Завантаження...
+        Loading...
       </div>
     )
   }
@@ -77,7 +77,7 @@ export default function ClientStatusPage() {
       <div className="min-h-screen flex items-center justify-center p-8">
         <div className="text-center">
           <FolderKanban size={40} className="mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-500 text-sm">Посилання недійсне або було скинуте.</p>
+          <p className="text-gray-500 text-sm">This link is invalid or has been revoked.</p>
         </div>
       </div>
     )
@@ -98,7 +98,7 @@ export default function ClientStatusPage() {
         </div>
         <div>
           <p className="text-white font-semibold text-sm">{project.name}</p>
-          <p className="text-gray-400 text-xs">Статус проєкту · Gudrix</p>
+          <p className="text-gray-400 text-xs">Project status · Gudrix</p>
         </div>
       </header>
 
@@ -106,8 +106,8 @@ export default function ClientStatusPage() {
         {/* Progress overview */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-800">Загальний прогрес</h2>
-            <span className="text-xs text-gray-400">{totalTasks} задач</span>
+            <h2 className="text-sm font-semibold text-gray-800">Overall progress</h2>
+            <span className="text-xs text-gray-400">{totalTasks} tasks</span>
           </div>
           {totalTasks > 0 ? (
             <>
@@ -131,7 +131,7 @@ export default function ClientStatusPage() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-gray-400">Задач ще немає.</p>
+            <p className="text-sm text-gray-400">No tasks yet.</p>
           )}
         </div>
 
@@ -184,7 +184,7 @@ export default function ClientStatusPage() {
                             {task.due_date && (
                               <span className="flex items-center gap-1 text-[11px] text-gray-400">
                                 <Calendar size={11} />
-                                {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+                                {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </span>
                             )}
                             <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority ?? 'medium'] }} />
@@ -194,7 +194,7 @@ export default function ClientStatusPage() {
                     )
                   })}
                   {colTasks.length === 0 && (
-                    <p className="text-xs text-gray-300 px-1">Немає задач</p>
+                    <p className="text-xs text-gray-300 px-1">No tasks</p>
                   )}
                 </div>
               </div>

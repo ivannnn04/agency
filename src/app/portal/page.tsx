@@ -60,34 +60,34 @@ export default function PortalDashboardPage() {
             <span className="text-white font-bold text-sm">G</span>
           </div>
           <div>
-            <p className="text-white font-semibold text-sm">Gudrix — Клієнтський портал</p>
+            <p className="text-white font-semibold text-sm">Gudrix — Client Portal</p>
             <p className="text-gray-400 text-xs">{clientName || email}</p>
           </div>
         </div>
-        <button onClick={logout} className="text-gray-400 hover:text-white transition-colors" title="Вийти">
+        <button onClick={logout} className="text-gray-400 hover:text-white transition-colors" title="Sign out">
           <LogOut size={16} />
         </button>
       </header>
 
       <div className="max-w-3xl mx-auto px-6 py-10">
         {loading ? (
-          <p className="text-center text-gray-400 text-sm py-16">Завантаження...</p>
+          <p className="text-center text-gray-400 text-sm py-16">Loading...</p>
         ) : notLinked ? (
           <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
             <Mail size={36} className="mx-auto mb-3 text-gray-300" />
-            <p className="text-gray-700 font-medium">Акаунт створено, але проєктів поки не видно</p>
+            <p className="text-gray-700 font-medium">Your account is ready — no projects yet</p>
             <p className="text-sm text-gray-400 mt-2 max-w-sm mx-auto">
-              Ваш email <span className="font-medium text-gray-600">{email}</span> ще не підключено
-              до жодного проєкту. Напишіть вашому менеджеру Gudrix — він додасть вас за цим email.
+              Your email <span className="font-medium text-gray-600">{email}</span> isn’t linked to any
+              project yet. Contact your Gudrix manager and they’ll add you by this email.
             </p>
           </div>
         ) : (
           <>
-            <h1 className="text-lg font-bold text-gray-900 mb-5">Ваші проєкти</h1>
+            <h1 className="text-lg font-bold text-gray-900 mb-5">Your projects</h1>
             {projects.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 text-gray-400">
                 <FolderKanban size={36} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">Поки немає проєктів</p>
+                <p className="text-sm">No projects yet</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -104,9 +104,9 @@ export default function PortalDashboardPage() {
                         <div>
                           <p className="font-semibold text-gray-900">{p.name}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {p.task_count} задач
+                            {p.task_count} tasks
                             {(p.contract_amount ?? 0) > 0 && (
-                              <> · Бюджет: {sym}{p.contract_amount!.toLocaleString('en-US')}</>
+                              <> · Budget: {sym}{p.contract_amount!.toLocaleString('en-US')}</>
                             )}
                           </p>
                         </div>

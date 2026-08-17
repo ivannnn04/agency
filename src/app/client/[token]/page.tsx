@@ -90,7 +90,7 @@ export default function ClientStatusPage() {
   }))
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-[#0f1117] px-6 py-4 flex items-center gap-3">
         <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">

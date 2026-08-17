@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
 import { LogOut, FolderKanban, Flag, Calendar, BarChart2 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
+import ThemeToggle from '@/components/ThemeToggle'
 import Link from 'next/link'
 
 interface ProjectCard {
@@ -197,6 +198,7 @@ export default function TeamDashboardPage() {
             <BarChart2 size={14} /> Звіт
           </button>
           {member && <TeamNotificationBell memberId={member.id} />}
+          <ThemeToggle variant="sidebar" />
           <button
             onClick={handleLogout}
             className="text-gray-400 hover:text-white transition-colors p-1.5 rounded"

@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -18,14 +19,126 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* The app is light-themed: keep form fields dark and readable even when the
-   OS prefers dark mode (Tailwind preflight makes them inherit body color).
+/* Form fields must not inherit the OS color scheme (Tailwind preflight makes
+   them inherit body color). Track our own theme via the gray ramp variables.
    Lives in the base layer so utility classes like text-white still win. */
 @layer base {
   input, select, textarea {
-    color: #111827;
+    color: var(--color-gray-800);
   }
   input::placeholder, textarea::placeholder {
-    color: #9ca3af;
+    color: var(--color-gray-400);
   }
 }
+
+/* ───────────────────────── Dark theme ─────────────────────────
+   The whole app is styled with Tailwind's gray ramp + a few accent tints.
+   In Tailwind 4 every utility resolves through a --color-* variable, so the
+   dark theme is a remap of those variables under html.dark:
+   - the neutral ramp is inverted (white cards → dark cards, dark text → light)
+   - light accent tints (-50/-100) become dark tints, dark accent text
+     (-600…-900) becomes light
+   - a handful of utilities that mean "dark UI element" or "literal white"
+     (dark buttons, text-white on colored buttons, white-alpha overlays)
+     are pinned back explicitly below the variable remap. */
+
+.dark {
+  color-scheme: dark;
+  --background: #0f141b;
+  --foreground: #e4eaf2;
+
+  /* Neutral ramp, inverted */
+  --color-white: #151b24;    /* cards / modals / drawers */
+  --color-gray-50: #0f141b;  /* page background */
+  --color-gray-100: #1b232e; /* hovers, pills, subtle fills */
+  --color-gray-200: #2a3441; /* borders */
+  --color-gray-300: #3d4a5c; /* strong borders / faint text */
+  --color-gray-400: #8494a7;
+  --color-gray-500: #9dabbd;
+  --color-gray-600: #b7c3d2;
+  --color-gray-700: #d0d9e5;
+  --color-gray-800: #e4eaf2;
+  --color-gray-900: #f3f6fa;
+
+  /* Accent tints: -50/-100 backgrounds go dark, -600+ text goes light.
+     -200/-300/-400/-500 keep their stock values (mixed text/border roles —
+     border/ring/bg uses are pinned individually below). */
+  --color-teal-50: #102f2b;
+  --color-teal-100: #143f38;
+  --color-teal-600: #35d9c3;
+  --color-teal-700: #6fe6d6;
+  --color-teal-800: #a0f0e4;
+
+  --color-amber-50: #33270e;
+  --color-amber-100: #453413;
+  --color-amber-200: #57430f;
+  --color-amber-600: #f0a63b;
+  --color-amber-700: #f6c065;
+  --color-amber-800: #fad391;
+
+  --color-red-50: #351717;
+  --color-red-100: #471e1e;
+  --color-red-200: #582222;
+  --color-red-600: #f47b7b;
+  --color-red-700: #f89b9b;
+
+  --color-blue-50: #142842;
+  --color-blue-100: #1b3557;
+  --color-blue-600: #6aabf7;
+  --color-blue-700: #8bbdf9;
+  --color-blue-800: #aecffb;
+
+  --color-violet-50: #251b3d;
+  --color-violet-100: #322452;
+  --color-violet-200: #40305f;
+  --color-violet-600: #a88df5;
+  --color-violet-700: #bda5f7;
+  --color-violet-800: #d1c2fa;
+  --color-violet-900: #e2d9fc;
+
+  --color-green-100: #16341d;
+  --color-green-200: #1d4527;
+  --color-green-600: #62d989;
+  --color-green-700: #8ce3a8;
+
+  --color-yellow-50: #322a0d;
+  --color-yellow-100: #443a12;
+  --color-yellow-700: #f2cf5b;
+
+  --color-orange-50: #38220f;
+  --color-orange-100: #4a2d13;
+  --color-orange-600: #fb923c;
+}
+
+/* Utilities whose meaning must survive the remap. Same-or-higher specificity
+   than the generated utility, so these win inside .dark. */
+.dark .text-white { color: #ffffff; }
+
+/* Dark buttons / own chat bubbles: stay dark, just lifted off the dark bg */
+.dark .bg-gray-900 { background-color: #2e3947; }
+.dark .bg-gray-800 { background-color: #354251; }
+.dark .hover\:bg-gray-700:hover { background-color: #3c4a5c; }
+
+/* Colored button hovers must stay darker than the -500 base */
+.dark .hover\:bg-teal-600:hover { background-color: #0d9488; }
+.dark .hover\:bg-red-600:hover { background-color: #dc2626; }
+.dark .bg-violet-600 { background-color: #7c3aed; }
+.dark .hover\:bg-violet-700:hover { background-color: #6d28d9; }
+
+/* -200/-300 teal & amber borders/rings/fills on tinted cards go dark
+   (their text- twins keep the light stock value for use on dark bubbles) */
+.dark .border-teal-200 { border-color: #175048; }
+.dark .ring-teal-200 { --tw-ring-color: #175048; }
+.dark .bg-teal-200 { background-color: #175048; }
+.dark .border-teal-300 { border-color: #1d5f55; }
+.dark .ring-teal-300 { --tw-ring-color: #1d5f55; }
+.dark .border-amber-300 { border-color: #6b5313; }
+
+/* White-alpha overlays (dark sidebar chrome) keep literal white */
+.dark .bg-white\/5, .dark .hover\:bg-white\/5:hover { background-color: rgb(255 255 255 / 0.05); }
+.dark .bg-white\/10 { background-color: rgb(255 255 255 / 0.1); }
+.dark .hover\:bg-white\/20:hover { background-color: rgb(255 255 255 / 0.2); }
+.dark .border-white\/5 { border-color: rgb(255 255 255 / 0.05); }
+.dark .border-white\/10 { border-color: rgb(255 255 255 / 0.1); }
+.dark .border-white\/20 { border-color: rgb(255 255 255 / 0.2); }
+.dark .border-white\/30 { border-color: rgb(255 255 255 / 0.3); }

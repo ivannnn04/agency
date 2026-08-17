@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import AddAccountModal from '@/components/modals/AddAccountModal'
+import ThemeToggle from '@/components/ThemeToggle'
 
 function currencySymbol(currency: string) {
   if (currency === 'USD') return '$'
@@ -195,14 +196,17 @@ export default function Sidebar() {
 
         {/* Logo */}
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-sm">G</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-sm">G</span>
+              </div>
+              <div>
+                <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
+                <p className="text-gray-500 text-xs">Cowork Space</p>
+              </div>
             </div>
-            <div>
-              <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
-              <p className="text-gray-500 text-xs">Cowork Space</p>
-            </div>
+            <ThemeToggle variant="sidebar" />
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { FolderKanban, LogOut, ChevronRight, Mail } from 'lucide-react'
+import ThemeToggle from '@/components/ThemeToggle'
 
 interface PortalProject {
   id: string
@@ -53,7 +54,7 @@ export default function PortalDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
+    <div className="min-h-screen bg-gray-50">
       <header className="bg-[#0f1117] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
@@ -64,9 +65,12 @@ export default function PortalDashboardPage() {
             <p className="text-gray-400 text-xs">{clientName || email}</p>
           </div>
         </div>
-        <button onClick={logout} className="text-gray-400 hover:text-white transition-colors" title="Sign out">
-          <LogOut size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle variant="sidebar" />
+          <button onClick={logout} className="text-gray-400 hover:text-white transition-colors" title="Sign out">
+            <LogOut size={16} />
+          </button>
+        </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-6 py-10">

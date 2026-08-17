@@ -12,8 +12,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uk" className="h-full">
+    <html lang="uk" className="h-full" suppressHydrationWarning>
       <body className={`${inter.className} h-full`}>
+        {/* Apply the saved theme before first paint to avoid a light flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('gudrix:theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}",
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

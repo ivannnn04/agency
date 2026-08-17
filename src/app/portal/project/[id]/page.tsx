@@ -12,6 +12,7 @@ import {
   useChatWidth, ChatResizeHandle,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
+import ThemeToggle from '@/components/ThemeToggle'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
@@ -94,11 +95,11 @@ export default function PortalProjectPage() {
   }, [id, router, refetch])
 
   if (loading) return (
-    <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400 text-sm">Loading...</div>
   )
 
   if (denied || !data) return (
-    <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center p-8 text-center">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8 text-center">
       <div>
         <p className="text-gray-600 font-medium">You don’t have access to this project</p>
         <Link href="/portal" className="text-sm text-teal-600 hover:text-teal-700 mt-2 inline-block">← Back to your projects</Link>
@@ -115,7 +116,7 @@ export default function PortalProjectPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5]">
+    <div className="min-h-screen bg-gray-50">
       <header className="bg-[#0f1117] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/portal" className="text-gray-400 hover:text-white transition-colors">
@@ -139,12 +140,15 @@ export default function PortalProjectPage() {
             </button>
           </div>
         </div>
-        <button
-          onClick={() => setChatOpen(v => !v)}
-          className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-        >
-          <MessageSquare size={13} /> Team chat
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle variant="sidebar" />
+          <button
+            onClick={() => setChatOpen(v => !v)}
+            className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          >
+            <MessageSquare size={13} /> Team chat
+          </button>
+        </div>
       </header>
 
       {view === 'timeline' ? (

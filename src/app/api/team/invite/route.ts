@@ -5,8 +5,10 @@ import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
 
 // Sends a team member an email invitation from the corporate mailbox.
-// The link is a Supabase recovery link → the member lands on /team/welcome
-// with a session and sets their own password on first login.
+// The link carries our own invite token → the member lands on /team/welcome
+// and sets their password there. The token is only consumed when the form is
+// submitted, so email scanners that prefetch links can't burn it (unlike
+// Supabase one-time action links).
 
 function adminClient() {
   return createClient(
@@ -69,17 +71,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // A recovery link doubles as a "set your password" link on first login
   const origin = req.headers.get('origin') ?? new URL(req.url).origin
-  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-    type: 'recovery',
-    email,
-    options: { redirectTo: `${origin}/team/welcome` },
-  })
-  if (linkErr || !linkData.properties?.action_link) {
-    return NextResponse.json({ error: linkErr?.message ?? 'Не вдалося створити лінк запрошення' }, { status: 400 })
+  const inviteToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+  const inviteExpires = new Date(Date.now() + 7 * 86400000).toISOString()
+  const inviteUrl = `${origin}/team/welcome?token=${inviteToken}`
+
+  // Store the token BEFORE sending — a stored-but-unsent token is harmless,
+  // an emailed-but-unstored one is a dead link
+  const { error: updErr } = await admin
+    .from('team_members')
+    .update({
+      supabase_user_id: userId,
+      email,
+      invited_at: new Date().toISOString(),
+      invite_token: inviteToken,
+      invite_expires_at: inviteExpires,
+    })
+    .eq('id', id)
+  if (updErr) {
+    return NextResponse.json({ error: `Не вдалося зберегти запрошення — запусти міграцію team_invite_tokens_migration.sql (${updErr.message})` }, { status: 500 })
   }
-  const inviteUrl = linkData.properties.action_link
 
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
@@ -124,12 +135,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: `Не вдалося надіслати лист: ${e instanceof Error ? e.message : 'SMTP error'}` }, { status: 502 })
   }
-
-  // Link the auth account + remember the invite (email may be new for the member)
-  await admin
-    .from('team_members')
-    .update({ supabase_user_id: userId, email, invited_at: new Date().toISOString() })
-    .eq('id', id)
 
   return NextResponse.json({ ok: true })
 }

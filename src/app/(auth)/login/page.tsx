@@ -3,10 +3,9 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
-  const [tab, setTab]           = useState<'admin' | 'manager' | 'designer'>('admin')
+  const [tab, setTab]           = useState<'admin' | 'manager'>('admin')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
@@ -28,19 +27,6 @@ export default function LoginPage() {
     }
   }
 
-  async function handleDesignerLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password })
-    setLoading(false)
-    if (authErr) {
-      setError('Невірний email або пароль')
-      return
-    }
-    router.push('/team/dashboard')
-  }
-
   return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
       <div className="bg-[#1a1d27] rounded-2xl p-10 w-full max-w-md text-center shadow-2xl">
@@ -57,7 +43,6 @@ export default function LoginPage() {
           {([
             ['admin', 'Адмін'],
             ['manager', 'Менеджер'],
-            ['designer', 'Дизайнер'],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -85,13 +70,13 @@ export default function LoginPage() {
             Увійти через Google
           </button>
         ) : (
-          <form onSubmit={tab === 'manager' ? handleManagerLogin : handleDesignerLogin} className="flex flex-col gap-3 text-left">
+          <form onSubmit={handleManagerLogin} className="flex flex-col gap-3 text-left">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Email</label>
               <input
                 type="email" required
                 value={email} onChange={e => setEmail(e.target.value)}
-                placeholder={tab === 'manager' ? 'manager@example.com' : 'designer@example.com'}
+                placeholder="manager@example.com"
                 className="w-full bg-[#0f1117] border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
               />
             </div>

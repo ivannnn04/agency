@@ -1,18 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Eye, EyeOff } from 'lucide-react'
 
-// Landing page for team invitation links. The Supabase recovery link drops the
-// member here with a session in the URL hash — they set a password and go to
-// their dashboard.
-export default function TeamWelcomePage() {
+// Landing page for team invitation links (/team/welcome?token=...).
+// The token is our own single-use invite token — it's only consumed when the
+// form is submitted, so email link scanners can't burn it. After setting the
+// password we sign the member in and send them to their dashboard.
+
+function WelcomeInner() {
   const router = useRouter()
-  const [ready, setReady]       = useState(false)
-  const [noSession, setNoSession] = useState(false)
+  const params = useSearchParams()
+  const token = params.get('token')
+
+  const [checking, setChecking] = useState(true)
+  const [invalid, setInvalid]   = useState('')
   const [name, setName]         = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
@@ -21,24 +26,18 @@ export default function TeamWelcomePage() {
   const [error, setError]       = useState('')
 
   useEffect(() => {
-    // supabase-js parses the tokens from the URL hash itself; give it a moment
+    if (!token) { setInvalid('У посиланні немає токена запрошення.'); setChecking(false); return }
     let cancelled = false
     ;(async () => {
-      for (let i = 0; i < 10; i++) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (cancelled) return
-        if (session) {
-          const { data: mem } = await supabase
-            .from('team_members').select('name').eq('supabase_user_id', session.user.id).single()
-          if (!cancelled) { setName(mem?.name ?? ''); setReady(true) }
-          return
-        }
-        await new Promise(r => setTimeout(r, 300))
-      }
-      if (!cancelled) setNoSession(true)
+      const res = await fetch(`/api/team/accept-invite?token=${encodeURIComponent(token)}`)
+      const json = await res.json()
+      if (cancelled) return
+      if (!res.ok) setInvalid(json.error ?? 'Лінк недійсний')
+      else setName(json.name ?? '')
+      setChecking(false)
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [token])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -46,9 +45,22 @@ export default function TeamWelcomePage() {
     if (password.length < 6) { setError('Пароль має бути мінімум 6 символів'); return }
     if (password !== confirm) { setError('Паролі не збігаються'); return }
     setSaving(true)
-    const { error: err } = await supabase.auth.updateUser({ password })
+
+    const res = await fetch('/api/team/accept-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    })
+    const json = await res.json()
+    if (!res.ok) { setSaving(false); setError(json.error ?? 'Щось пішло не так'); return }
+
+    // Password is set — sign in right away and go to the dashboard
+    const { error: signErr } = await supabase.auth.signInWithPassword({
+      email: json.email,
+      password,
+    })
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (signErr) { router.replace('/team/login'); return }
     router.replace('/team/dashboard')
   }
 
@@ -65,13 +77,12 @@ export default function TeamWelcomePage() {
           </div>
         </div>
 
-        {noSession ? (
+        {checking ? (
+          <p className="text-sm text-gray-400 text-center py-8">Перевіряємо запрошення...</p>
+        ) : invalid ? (
           <div>
             <h1 className="text-xl font-semibold text-gray-900 mb-1">Лінк недійсний</h1>
-            <p className="text-sm text-gray-400 mb-6">
-              Запрошення застаріло або вже використане. Попроси адміністратора надіслати нове,
-              або увійди, якщо пароль уже встановлено.
-            </p>
+            <p className="text-sm text-gray-400 mb-6">{invalid}</p>
             <Link
               href="/team/login"
               className="block text-center bg-teal-500 hover:bg-teal-600 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
@@ -79,8 +90,6 @@ export default function TeamWelcomePage() {
               До сторінки входу
             </Link>
           </div>
-        ) : !ready ? (
-          <p className="text-sm text-gray-400 text-center py-8">Перевіряємо запрошення...</p>
         ) : (
           <div>
             <h1 className="text-xl font-semibold text-gray-900 mb-1">
@@ -138,5 +147,13 @@ export default function TeamWelcomePage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function TeamWelcomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+      <WelcomeInner />
+    </Suspense>
   )
 }

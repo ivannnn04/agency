@@ -410,7 +410,14 @@ export default function PayrollPage() {
 
 // ── Tracker Salary Section (time_entries → payroll) ───────────────────────────
 
-interface TrackerMember { id: string; name: string; color: string; hourly_rate_usd: number | null }
+interface TrackerMember {
+  id: string
+  name: string
+  color: string
+  hourly_rate_usd: number | null
+  salary_type?: 'hourly' | 'monthly'
+  monthly_salary_usd?: number | null
+}
 interface TrackerEntry  { team_member_id: string; task_id: string; duration_seconds: number }
 interface TrackerRow {
   member: TrackerMember
@@ -457,7 +464,7 @@ function TrackerSalarySection({ accounts }: { accounts: Account[] }) {
     const monthEnd   = new Date(month.getFullYear(), month.getMonth() + 1, 1)
 
     const [{ data: members }, { data: ents }, { data: pays }] = await Promise.all([
-      supabase.from('team_members').select('id,name,color,hourly_rate_usd').order('name'),
+      supabase.from('team_members').select('id,name,color,hourly_rate_usd,salary_type,monthly_salary_usd').order('name'),
       supabase.from('time_entries')
         .select('team_member_id,task_id,duration_seconds')
         .not('ended_at', 'is', null)
@@ -477,6 +484,14 @@ function TrackerSalarySection({ accounts }: { accounts: Account[] }) {
     for (const m of (members ?? []) as TrackerMember[]) {
       const totalSeconds = secByMember[m.id] ?? 0
       const payment = payByMember[m.id] ?? null
+      const isMonthly = m.salary_type === 'monthly'
+      // Fixed-salary members appear every month regardless of tracked time
+      if (isMonthly) {
+        const salary = m.monthly_salary_usd ?? 0
+        if (salary <= 0 && !payment) continue
+        list.push({ member: m, totalSeconds, amountUsd: salary, payment })
+        continue
+      }
       if (totalSeconds === 0 && !payment) continue
       const rate = m.hourly_rate_usd ?? 0
       list.push({
@@ -568,8 +583,14 @@ function TrackerSalarySection({ accounts }: { accounts: Account[] }) {
                       <span className="font-medium text-gray-800">{row.member.name}</span>
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-right text-gray-700">{fmtDur(seconds)}</td>
-                  <td className="py-3 px-4 text-right text-gray-500">${row.member.hourly_rate_usd ?? 0}/год</td>
+                  <td className="py-3 px-4 text-right text-gray-700">
+                    {row.member.salary_type === 'monthly' && seconds === 0 ? '—' : fmtDur(seconds)}
+                  </td>
+                  <td className="py-3 px-4 text-right text-gray-500">
+                    {row.member.salary_type === 'monthly'
+                      ? `$${row.member.monthly_salary_usd ?? 0}/міс · фікс`
+                      : `$${row.member.hourly_rate_usd ?? 0}/год`}
+                  </td>
                   <td className="py-3 px-4 text-right font-semibold text-gray-900">${amount.toFixed(2)}</td>
                   <td className="py-3 px-4 text-right">
                     {!p ? (
@@ -587,7 +608,7 @@ function TrackerSalarySection({ accounts }: { accounts: Account[] }) {
                     {!p ? (
                       <button
                         onClick={() => confirm(row)}
-                        disabled={confirming !== null || row.totalSeconds === 0}
+                        disabled={confirming !== null || (row.member.salary_type === 'monthly' ? row.amountUsd <= 0 : row.totalSeconds === 0)}
                         className="text-xs bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
                         {confirming === row.member.id ? 'Збереження...' : 'Підтвердити'}
                       </button>
@@ -661,23 +682,40 @@ function TrackerPayModal({ row, memberEntries, monthLabel, accounts, onClose, on
 
     const nowIso = new Date().toISOString()
 
-    // 2. One expense transaction per project (accurate project margins)
-    for (const [key, seconds] of Object.entries(secByProject)) {
-      const amount = Math.round((seconds / 3600) * rate * 100) / 100
-      if (amount <= 0) continue
+    // 2. Book the expense(s)
+    if (row.member.salary_type === 'monthly') {
+      // Fixed salary: one transaction, not attributed to projects
       await supabase.from('transactions').insert({
         type: 'expense',
-        amount,
+        amount: row.amountUsd,
         currency: 'USD',
         account_id: accountId,
         category_id: categoryId,
-        project_id: key === '__none__' ? null : key,
+        project_id: null,
         date: nowIso,
-        comment: `ЗП ${row.member.name} — ${monthLabel} (${fmtDur(seconds)} × $${rate}/год)`,
+        comment: `ЗП ${row.member.name} — ${monthLabel} (фікс $${row.amountUsd}/міс)`,
         is_planned: false,
       })
-      // Same balance behavior as AddTransactionModal (expense → negative delta)
-      await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -amount })
+      await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -row.amountUsd })
+    } else {
+      // Hourly: one expense transaction per project (accurate project margins)
+      for (const [key, seconds] of Object.entries(secByProject)) {
+        const amount = Math.round((seconds / 3600) * rate * 100) / 100
+        if (amount <= 0) continue
+        await supabase.from('transactions').insert({
+          type: 'expense',
+          amount,
+          currency: 'USD',
+          account_id: accountId,
+          category_id: categoryId,
+          project_id: key === '__none__' ? null : key,
+          date: nowIso,
+          comment: `ЗП ${row.member.name} — ${monthLabel} (${fmtDur(seconds)} × $${rate}/год)`,
+          is_planned: false,
+        })
+        // Same balance behavior as AddTransactionModal (expense → negative delta)
+        await supabase.rpc('update_account_balance', { p_account_id: accountId, p_delta: -amount })
+      }
     }
 
     // 3. Mark salary payment as paid

@@ -22,6 +22,7 @@ export default function TeamAdminPage() {
   const [password, setPassword]   = useState('')
   const [showPwd, setShowPwd]     = useState(false)
   const [role, setRole]           = useState('designer')
+  const [payType, setPayType]     = useState<'hourly' | 'monthly'>('hourly')
   const [rate, setRate]           = useState('')
   const [color, setColor]         = useState(COLOR_PALETTE[0])
 
@@ -53,7 +54,9 @@ export default function TeamAdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: name.trim(), email: email.trim(), password: password || undefined, role, color,
-        hourly_rate_usd: parseFloat(rate) || 0,
+        salary_type: payType,
+        hourly_rate_usd: payType === 'hourly' ? (parseFloat(rate) || 0) : 0,
+        monthly_salary_usd: payType === 'monthly' ? (parseFloat(rate) || 0) : null,
       }),
     })
     const json = await res.json()
@@ -111,14 +114,20 @@ export default function TeamAdminPage() {
 
   function startRateEdit(m: TeamMember) {
     setEditingRateId(m.id)
-    setEditRateValue(String(m.hourly_rate_usd ?? 0))
+    setEditRateValue(String(
+      m.salary_type === 'monthly' ? (m.monthly_salary_usd ?? 0) : (m.hourly_rate_usd ?? 0)
+    ))
   }
 
   async function saveRate(id: string) {
     const value = parseFloat(editRateValue) || 0
+    const member = members.find(m => m.id === id)
+    const patch = member?.salary_type === 'monthly'
+      ? { monthly_salary_usd: value }
+      : { hourly_rate_usd: value }
     setEditingRateId(null)
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, hourly_rate_usd: value } : m))
-    await supabase.from('team_members').update({ hourly_rate_usd: value }).eq('id', id)
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m))
+    await supabase.from('team_members').update(patch).eq('id', id)
   }
 
   const loginUrl = typeof window !== 'undefined'
@@ -210,7 +219,20 @@ export default function TeamAdminPage() {
 
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Рейт $/год</label>
+              <label className="text-xs text-gray-500 mb-1 block">Тип оплати</label>
+              <select
+                value={payType}
+                onChange={e => setPayType(e.target.value as 'hourly' | 'monthly')}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+              >
+                <option value="hourly">Погодинний рейт</option>
+                <option value="monthly">Фікс на місяць</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">
+                {payType === 'monthly' ? 'ЗП $/місяць' : 'Рейт $/год'}
+              </label>
               <input
                 type="number" step="0.5" min="0"
                 value={rate}
@@ -304,10 +326,12 @@ export default function TeamAdminPage() {
                 ) : (
                   <button
                     onClick={() => startRateEdit(m)}
-                    title="Змінити рейт"
+                    title={m.salary_type === 'monthly' ? 'Змінити місячну ЗП' : 'Змінити рейт'}
                     className="text-xs text-teal-600 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded-lg transition-colors"
                   >
-                    ${m.hourly_rate_usd ?? 0}/год
+                    {m.salary_type === 'monthly'
+                      ? `$${m.monthly_salary_usd ?? 0}/міс`
+                      : `$${m.hourly_rate_usd ?? 0}/год`}
                   </button>
                 )}
                 <button

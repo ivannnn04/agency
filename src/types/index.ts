@@ -6,6 +6,8 @@ export interface TeamMember {
   color: string
   access_token: string
   hourly_rate_usd?: number | null
+  salary_type?: 'hourly' | 'monthly'
+  monthly_salary_usd?: number | null
   supabase_user_id?: string | null
   invited_at?: string | null
   created_at: string

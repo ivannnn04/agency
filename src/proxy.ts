@@ -30,6 +30,9 @@ export const config = {
   // Everything is NextAuth-protected EXCEPT:
   // - /login (admin + manager sign-in)
   // - /team/* (designer area — its own Supabase auth)
-  // - /api/team/*, /api/cron/* (called by designers / scheduled jobs)
-  matcher: ['/((?!login|team|api/auth|api/team|api/cron|api/seed-olga|_next/static|_next/image|favicon.ico).*)'],
+  // - /portal/* (client portal — its own Supabase auth)
+  // - /client/* (public read-only project link)
+  // - /api/team/*, /api/portal/*, /api/clients/accept-invite, /api/cron/*
+  //   (called by designers, clients and scheduled jobs — no admin cookie there)
+  matcher: ['/((?!login|team|portal|client|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/seed-olga|_next/static|_next/image|favicon.ico).*)'],
 }

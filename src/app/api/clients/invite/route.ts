@@ -67,7 +67,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const origin = req.headers.get('origin') ?? new URL(req.url).origin
+  // Canonical app URL first — invite links must never point at a preview deploy
+  const origin = process.env.NEXT_PUBLIC_APP_URL
+    ?? req.headers.get('origin')
+    ?? new URL(req.url).origin
   const inviteToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
   const inviteExpires = new Date(Date.now() + 14 * 86400000).toISOString()
   const inviteUrl = `${origin}/portal/welcome?token=${inviteToken}`

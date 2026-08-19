@@ -9,13 +9,13 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
-  Link2, Copy, MessageSquare, Clock,
+  Link2, Copy, MessageSquare, Clock, Send, Loader2,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
 import { useChatUnread } from '@/lib/chatUnread'
 
-interface ClientRow { id: string; email: string; name: string | null }
+interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
   id: string
   content: string
@@ -112,6 +112,9 @@ export default function BoardPage() {
   const [projectClients, setProjectClients] = useState<ClientRow[]>([])
   const [newClientEmail, setNewClientEmail] = useState('')
   const [newClientName, setNewClientName] = useState('')
+  const [invitingClientId, setInvitingClientId] = useState<string | null>(null)
+  const [invitedClientId, setInvitedClientId] = useState<string | null>(null)
+  const [clientInviteError, setClientInviteError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
@@ -140,7 +143,7 @@ export default function BoardPage() {
       supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
       supabase.from('team_members').select('*').order('created_at'),
       supabase.from('project_members').select('team_member_id').eq('project_id', id),
-      supabase.from('project_clients').select('client_id, clients(id, email, name)').eq('project_id', id),
+      supabase.from('project_clients').select('client_id, clients(id, email, name, invited_at)').eq('project_id', id),
     ])
     if (proj) setProject(proj)
     if (pc) {
@@ -385,6 +388,24 @@ export default function BoardPage() {
     setProjectClients(prev => prev.filter(c => c.id !== clientId))
   }
 
+  async function inviteClient(clientId: string) {
+    setInvitingClientId(clientId)
+    setClientInviteError('')
+    const res = await fetch('/api/clients/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, projectName: project?.name }),
+    })
+    const json = await res.json()
+    setInvitingClientId(null)
+    if (!res.ok) { setClientInviteError(json.error ?? 'Не вдалося надіслати запрошення'); return }
+    setInvitedClientId(clientId)
+    setTimeout(() => setInvitedClientId(null), 2500)
+    setProjectClients(prev => prev.map(c =>
+      c.id === clientId ? { ...c, invited_at: new Date().toISOString() } : c
+    ))
+  }
+
   async function toggleShowHours() {
     const next = !project?.show_tracked_hours
     await supabase.from('projects').update({ show_tracked_hours: next }).eq('id', id)
@@ -544,18 +565,45 @@ create policy "team_members_all" on team_members for all using (true) with check
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2">Акаунти клієнтів</p>
                 <div className="flex flex-col gap-1.5 mb-2">
                   {projectClients.map(c => (
-                    <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5">
+                    <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-2.5 py-1.5 gap-2">
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-gray-700 truncate">{c.name || c.email}</p>
-                        {c.name && <p className="text-[10px] text-gray-400 truncate">{c.email}</p>}
+                        <p className="text-[10px] text-gray-400 truncate">
+                          {c.name ? c.email : ''}
+                          {c.invited_at && (
+                            <span className={`${c.name ? 'ml-1.5 ' : ''}text-teal-600 bg-teal-50 px-1 py-px rounded font-medium`}>
+                              запрошено {new Date(c.invited_at).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+                            </span>
+                          )}
+                        </p>
                       </div>
-                      <button onClick={() => removeClient(c.id)} className="text-gray-300 hover:text-red-400 flex-shrink-0 ml-2">
-                        <X size={12} />
-                      </button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => inviteClient(c.id)}
+                          disabled={invitingClientId === c.id}
+                          title="Надіслати запрошення на email — клієнт сам встановить пароль"
+                          className={`flex items-center gap-1 text-[10px] px-1.5 py-1 rounded-md transition-colors ${
+                            invitedClientId === c.id
+                              ? 'text-teal-700 bg-teal-50'
+                              : 'text-teal-600 hover:text-teal-800 bg-teal-50 hover:bg-teal-100'
+                          }`}
+                        >
+                          {invitingClientId === c.id
+                            ? <Loader2 size={11} className="animate-spin" />
+                            : <Send size={11} />}
+                          {invitedClientId === c.id ? '✓' : c.invited_at ? 'Ще раз' : 'Запросити'}
+                        </button>
+                        <button onClick={() => removeClient(c.id)} className="text-gray-300 hover:text-red-400">
+                          <X size={12} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {projectClients.length === 0 && (
                     <p className="text-[11px] text-gray-300">Ще не додано жодного клієнта</p>
+                  )}
+                  {clientInviteError && (
+                    <p className="text-[10px] text-red-500">{clientInviteError}</p>
                   )}
                 </div>
                 <div className="flex flex-col gap-1.5 mb-2">
@@ -584,8 +632,8 @@ create policy "team_members_all" on team_members for all using (true) with check
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-400 mb-3">
-                  Клієнт реєструється на <span className="font-medium text-gray-600">/portal/login</span> з цим email
-                  (пароль або Google) і бачить свої проєкти.
+                  Додай клієнта і натисни «Запросити» — йому прийде лист, він сам встановить пароль
+                  і потрапить у свій портал. Вхід надалі: <span className="font-medium text-gray-600">/portal/login</span>.
                 </p>
 
                 {/* Tracked hours toggle */}

@@ -284,7 +284,7 @@ export default function ProjectNotepad({ projectId, viewer, portalToken, lang = 
                 )}
               </div>
               {n.content && (
-                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
                   <LinkifiedText content={n.content} />
                 </p>
               )}

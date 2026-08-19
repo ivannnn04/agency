@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2 } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Hash } from 'lucide-react'
+import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import ThemeToggle from '@/components/ThemeToggle'
 import Link from 'next/link'
@@ -40,6 +41,8 @@ export default function TeamDashboardPage() {
   const [member, setMember] = useState<TeamMember | null>(null)
   const [projects, setProjects] = useState<ProjectCard[]>([])
   const [myTasks, setMyTasks] = useState<MyTask[]>([])
+  const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
+  const [openChat, setOpenChat] = useState<GeneralChatInfo | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadData() }, [])
@@ -57,10 +60,12 @@ export default function TeamDashboardPage() {
 
     // Membership + assigned tasks in parallel — a task assignment alone must
     // be enough to see the project, even if membership wasn't added
-    const [{ data: pm }, { data: myAssignments }] = await Promise.all([
+    const [{ data: pm }, { data: myAssignments }, { data: chats }] = await Promise.all([
       supabase.from('project_members').select('project_id').eq('team_member_id', mem.id),
       supabase.from('task_assignees').select('task_id').eq('team_member_id', mem.id),
+      supabase.from('general_chats').select('id, name').order('created_at'),
     ])
+    if (chats) setGeneralChats(chats as GeneralChatInfo[])
 
     const myTaskIds = [...new Set((myAssignments ?? []).map((r: { task_id: string }) => r.task_id))]
 
@@ -250,6 +255,24 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
+        {/* General team chats */}
+        {generalChats.length > 0 && (
+          <>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Чати команди</h2>
+            <div className="flex flex-wrap gap-2 mb-10">
+              {generalChats.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setOpenChat(c)}
+                  className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-teal-300 text-gray-700 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm"
+                >
+                  <Hash size={13} className="text-teal-500" /> {c.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         {/* My tasks section */}
         <h2 className="text-lg font-bold text-gray-900 mb-4">Мої задачі</h2>
 
@@ -312,6 +335,15 @@ export default function TeamDashboardPage() {
           </div>
         )}
       </main>
+
+      {/* General team chat drawer */}
+      {openChat && member && (
+        <GeneralChat
+          chat={openChat}
+          sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
+          onClose={() => setOpenChat(null)}
+        />
+      )}
     </div>
   )
 }

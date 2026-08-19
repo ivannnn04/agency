@@ -9,8 +9,9 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil,
+  DollarSign, Circle, Pencil, Hash,
 } from 'lucide-react'
+import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 
 import AddAccountModal from '@/components/modals/AddAccountModal'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -49,6 +50,8 @@ export default function Sidebar() {
   const [resizing, setResizing] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [pmProjects, setPmProjects] = useState<Project[]>([])
+  const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
+  const [openChat, setOpenChat] = useState<GeneralChatInfo | null>(null)
   const [newPmName, setNewPmName] = useState('')
   const [addingPm, setAddingPm]   = useState(false)
   const [plannedIncome, setPlannedIncome]   = useState(0)
@@ -121,6 +124,26 @@ export default function Sidebar() {
       .neq('status', 'archived')
       .order('created_at', { ascending: true })
     if (data) setPmProjects(data)
+    const { data: chats } = await supabase
+      .from('general_chats')
+      .select('id, name')
+      .order('created_at', { ascending: true })
+    if (chats) setGeneralChats(chats as GeneralChatInfo[])
+  }
+
+  async function createGeneralChat() {
+    const name = window.prompt('Назва чату:')?.trim()
+    if (!name) return
+    const { data, error } = await supabase
+      .from('general_chats')
+      .insert({ name })
+      .select('id, name')
+      .single()
+    if (error) { alert('Запусти міграцію general_chats_migration.sql'); return }
+    if (data) {
+      setGeneralChats(prev => [...prev, data as GeneralChatInfo])
+      setOpenChat(data as GeneralChatInfo)
+    }
   }
 
   async function createPmProject() {
@@ -480,10 +503,51 @@ export default function Sidebar() {
                   </button>
                 )
               })}
+
+              {/* General team chats — not tied to any project */}
+              <div className="flex items-center justify-between mt-4 mb-1 px-3">
+                <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Чати</p>
+                <button
+                  onClick={createGeneralChat}
+                  className="text-gray-500 hover:text-white transition-colors p-0.5 rounded"
+                  title="Новий чат"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+              {generalChats.length === 0 && (
+                <button
+                  onClick={createGeneralChat}
+                  className="w-full text-xs text-gray-500 hover:text-gray-300 py-1.5 px-3 text-left transition-colors"
+                >
+                  + Створити чат з командою
+                </button>
+              )}
+              {generalChats.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setOpenChat(c)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-0.5 text-left ${
+                    openChat?.id === c.id ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Hash size={12} className="flex-shrink-0 text-teal-400" />
+                  <span className="truncate">{c.name}</span>
+                </button>
+              ))}
             </nav>
           </div>
         )}
       </aside>
+
+      {openChat && (
+        <GeneralChat
+          chat={openChat}
+          sender={{ type: 'admin', name: 'Ivan' }}
+          onClose={() => setOpenChat(null)}
+          onDeleted={() => { setGeneralChats(prev => prev.filter(c => c.id !== openChat.id)) }}
+        />
+      )}
 
       <AddAccountModal
         open={addAccountOpen || !!editingAccount}

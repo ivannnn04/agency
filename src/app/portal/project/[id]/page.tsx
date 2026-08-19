@@ -653,7 +653,7 @@ function PortalChat({ projectId, token, people, onClose }: {
                 </p>
               )}
               <div className={`flex items-center gap-0.5 ${mine ? 'flex-row-reverse' : ''}`}>
-                <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                <div className={`min-w-0 rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                   mine
                     ? 'bg-teal-500 text-white rounded-br-md'
                     : m.sender_type === 'bot'

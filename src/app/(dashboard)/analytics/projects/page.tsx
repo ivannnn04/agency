@@ -416,6 +416,9 @@ export default function ProjectsPage() {
                               ))}
                             </div>
 
+                            {/* Admin notes: what the payments were for, agreements */}
+                            <ProjectNotes projectId={p.id} initial={rawById[p.id]?.notes ?? ''} />
+
                             {/* Accrued (unpaid) tracker salary */}
                             {p.accrued_salary > 0 && (
                               <div className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
@@ -592,6 +595,49 @@ export default function ProjectsPage() {
           onSuccess={() => { setEditProject(null); fetchSummary() }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Per-project admin notes with autosave ───────────────────────────────────────
+
+function ProjectNotes({ projectId, initial }: { projectId: string; initial: string }) {
+  const [value, setValue] = useState(initial)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setValue(initial) }, [projectId])
+
+  async function save() {
+    const text = value.trim()
+    if (text === (initial ?? '').trim() && savedAt === null) return
+    setSaving(true)
+    const { error } = await supabase
+      .from('projects')
+      .update({ notes: text || null })
+      .eq('id', projectId)
+    setSaving(false)
+    if (!error) {
+      setSavedAt(Date.now())
+      setTimeout(() => setSavedAt(null), 2000)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Нотатки</p>
+        {saving && <span className="text-[10px] text-gray-400">Зберігаю...</span>}
+        {savedAt && <span className="text-[10px] text-teal-600">Збережено ✓</span>}
+      </div>
+      <textarea
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        rows={3}
+        placeholder="За що оплати, домовленості з клієнтом, деталі контракту..."
+        className="w-full text-sm bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 resize-y leading-relaxed placeholder-gray-300"
+      />
     </div>
   )
 }

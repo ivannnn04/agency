@@ -60,6 +60,7 @@ export interface Project {
   client_access_token?: string | null
   show_tracked_hours?: boolean
   change_request_limit?: number
+  notes?: string | null
   created_at: string
 }
 

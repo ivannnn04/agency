@@ -104,30 +104,30 @@ export async function POST(req: NextRequest) {
     await transporter.sendMail({
       from: SMTP_FROM ?? SMTP_USER,
       to: email,
-      subject: 'Запрошення в Gudrix Cowork Space',
+      subject: 'You’re invited to Gudrix Cowork Space',
       html: `
         <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
             <div style="width:36px;height:36px;background:#14b8a6;border-radius:10px;color:#fff;font-weight:bold;text-align:center;line-height:36px;font-size:16px">G</div>
             <span style="font-size:16px;font-weight:600;color:#111827">&nbsp;Gudrix Cowork Space</span>
           </div>
-          <p style="font-size:15px;color:#111827">Привіт${firstName ? `, ${firstName}` : ''}!</p>
+          <p style="font-size:15px;color:#111827">Hi${firstName ? ` ${firstName}` : ''},</p>
           <p style="font-size:14px;color:#374151;line-height:1.6">
-            Тебе запросили до робочого простору команди Gudrix. Тут ти бачитимеш свої проєкти,
-            задачі та спілкуватимешся з командою.
+            You’ve been invited to the Gudrix team workspace. This is where you’ll see your
+            projects and tasks, and chat with the team.
           </p>
           <p style="font-size:14px;color:#374151;line-height:1.6">
-            Натисни кнопку нижче, щоб встановити свій пароль і увійти:
+            Click the button below to set your password and sign in:
           </p>
           <p style="margin:28px 0">
             <a href="${inviteUrl}"
                style="background:#14b8a6;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;display:inline-block">
-              Прийняти запрошення
+              Accept invitation
             </a>
           </p>
           <p style="font-size:12px;color:#9ca3af;line-height:1.6">
-            Надалі вхід — за адресою ${origin}/team/login з email ${email} та твоїм паролем.<br/>
-            Якщо ти не очікуєш цього листа — просто проігноруй його.
+            From then on, sign in at ${origin}/team/login with ${email} and your password.<br/>
+            If you weren’t expecting this email, you can safely ignore it.
           </p>
         </div>
       `,

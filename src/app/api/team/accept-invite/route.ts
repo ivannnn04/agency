@@ -21,16 +21,16 @@ async function findByToken(token: string) {
     .select('id, name, email, supabase_user_id, invite_token, invite_expires_at')
     .eq('invite_token', token)
     .single()
-  if (!member) return { member: null, admin, reason: 'Лінк недійсний — можливо, вже використаний. Попроси нове запрошення.' }
+  if (!member) return { member: null, admin, reason: 'This link is invalid — it may have already been used. Please ask for a new invitation.' }
   if (member.invite_expires_at && member.invite_expires_at < new Date().toISOString()) {
-    return { member: null, admin, reason: 'Запрошення застаріло. Попроси адміністратора надіслати нове.' }
+    return { member: null, admin, reason: 'This invitation has expired. Please ask the admin to send a new one.' }
   }
   return { member, admin, reason: null }
 }
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get('token')
-  if (!token) return NextResponse.json({ error: 'Немає токена' }, { status: 400 })
+  if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 })
 
   const { member, reason } = await findByToken(token)
   if (!member) return NextResponse.json({ error: reason }, { status: 400 })
@@ -40,14 +40,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const { token, password } = await req.json()
-  if (!token || !password) return NextResponse.json({ error: 'Потрібні токен і пароль' }, { status: 400 })
+  if (!token || !password) return NextResponse.json({ error: 'Token and password are required' }, { status: 400 })
   if (String(password).length < 6) {
-    return NextResponse.json({ error: 'Пароль має бути мінімум 6 символів' }, { status: 400 })
+    return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
   }
 
   const { member, admin, reason } = await findByToken(token)
   if (!member) return NextResponse.json({ error: reason }, { status: 400 })
-  if (!member.email) return NextResponse.json({ error: 'У запрошення немає email — попроси нове' }, { status: 400 })
+  if (!member.email) return NextResponse.json({ error: 'This invitation has no email — please ask for a new one' }, { status: 400 })
 
   // Set the password on the auth account (create it if the invite predates one)
   if (member.supabase_user_id) {

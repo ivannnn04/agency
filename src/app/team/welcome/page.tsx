@@ -26,13 +26,13 @@ function WelcomeInner() {
   const [error, setError]       = useState('')
 
   useEffect(() => {
-    if (!token) { setInvalid('У посиланні немає токена запрошення.'); setChecking(false); return }
+    if (!token) { setInvalid('This link has no invitation token.'); setChecking(false); return }
     let cancelled = false
     ;(async () => {
       const res = await fetch(`/api/team/accept-invite?token=${encodeURIComponent(token)}`)
       const json = await res.json()
       if (cancelled) return
-      if (!res.ok) setInvalid(json.error ?? 'Лінк недійсний')
+      if (!res.ok) setInvalid(json.error ?? 'Invalid link')
       else setName(json.name ?? '')
       setChecking(false)
     })()
@@ -42,8 +42,8 @@ function WelcomeInner() {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (password.length < 6) { setError('Пароль має бути мінімум 6 символів'); return }
-    if (password !== confirm) { setError('Паролі не збігаються'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+    if (password !== confirm) { setError('Passwords don\u2019t match'); return }
     setSaving(true)
 
     const res = await fetch('/api/team/accept-invite', {
@@ -52,7 +52,7 @@ function WelcomeInner() {
       body: JSON.stringify({ token, password }),
     })
     const json = await res.json()
-    if (!res.ok) { setSaving(false); setError(json.error ?? 'Щось пішло не так'); return }
+    if (!res.ok) { setSaving(false); setError(json.error ?? 'Something went wrong'); return }
 
     // Password is set — sign in right away and go to the dashboard
     const { error: signErr } = await supabase.auth.signInWithPassword({
@@ -78,37 +78,37 @@ function WelcomeInner() {
         </div>
 
         {checking ? (
-          <p className="text-sm text-gray-400 text-center py-8">Перевіряємо запрошення...</p>
+          <p className="text-sm text-gray-400 text-center py-8">Checking your invitation...</p>
         ) : invalid ? (
           <div>
-            <h1 className="text-xl font-semibold text-gray-900 mb-1">Лінк недійсний</h1>
+            <h1 className="text-xl font-semibold text-gray-900 mb-1">Invalid link</h1>
             <p className="text-sm text-gray-400 mb-6">{invalid}</p>
             <Link
               href="/team/login"
               className="block text-center bg-teal-500 hover:bg-teal-600 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
             >
-              До сторінки входу
+              Go to sign in
             </Link>
           </div>
         ) : (
           <div>
             <h1 className="text-xl font-semibold text-gray-900 mb-1">
-              Вітаємо{name ? `, ${name.split(' ')[0]}` : ''}! 👋
+              Welcome{name ? `, ${name.split(' ')[0]}` : ''}! 👋
             </h1>
             <p className="text-sm text-gray-400 mb-6">
-              Залишилось встановити пароль для входу в робочий простір
+              Just set a password to access your workspace
             </p>
 
             <form onSubmit={submit} className="flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Пароль</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
                 <div className="relative">
                   <input
                     autoFocus
                     type={showPwd ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Мінімум 6 символів"
+                    placeholder="At least 6 characters"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2.5 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                     required
                   />
@@ -122,7 +122,7 @@ function WelcomeInner() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Пароль ще раз</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Repeat password</label>
                 <input
                   type={showPwd ? 'text' : 'password'}
                   value={confirm}
@@ -140,7 +140,7 @@ function WelcomeInner() {
                 disabled={saving}
                 className="bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
               >
-                {saving ? 'Зберігаємо...' : 'Встановити пароль і увійти'}
+                {saving ? 'Saving...' : 'Set password and sign in'}
               </button>
             </form>
           </div>

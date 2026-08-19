@@ -20,7 +20,7 @@ export default function TeamLoginPage() {
 
     setLoading(false)
     if (authErr) {
-      setError('Невірний email або пароль')
+      setError('Wrong email or password')
       return
     }
 
@@ -40,8 +40,8 @@ export default function TeamLoginPage() {
           </div>
         </div>
 
-        <h1 className="text-xl font-semibold text-gray-900 mb-1">Вхід</h1>
-        <p className="text-sm text-gray-400 mb-6">Увійдіть, щоб переглянути свої задачі</p>
+        <h1 className="text-xl font-semibold text-gray-900 mb-1">Sign in</h1>
+        <p className="text-sm text-gray-400 mb-6">Sign in to see your projects and tasks</p>
 
         <form onSubmit={handleLogin} className="flex flex-col gap-4">
           <div>
@@ -57,7 +57,7 @@ export default function TeamLoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Пароль</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
             <input
               type="password"
               value={password}
@@ -75,7 +75,7 @@ export default function TeamLoginPage() {
             disabled={loading}
             className="bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
           >
-            {loading ? 'Вхід...' : 'Увійти'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>

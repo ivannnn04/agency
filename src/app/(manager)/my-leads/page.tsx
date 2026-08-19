@@ -16,6 +16,7 @@ interface Lead {
   phase_sent: boolean; phase_reply: boolean; phase_call: boolean; phase_sale: boolean
   validated: boolean; manager_id: string; created_at: string
   ping_1_done?: boolean; ping_2_done?: boolean; ping_3_done?: boolean
+  is_earnings_paid?: boolean
 }
 
 const PHASE_AMOUNTS: Record<string, number> = { sent: 0.5, reply: 2, call: 3, sale: 10 }
@@ -83,7 +84,9 @@ export default function MyLeadsPage() {
         .order('created_at', { ascending: false }),
       supabase.from('outreach_accounts').select('name').order('name'),
     ])
-    if (l) setLeads((l as Lead[]).filter(lead => !(lead as any).is_earnings_paid))
+    // Paid-out leads stay visible (with a "виплачено" badge) — hiding them made
+    // managers think their leads disappeared
+    if (l) setLeads(l as Lead[])
     if (a) setAccounts(a.map((x: any) => x.name))
     if (a && !form.account && a.length > 0) setForm(f => ({ ...f, account: a[0].name }))
     setLoading(false)
@@ -91,7 +94,8 @@ export default function MyLeadsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const totalEarned = leads.reduce((s, l) => s + calcEarnings(l), 0)
+  // Only not-yet-paid leads count toward the current payout
+  const totalEarned = leads.filter(l => !l.is_earnings_paid).reduce((s, l) => s + calcEarnings(l), 0)
   const replied = leads.filter(l => l.phase_reply).length
   const called  = leads.filter(l => l.phase_call).length
   const sold    = leads.filter(l => l.phase_sale).length
@@ -149,7 +153,7 @@ export default function MyLeadsPage() {
       {/* Summary cards — 2 cols on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
         <div className="bg-gray-900 text-white rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
-          <p className="text-xs text-gray-400 mb-1">Мій заробіток</p>
+          <p className="text-xs text-gray-400 mb-1">Мій заробіток (до виплати)</p>
           <p className="text-2xl font-bold">${totalEarned.toFixed(2)}</p>
         </div>
         <div className="bg-blue-50 rounded-xl p-3 sm:p-4 border border-blue-100">
@@ -337,6 +341,9 @@ export default function MyLeadsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {lead.is_earnings_paid && (
+                    <span className="text-[9px] bg-teal-100 text-teal-700 px-1.5 py-px rounded font-bold uppercase tracking-wide">виплачено</span>
+                  )}
                   <span className="font-bold text-gray-800 text-sm">${calcEarnings(lead).toFixed(2)}</span>
                   {lead.validated && (
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-500 text-white">
@@ -454,6 +461,9 @@ export default function MyLeadsPage() {
                   </td>
                   <td className="py-3 px-4 text-right font-semibold text-gray-700">
                     ${calcEarnings(lead).toFixed(2)}
+                    {lead.is_earnings_paid && (
+                      <span className="ml-1.5 text-[9px] bg-teal-100 text-teal-700 px-1.5 py-px rounded font-bold uppercase tracking-wide align-middle">виплачено</span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-center">
                     {lead.validated

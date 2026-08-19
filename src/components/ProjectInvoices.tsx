@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { adjustBalancesForTransaction } from '@/lib/transactionBalances'
+import { Account } from '@/types'
 import { ReceiptText, X, Paperclip, Loader2, Send, Trash2, FileText } from 'lucide-react'
 import { fileTooBig, safeStoragePath, MAX_FILE_MB, useChatWidth, ChatResizeHandle } from '@/components/chat/shared'
 
@@ -21,6 +23,8 @@ interface InvoiceRow {
   status: 'to_be_paid' | 'paid'
   created_at: string
   paid_at: string | null
+  income_tx_id: string | null
+  fee_tx_id: string | null
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
@@ -44,8 +48,19 @@ export default function ProjectInvoices({ projectId, portalToken, onClose }: {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [payingInvoice, setPayingInvoice] = useState<InvoiceRow | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const { width, startResize } = useChatWidth()
+
+  // Admin needs the account list for the mark-as-paid popup
+  useEffect(() => {
+    if (!isAdmin) return
+    supabase.from('accounts').select('*').order('created_at').then(({ data }) => {
+      if (data) setAccounts(data as Account[])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin])
 
   const load = useCallback(async () => {
     if (portalToken) {
@@ -105,15 +120,106 @@ export default function ProjectInvoices({ projectId, portalToken, onClose }: {
     load()
   }
 
+  // Marking paid goes through the popup (account + fee) and books transactions;
+  // un-marking deletes those transactions and reverses the balance changes.
   async function toggleStatus(inv: InvoiceRow) {
-    const next = inv.status === 'paid' ? 'to_be_paid' : 'paid'
-    setInvoices(prev => prev.map(i => i.id === inv.id
-      ? { ...i, status: next, paid_at: next === 'paid' ? new Date().toISOString() : null }
-      : i))
+    if (inv.status !== 'paid') {
+      setPayingInvoice(inv)
+      return
+    }
+    if (!window.confirm('Скасувати оплату? Створені транзакції буде видалено, баланс рахунку — відкориговано.')) return
+    for (const txId of [inv.income_tx_id, inv.fee_tx_id]) {
+      if (!txId) continue
+      const { data: tx } = await supabase
+        .from('transactions')
+        .select('type, amount, account_id, to_account_id, to_amount')
+        .eq('id', txId)
+        .single()
+      if (tx) {
+        await adjustBalancesForTransaction(tx, -1)
+        await supabase.from('transactions').delete().eq('id', txId)
+      }
+    }
     await supabase
       .from('project_invoices')
-      .update({ status: next, paid_at: next === 'paid' ? new Date().toISOString() : null })
+      .update({ status: 'to_be_paid', paid_at: null, income_tx_id: null, fee_tx_id: null })
       .eq('id', inv.id)
+    load()
+  }
+
+  // Popup confirm: income for the full invoice amount + optional fee expense,
+  // both tied to the project so per-project analytics stay true.
+  async function confirmPaid(inv: InvoiceRow, accountId: string, amountPaid: number, fee: number) {
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { data: incomeTx, error: incErr } = await supabase
+      .from('transactions')
+      .insert({
+        type: 'income',
+        amount: amountPaid,
+        currency: inv.currency,
+        account_id: accountId,
+        project_id: projectId,
+        date: today,
+        comment: `Оплата інвойсу «${inv.title}»`,
+        is_planned: false,
+      })
+      .select('id, type, amount, account_id')
+      .single()
+    if (incErr || !incomeTx) throw new Error(incErr?.message ?? 'Не вдалося створити транзакцію')
+    await adjustBalancesForTransaction({ type: 'income', amount: amountPaid, account_id: accountId }, 1)
+
+    let feeTxId: string | null = null
+    if (fee > 0) {
+      // Fees land in a dedicated expense category so they're easy to total up
+      let { data: feeCat } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('type', 'expense')
+        .ilike('name', '%коміс%')
+        .limit(1)
+        .maybeSingle()
+      if (!feeCat) {
+        const { data: created } = await supabase
+          .from('categories')
+          .insert({ name: 'Комісії', type: 'expense' })
+          .select('id')
+          .single()
+        feeCat = created
+      }
+      const { data: feeTx } = await supabase
+        .from('transactions')
+        .insert({
+          type: 'expense',
+          amount: fee,
+          currency: inv.currency,
+          account_id: accountId,
+          category_id: feeCat?.id ?? null,
+          project_id: projectId,
+          date: today,
+          comment: `Комісія за інвойс «${inv.title}»`,
+          is_planned: false,
+        })
+        .select('id')
+        .single()
+      if (feeTx) {
+        feeTxId = feeTx.id
+        await adjustBalancesForTransaction({ type: 'expense', amount: fee, account_id: accountId }, 1)
+      }
+    }
+
+    await supabase
+      .from('project_invoices')
+      .update({
+        status: 'paid',
+        paid_at: new Date().toISOString(),
+        amount: amountPaid,
+        income_tx_id: incomeTx.id,
+        fee_tx_id: feeTxId,
+      })
+      .eq('id', inv.id)
+    setPayingInvoice(null)
+    load()
   }
 
   async function deleteInvoice(id: string) {
@@ -278,6 +384,118 @@ export default function ProjectInvoices({ projectId, portalToken, onClose }: {
             </div>
           )
         })}
+      </div>
+
+      {/* Mark-as-paid popup: which account received the money + payment fee */}
+      {payingInvoice && (
+        <MarkPaidModal
+          invoice={payingInvoice}
+          accounts={accounts}
+          onClose={() => setPayingInvoice(null)}
+          onConfirm={confirmPaid}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Mark-as-paid popup ─────────────────────────────────────────────────────────
+
+function MarkPaidModal({ invoice, accounts, onClose, onConfirm }: {
+  invoice: InvoiceRow
+  accounts: Account[]
+  onClose: () => void
+  onConfirm: (inv: InvoiceRow, accountId: string, amountPaid: number, fee: number) => Promise<void>
+}) {
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [amount, setAmount] = useState(invoice.amount != null ? String(invoice.amount) : '')
+  const [fee, setFee] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const sym = CURRENCY_SYMBOL[invoice.currency] ?? invoice.currency
+
+  async function submit() {
+    const amt = Number(amount)
+    const feeNum = fee.trim() === '' ? 0 : Number(fee)
+    if (!accountId) { setErr('Оберіть рахунок'); return }
+    if (!amt || amt <= 0) { setErr('Вкажіть суму, яка надійшла'); return }
+    if (feeNum < 0 || isNaN(feeNum)) { setErr('Комісія некоректна'); return }
+    setBusy(true)
+    setErr('')
+    try {
+      await onConfirm(invoice, accountId, amt, feeNum)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Щось пішло не так')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Оплата інвойсу</h2>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[240px]">{invoice.title}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="p-5 flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">На який рахунок надійшли кошти *</label>
+            <select
+              value={accountId}
+              onChange={e => setAccountId(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Сума інвойсу ({sym}) *</label>
+            <input
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              type="number" min={0} step="0.01"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Комісія за транзакцію ({sym})</label>
+            <input
+              value={fee}
+              onChange={e => setFee(e.target.value)}
+              type="number" min={0} step="0.01"
+              placeholder="0 — якщо без комісії"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Дохід буде проведено на повну суму інвойсу, комісія — окремою витратою в категорії «Комісії»
+            </p>
+          </div>
+
+          {err && <p className="text-xs text-red-500">{err}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              disabled={busy}
+              className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              Скасувати
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy}
+              className="flex-1 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
+            >
+              {busy ? 'Проводимо...' : 'Провести оплату'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

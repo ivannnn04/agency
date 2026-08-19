@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   const { data: client, error: cliErr } = await admin
     .from('clients')
-    .select('id, name, email, auth_user_id')
+    .select('id, name, email, auth_user_id, invite_token, invite_expires_at')
     .eq('id', clientId)
     .single()
   if (cliErr || !client) return NextResponse.json({ error: 'Клієнта не знайдено' }, { status: 404 })
@@ -71,7 +71,13 @@ export async function POST(req: NextRequest) {
   const origin = process.env.NEXT_PUBLIC_APP_URL
     ?? req.headers.get('origin')
     ?? new URL(req.url).origin
-  const inviteToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+  // Re-sending reuses a still-valid token so links in EVERY sent email keep
+  // working — a new token would silently kill the older emails
+  const tokenStillValid =
+    client.invite_token && client.invite_expires_at && client.invite_expires_at > new Date().toISOString()
+  const inviteToken = tokenStillValid
+    ? (client.invite_token as string)
+    : crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
   const inviteExpires = new Date(Date.now() + 14 * 86400000).toISOString()
   const inviteUrl = `${origin}/portal/welcome?token=${inviteToken}`
 

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
   const { data: member, error: memErr } = await admin
     .from('team_members')
-    .select('id, name, email, supabase_user_id')
+    .select('id, name, email, supabase_user_id, invite_token, invite_expires_at')
     .eq('id', id)
     .single()
   if (memErr || !member) return NextResponse.json({ error: 'Учасника не знайдено' }, { status: 404 })
@@ -75,7 +75,13 @@ export async function POST(req: NextRequest) {
   const origin = process.env.NEXT_PUBLIC_APP_URL
     ?? req.headers.get('origin')
     ?? new URL(req.url).origin
-  const inviteToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+  // Re-sending reuses a still-valid token so links in EVERY sent email keep
+  // working — a new token would silently kill the older emails
+  const tokenStillValid =
+    member.invite_token && member.invite_expires_at && member.invite_expires_at > new Date().toISOString()
+  const inviteToken = tokenStillValid
+    ? (member.invite_token as string)
+    : crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
   const inviteExpires = new Date(Date.now() + 7 * 86400000).toISOString()
   const inviteUrl = `${origin}/team/welcome?token=${inviteToken}`
 

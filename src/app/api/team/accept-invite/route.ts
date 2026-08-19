@@ -21,7 +21,7 @@ async function findByToken(token: string) {
     .select('id, name, email, supabase_user_id, invite_token, invite_expires_at')
     .eq('invite_token', token)
     .single()
-  if (!member) return { member: null, admin, reason: 'This link is invalid — it may have already been used. Please ask for a new invitation.' }
+  if (!member) return { member: null, admin, reason: 'This link is invalid — it may have been used already or replaced by a newer invitation. Check your most recent email, or ask for a new invite.' }
   if (member.invite_expires_at && member.invite_expires_at < new Date().toISOString()) {
     return { member: null, admin, reason: 'This invitation has expired. Please ask the admin to send a new one.' }
   }

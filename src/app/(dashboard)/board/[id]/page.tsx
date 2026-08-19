@@ -9,11 +9,12 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
-  Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen,
+  Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen, ReceiptText,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
 import ProjectNotepad from '@/components/ProjectNotepad'
+import ProjectInvoices from '@/components/ProjectInvoices'
 import { useChatUnread } from '@/lib/chatUnread'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
@@ -118,6 +119,7 @@ export default function BoardPage() {
   const [clientInviteError, setClientInviteError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [notepadOpen, setNotepadOpen] = useState(false)
+  const [invoicesOpen, setInvoicesOpen] = useState(false)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const clientRef = useRef<HTMLDivElement>(null)
@@ -706,9 +708,20 @@ create policy "team_members_all" on team_members for all using (true) with check
             )}
           </div>
 
+          {/* Invoices — admin & client only, the team never sees these */}
+          <button
+            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(false); setInvoicesOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              invoicesOpen ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Інвойси проєкту (бачите ви і клієнт)"
+          >
+            <ReceiptText size={13} /> Інвойси
+          </button>
+
           {/* Project notepad */}
           <button
-            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(v => !v) }}
+            onClick={() => { setSelectedTask(null); setChatOpen(false); setInvoicesOpen(false); setNotepadOpen(v => !v) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               notepadOpen ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
@@ -719,7 +732,7 @@ create policy "team_members_all" on team_members for all using (true) with check
 
           {/* Project chat */}
           <button
-            onClick={() => { setSelectedTask(null); setNotepadOpen(false); setChatOpen(v => !v) }}
+            onClick={() => { setSelectedTask(null); setNotepadOpen(false); setInvoicesOpen(false); setChatOpen(v => !v) }}
             className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               chatOpen ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
@@ -818,6 +831,11 @@ create policy "team_members_all" on team_members for all using (true) with check
           viewer={{ type: 'admin', name: 'Ivan' }}
           onClose={() => setNotepadOpen(false)}
         />
+      )}
+
+      {/* Invoices drawer (admin) */}
+      {invoicesOpen && (
+        <ProjectInvoices projectId={id} onClose={() => setInvoicesOpen(false)} />
       )}
 
       {/* Task detail drawer */}

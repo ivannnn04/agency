@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowLeft, Calendar, Flag, Clock, MessageSquare, X, FilePen, Paperclip, Loader2, CalendarDays,
-  NotebookPen, Plus,
+  NotebookPen, Plus, ReceiptText,
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
@@ -15,6 +15,7 @@ import {
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
 import ProjectNotepad from '@/components/ProjectNotepad'
+import ProjectInvoices from '@/components/ProjectInvoices'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
@@ -75,6 +76,7 @@ export default function PortalProjectPage() {
   const [denied, setDenied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [view, setView] = useState<'board' | 'timeline'>('board')
   const [crTask, setCrTask] = useState<PortalTask | null>(null)
@@ -154,7 +156,15 @@ export default function PortalProjectPage() {
             <Plus size={13} /> Add task
           </button>
           <button
-            onClick={() => { setChatOpen(false); setNotesOpen(v => !v) }}
+            onClick={() => { setChatOpen(false); setNotesOpen(false); setInvoicesOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              invoicesOpen ? 'bg-indigo-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
+            }`}
+          >
+            <ReceiptText size={13} /> Invoices
+          </button>
+          <button
+            onClick={() => { setChatOpen(false); setInvoicesOpen(false); setNotesOpen(v => !v) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               notesOpen ? 'bg-amber-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
@@ -162,7 +172,7 @@ export default function PortalProjectPage() {
             <NotebookPen size={13} /> Notes
           </button>
           <button
-            onClick={() => { setNotesOpen(false); setChatOpen(v => !v) }}
+            onClick={() => { setNotesOpen(false); setInvoicesOpen(false); setChatOpen(v => !v) }}
             className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >
             <MessageSquare size={13} /> Team chat
@@ -277,6 +287,14 @@ export default function PortalProjectPage() {
           portalToken={token}
           lang="en"
           onClose={() => setNotesOpen(false)}
+        />
+      )}
+
+      {invoicesOpen && token && (
+        <ProjectInvoices
+          projectId={project.id}
+          portalToken={token}
+          onClose={() => setInvoicesOpen(false)}
         />
       )}
 

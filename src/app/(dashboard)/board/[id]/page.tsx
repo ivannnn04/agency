@@ -208,6 +208,7 @@ export default function BoardPage() {
         await supabase.from('task_assignees').insert(
           memberIds.map(mid => ({ task_id: data.id, team_member_id: mid }))
         )
+        await ensureProjectMembers(memberIds)
         setAssigneesByTask(prev => ({ ...prev, [data.id]: memberIds }))
         for (const mid of memberIds) {
           await supabase.from('notifications').insert({
@@ -227,6 +228,7 @@ export default function BoardPage() {
     const current = assigneesByTask[taskId] ?? []
     if (current.includes(memberId)) return
     await supabase.from('task_assignees').insert({ task_id: taskId, team_member_id: memberId })
+    await ensureProjectMembers([memberId])
     const next = [...current, memberId]
     setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
     const primary = next[0] ?? null
@@ -287,6 +289,18 @@ export default function BoardPage() {
     setTasks(prev => prev.map(t => t.column_id === colId ? { ...t, column_id: null } : t))
   }
 
+  // Assigning a task must also make the member part of the project —
+  // otherwise their dashboard and board access won't include it
+  async function ensureProjectMembers(memberIds: string[]) {
+    const missing = memberIds.filter(mid => !projectMembers.some(m => m.id === mid))
+    if (missing.length === 0) return
+    await supabase.from('project_members').upsert(
+      missing.map(mid => ({ project_id: id, team_member_id: mid })),
+      { onConflict: 'project_id,team_member_id', ignoreDuplicates: true }
+    )
+    setProjectMembers(prev => [...prev, ...members.filter(m => missing.includes(m.id))])
+  }
+
   async function addProjectMember(memberId: string) {
     await supabase.from('project_members').insert({ project_id: id, team_member_id: memberId })
     await supabase.from('notifications').insert({
@@ -309,6 +323,18 @@ export default function BoardPage() {
     await supabase.from('pm_tasks').update(patch).eq('id', taskId)
     // Notify designer when assigned
     if (patch.team_member_id) {
+      // Keep the assignees join table (the member's dashboard reads it) and
+      // project membership in sync with this direct assignment
+      await supabase.from('task_assignees').upsert(
+        { task_id: taskId, team_member_id: patch.team_member_id },
+        { onConflict: 'task_id,team_member_id', ignoreDuplicates: true }
+      )
+      const mid = patch.team_member_id
+      setAssigneesByTask(prev => ({
+        ...prev,
+        [taskId]: prev[taskId]?.includes(mid) ? prev[taskId] : [...(prev[taskId] ?? []), mid],
+      }))
+      await ensureProjectMembers([mid])
       const task = tasks.find(t => t.id === taskId)
       await supabase.from('notifications').insert({
         type: 'task_assigned',

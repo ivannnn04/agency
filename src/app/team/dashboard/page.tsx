@@ -55,11 +55,29 @@ export default function TeamDashboardPage() {
     if (!mem) { router.replace('/team/login'); return }
     setMember(mem)
 
-    // Get project_members
-    const { data: pm } = await supabase
-      .from('project_members').select('project_id').eq('team_member_id', mem.id)
+    // Membership + assigned tasks in parallel — a task assignment alone must
+    // be enough to see the project, even if membership wasn't added
+    const [{ data: pm }, { data: myAssignments }] = await Promise.all([
+      supabase.from('project_members').select('project_id').eq('team_member_id', mem.id),
+      supabase.from('task_assignees').select('task_id').eq('team_member_id', mem.id),
+    ])
 
-    const projectIds = (pm ?? []).map((r: { project_id: string }) => r.project_id)
+    const myTaskIds = [...new Set((myAssignments ?? []).map((r: { task_id: string }) => r.task_id))]
+
+    const { data: myTaskRowsData } = myTaskIds.length > 0
+      ? await supabase
+          .from('pm_tasks')
+          .select('id, title, status, priority, due_date, column_id, finance_project_id')
+          .in('id', myTaskIds)
+          .order('created_at', { ascending: false })
+      : { data: [] }
+    const myTaskRows = myTaskRowsData ?? []
+
+    // Projects I'm a member of + projects my tasks live in
+    const projectIds = [...new Set([
+      ...(pm ?? []).map((r: { project_id: string }) => r.project_id),
+      ...myTaskRows.map(t => t.finance_project_id).filter((x): x is string => !!x),
+    ])]
 
     if (projectIds.length === 0) {
       setProjects([])
@@ -97,28 +115,7 @@ export default function TeamDashboardPage() {
       }))
     )
 
-    // Fetch my assigned task ids from the assignees join table (source of truth)
-    const { data: myAssignments } = await supabase
-      .from('task_assignees')
-      .select('task_id')
-      .eq('team_member_id', mem.id)
-
-    const myTaskIds = [...new Set((myAssignments ?? []).map((r: { task_id: string }) => r.task_id))]
-
-    if (myTaskIds.length === 0) {
-      setMyTasks([])
-      setLoading(false)
-      return
-    }
-
-    // Fetch those tasks with column info
-    const { data: myTaskRows } = await supabase
-      .from('pm_tasks')
-      .select('id, title, status, priority, due_date, column_id, finance_project_id')
-      .in('id', myTaskIds)
-      .order('created_at', { ascending: false })
-
-    if (!myTaskRows || myTaskRows.length === 0) {
+    if (myTaskRows.length === 0) {
       setMyTasks([])
       setLoading(false)
       return

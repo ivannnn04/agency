@@ -12,19 +12,25 @@ function adminClient() {
 export async function POST(req: Request) {
   const { name, email, password, role, color, hourly_rate_usd } = await req.json()
 
-  if (!name || !email || !password) {
-    return NextResponse.json({ error: 'Імʼя, email та пароль обовʼязкові' }, { status: 400 })
+  if (!name || !email) {
+    return NextResponse.json({ error: 'Імʼя та email обовʼязкові' }, { status: 400 })
   }
 
   const admin = adminClient()
 
-  const { data: authData, error: authErr } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  })
-
-  if (authErr) return NextResponse.json({ error: authErr.message }, { status: 400 })
+  // Password is optional: without it the member gets an email invitation and
+  // sets their own password on first login (the invite route creates the
+  // auth account).
+  let supabaseUserId: string | null = null
+  if (password) {
+    const { data: authData, error: authErr } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    })
+    if (authErr) return NextResponse.json({ error: authErr.message }, { status: 400 })
+    supabaseUserId = authData.user.id
+  }
 
   const { data, error } = await admin
     .from('team_members')
@@ -34,13 +40,13 @@ export async function POST(req: Request) {
       role: role || 'designer',
       color: color || '#14b8a6',
       hourly_rate_usd: Number(hourly_rate_usd) || 0,
-      supabase_user_id: authData.user.id,
+      supabase_user_id: supabaseUserId,
     })
     .select()
     .single()
 
   if (error) {
-    await admin.auth.admin.deleteUser(authData.user.id)
+    if (supabaseUserId) await admin.auth.admin.deleteUser(supabaseUserId)
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 

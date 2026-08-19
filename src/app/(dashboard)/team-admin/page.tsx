@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { Plus, Trash2, Users, Eye, EyeOff, KeyRound, X } from 'lucide-react'
+import { Plus, Trash2, Users, Eye, EyeOff, KeyRound, X, Send, Loader2 } from 'lucide-react'
 
 const COLOR_PALETTE = [
   '#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444',
@@ -30,6 +30,8 @@ export default function TeamAdminPage() {
   const [editRateValue, setEditRateValue] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   const [pwdMemberId, setPwdMemberId] = useState<string | null>(null)
+  const [invitingId, setInvitingId] = useState<string | null>(null)
+  const [invitedId, setInvitedId] = useState<string | null>(null)
 
   useEffect(() => { fetchMembers() }, [])
 
@@ -42,7 +44,7 @@ export default function TeamAdminPage() {
   }
 
   async function addMember() {
-    if (!name.trim() || !email.trim() || !password) return
+    if (!name.trim() || !email.trim()) return
     setSaving(true)
     setError(null)
 
@@ -50,17 +52,51 @@ export default function TeamAdminPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: name.trim(), email: email.trim(), password, role, color,
+        name: name.trim(), email: email.trim(), password: password || undefined, role, color,
         hourly_rate_usd: parseFloat(rate) || 0,
       }),
     })
     const json = await res.json()
 
-    setSaving(false)
-    if (!res.ok) { setError(json.error); return }
+    if (!res.ok) { setSaving(false); setError(json.error); return }
 
+    // No manual password → the member gets an email invitation right away
+    if (!password && json.member?.id) {
+      const invRes = await fetch('/api/team/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: json.member.id }),
+      })
+      if (!invRes.ok) {
+        const invJson = await invRes.json()
+        setError(`Учасника створено, але запрошення не надіслано: ${invJson.error}`)
+      }
+    }
+
+    setSaving(false)
     setName(''); setEmail(''); setPassword(''); setRole('designer'); setRate(''); setColor(COLOR_PALETTE[0])
     setShowForm(false)
+    fetchMembers()
+  }
+
+  async function sendInvite(m: TeamMember) {
+    let email = m.email
+    if (!email) {
+      email = window.prompt(`Email для запрошення (${m.name}):`)?.trim() || null
+      if (!email) return
+    }
+    setInvitingId(m.id)
+    setError(null)
+    const res = await fetch('/api/team/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: m.id, email }),
+    })
+    const json = await res.json()
+    setInvitingId(null)
+    if (!res.ok) { setError(json.error); return }
+    setInvitedId(m.id)
+    setTimeout(() => setInvitedId(null), 2500)
     fetchMembers()
   }
 
@@ -138,13 +174,13 @@ export default function TeamAdminPage() {
 
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Пароль *</label>
+              <label className="text-xs text-gray-500 mb-1 block">Пароль (не обовʼязково)</label>
               <div className="relative">
                 <input
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   type={showPwd ? 'text' : 'password'}
-                  placeholder="Мінімум 6 символів"
+                  placeholder="Порожньо = запрошення на email"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                 />
                 <button
@@ -202,10 +238,10 @@ export default function TeamAdminPage() {
           <div className="flex gap-2">
             <button
               onClick={addMember}
-              disabled={saving || !name.trim() || !email.trim() || !password}
+              disabled={saving || !name.trim() || !email.trim()}
               className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-700 transition-colors"
             >
-              {saving ? 'Збереження...' : 'Додати'}
+              {saving ? 'Збереження...' : password ? 'Додати' : 'Додати і запросити'}
             </button>
             <button
               onClick={() => { setShowForm(false); setName(''); setEmail(''); setPassword('') }}
@@ -240,7 +276,14 @@ export default function TeamAdminPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900">{m.name}</p>
-                  <p className="text-xs text-gray-400">{m.email ?? m.role}</p>
+                  <p className="text-xs text-gray-400">
+                    {m.email ?? m.role}
+                    {m.invited_at && (
+                      <span className="ml-1.5 text-[10px] text-teal-600 bg-teal-50 px-1.5 py-px rounded font-medium">
+                        запрошено {new Date(m.invited_at).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -268,8 +311,23 @@ export default function TeamAdminPage() {
                   </button>
                 )}
                 <button
+                  onClick={() => sendInvite(m)}
+                  disabled={invitingId === m.id}
+                  title="Надіслати запрошення на email — учасник сам встановить пароль"
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
+                    invitedId === m.id
+                      ? 'text-teal-700 bg-teal-50'
+                      : 'text-teal-600 hover:text-teal-800 bg-teal-50 hover:bg-teal-100'
+                  }`}
+                >
+                  {invitingId === m.id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Send size={12} />}
+                  {invitedId === m.id ? 'Надіслано ✓' : 'Запросити'}
+                </button>
+                <button
                   onClick={() => setPwdMemberId(m.id)}
-                  title="Встановити / скинути пароль"
+                  title="Встановити / скинути пароль вручну"
                   className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors"
                 >
                   <KeyRound size={12} /> Пароль
@@ -290,7 +348,9 @@ export default function TeamAdminPage() {
       <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
         <p className="text-sm font-medium text-blue-800 mb-1">Єдиний лінк для входу команди</p>
         <p className="text-xs text-blue-600 mb-2">
-          Один лінк для всіх дизайнерів. Надішліть його разом з email та паролем, які ви встановили при створенні акаунту. Це окремий вхід — адмін-панель їм недоступна.
+          Найпростіше — кнопка «Запросити»: учаснику прийде лист, він сам встановить пароль
+          і одразу потрапить у свій кабінет. Цей лінк — для повторного входу. Команда бачить
+          лише свої проєкти й задачі — фінанси та адмін-панель їм недоступні.
         </p>
         <div className="flex items-center gap-2">
           <code className="flex-1 text-xs bg-white border border-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg break-all">

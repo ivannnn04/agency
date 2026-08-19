@@ -32,7 +32,8 @@ export function playChatPing() {
     const ctx = audioCtx
     if (ctx.state === 'suspended') ctx.resume()
     const now = ctx.currentTime
-    const notes: [number, number][] = [[830, 0], [623, 0.13]]
+    // A whole tone below the original 830/623 Hz pair
+    const notes: [number, number][] = [[739, 0], [555, 0.13]]
     for (const [freq, off] of notes) {
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()

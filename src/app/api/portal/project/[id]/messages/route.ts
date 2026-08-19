@@ -27,7 +27,23 @@ export async function GET(
     .order('created_at', { ascending: true })
     .limit(500)
 
-  return NextResponse.json({ messages: messages ?? [] })
+  // Reactions only for the client-channel messages above — nothing from the
+  // team channel ever leaves the server
+  const messageIds = (messages ?? []).map(m => m.id)
+  let reactions: { message_id: string; emoji: string; reactor_key: string; reactor_name: string | null }[] = []
+  if (messageIds.length > 0) {
+    const { data: rx } = await supabaseAdmin
+      .from('message_reactions')
+      .select('message_id, emoji, reactor_key, reactor_name')
+      .in('message_id', messageIds)
+    reactions = rx ?? []
+  }
+
+  return NextResponse.json({
+    messages: messages ?? [],
+    reactions,
+    myKey: `client:${client.id}`,
+  })
 }
 
 export async function POST(

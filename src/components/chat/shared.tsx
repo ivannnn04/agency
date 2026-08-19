@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Paperclip, Loader2, CalendarDays } from 'lucide-react'
+import { Send, Paperclip, Loader2, CalendarDays, SmilePlus } from 'lucide-react'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -262,4 +262,106 @@ export function fileTooBig(f: File) {
 export function safeStoragePath(projectId: string, fileName: string) {
   const safe = fileName.replace(/[^\w.\-]+/g, '_').slice(-80)
   return `${projectId}/${crypto.randomUUID()}-${safe}`
+}
+
+// ── Emoji reactions (iOS-tapback set + the usual suspects) ─────────────────────
+
+export interface Reaction {
+  message_id: string
+  emoji: string
+  reactor_key: string
+  reactor_name: string | null
+}
+
+export const REACTION_EMOJIS = [
+  '❤️', '👍', '👎', '😂', '‼️', '❓',
+  '😮', '😢', '🔥', '🎉', '👏', '🙏',
+  '✅', '👀', '💪', '😍', '🤔', '😅',
+  '🥳', '🫡', '🤝', '⭐', '⚡', '💯',
+]
+
+// Small hover button + emoji palette popover.
+export function ReactionPicker({ onPick, mine }: {
+  onPick: (emoji: string) => void
+  mine: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 p-1 rounded transition-all"
+        title="React"
+      >
+        <SmilePlus size={13} />
+      </button>
+      {open && (
+        <div
+          className={`absolute bottom-full mb-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg p-2 grid grid-cols-6 gap-0.5 w-56 ${
+            mine ? 'right-0' : 'left-0'
+          }`}
+        >
+          {REACTION_EMOJIS.map(e => (
+            <button
+              key={e}
+              onClick={() => { onPick(e); setOpen(false) }}
+              className="text-lg leading-none p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Reaction chips under a bubble: grouped by emoji with count; own reactions
+// highlighted, click toggles.
+export function ReactionChips({ reactions, myKey, onToggle, mine }: {
+  reactions: Reaction[]
+  myKey: string
+  onToggle: (emoji: string) => void
+  mine: boolean
+}) {
+  if (reactions.length === 0) return null
+  const grouped = new Map<string, Reaction[]>()
+  for (const r of reactions) {
+    if (!grouped.has(r.emoji)) grouped.set(r.emoji, [])
+    grouped.get(r.emoji)!.push(r)
+  }
+  return (
+    <div className={`flex flex-wrap gap-1 mt-1 ${mine ? 'justify-end' : ''}`}>
+      {[...grouped.entries()].map(([emoji, rs]) => {
+        const isMine = rs.some(r => r.reactor_key === myKey)
+        const names = rs.map(r => r.reactor_name || '—').join(', ')
+        return (
+          <button
+            key={emoji}
+            onClick={() => onToggle(emoji)}
+            title={names}
+            className={`flex items-center gap-1 text-xs rounded-full px-1.5 py-0.5 border transition-colors ${
+              isMine
+                ? 'bg-teal-50 border-teal-300 text-teal-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            <span className="text-[13px] leading-none">{emoji}</span>
+            {rs.length > 1 && <span className="font-medium">{rs.length}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
 }

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -389,6 +389,8 @@ function PortalChat({ projectId, token, people, onClose }: {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [bookingOpen, setBookingOpen] = useState(false)
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
+  const [myKey, setMyKey] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const { width, startResize } = useChatWidth()
 
@@ -397,8 +399,15 @@ function PortalChat({ projectId, token, people, onClose }: {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (res.ok) {
-      const { messages: msgs } = await res.json()
+      const { messages: msgs, reactions: rx, myKey: mk } = await res.json()
       setMessages(msgs)
+      if (mk) setMyKey(mk)
+      const map: Record<string, Reaction[]> = {}
+      for (const r of (rx ?? []) as Reaction[]) {
+        if (!map[r.message_id]) map[r.message_id] = []
+        map[r.message_id].push(r)
+      }
+      setReactions(map)
     }
   }, [projectId, token])
 
@@ -427,6 +436,22 @@ function PortalChat({ projectId, token, people, onClose }: {
       setMessages(prev => [...prev, msg])
       setInput('')
     }
+  }
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    if (!myKey) return
+    const has = (reactions[messageId] ?? []).some(r => r.emoji === emoji && r.reactor_key === myKey)
+    setReactions(prev => ({
+      ...prev,
+      [messageId]: has
+        ? (prev[messageId] ?? []).filter(r => !(r.emoji === emoji && r.reactor_key === myKey))
+        : [...(prev[messageId] ?? []), { message_id: messageId, emoji, reactor_key: myKey, reactor_name: 'You' }],
+    }))
+    await fetch(`/api/portal/project/${projectId}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ messageId, emoji }),
+    })
   }
 
   async function sendFile(f: File) {
@@ -473,7 +498,7 @@ function PortalChat({ projectId, token, people, onClose }: {
         {messages.map(m => {
           const mine = m.sender_type === 'client'
           return (
-            <div key={m.id} className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
+            <div key={m.id} className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}>
               {!mine && (
                 <p className="text-[10px] text-gray-400 mb-0.5 px-1">
                   {m.sender_name}
@@ -483,18 +508,27 @@ function PortalChat({ projectId, token, people, onClose }: {
                   )}
                 </p>
               )}
-              <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                mine
-                  ? 'bg-teal-500 text-white rounded-br-md'
-                  : m.sender_type === 'bot'
-                    ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
-              }`}>
-                <MessageBody content={m.content} names={people} mine={mine} />
-                {m.file_url && (
-                  <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
-                )}
+              <div className={`flex items-center gap-0.5 ${mine ? 'flex-row-reverse' : ''}`}>
+                <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                  mine
+                    ? 'bg-teal-500 text-white rounded-br-md'
+                    : m.sender_type === 'bot'
+                      ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
+                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                }`}>
+                  <MessageBody content={m.content} names={people} mine={mine} />
+                  {m.file_url && (
+                    <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
+                  )}
+                </div>
+                <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
               </div>
+              <ReactionChips
+                reactions={reactions[m.id] ?? []}
+                myKey={myKey}
+                onToggle={emoji => toggleReaction(m.id, emoji)}
+                mine={mine}
+              />
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </p>

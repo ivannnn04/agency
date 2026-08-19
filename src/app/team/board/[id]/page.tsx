@@ -8,7 +8,7 @@ import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
   ArrowLeft, LogOut, Plus, Flag, Calendar, User, Play, Square, Timer,
-  BarChart2, X, Trash2, Clock, MessageSquare,
+  BarChart2, X, Trash2, Clock, MessageSquare, Pencil, Check,
 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
@@ -152,6 +152,17 @@ export default function TeamBoardPage() {
     }
 
     setLoading(false)
+  }
+
+  // Re-sum a task's tracked time after manual edits in the entries editor
+  async function refreshTaskTime(taskId: string) {
+    const { data: entries } = await supabase
+      .from('time_entries')
+      .select('duration_seconds')
+      .eq('task_id', taskId)
+      .not('ended_at', 'is', null)
+    const sum = (entries ?? []).reduce((a, e) => a + (e.duration_seconds ?? 0), 0)
+    setTimeByTask(prev => ({ ...prev, [taskId]: sum }))
   }
 
   async function startTimer(taskId: string) {
@@ -556,6 +567,7 @@ export default function TeamBoardPage() {
             elapsed={elapsed}
             onStartTimer={() => startTimer(selectedTask.id)}
             onStopTimer={stopTimer}
+            onTimeChanged={() => refreshTaskTime(selectedTask.id)}
             onClose={() => setSelectedTask(null)}
             onUpdate={patch => updateTask(selectedTask.id, patch)}
             onMove={colId => moveTask(selectedTask.id, colId)}
@@ -640,7 +652,7 @@ function AssigneeStack({ memberIds, allMembers, currentMemberId, max = 3 }: {
 function TaskPanel({
   task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
   trackedSeconds, isTimerActive, otherTimerActive, elapsed,
-  onStartTimer, onStopTimer, onClose, onUpdate, onMove,
+  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove,
 }: {
   task: PMTask
   columns: PMColumn[]
@@ -655,6 +667,7 @@ function TaskPanel({
   elapsed: number
   onStartTimer: () => void
   onStopTimer: () => void
+  onTimeChanged: () => void
   onClose: () => void
   onUpdate: (patch: Partial<PMTask>) => void
   onMove: (colId: string) => void
@@ -765,6 +778,11 @@ function TaskPanel({
                 style={{ width: `${Math.min(100, (trackedSeconds / estimateSec) * 100)}%` }}
               />
             </div>
+          )}
+
+          {/* My time entries: edit / delete / add manually */}
+          {member && (
+            <TimeEntriesEditor taskId={task.id} memberId={member.id} onChanged={onTimeChanged} />
           )}
         </div>
 
@@ -893,6 +911,158 @@ function TaskPanel({
           />
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── My time entries editor: fix a runaway timer, delete, or add time by hand ────
+
+interface TimeEntryRow {
+  id: string
+  started_at: string
+  duration_seconds: number | null
+}
+
+function TimeEntriesEditor({ taskId, memberId, onChanged }: {
+  taskId: string
+  memberId: string
+  onChanged: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [entries, setEntries] = useState<TimeEntryRow[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editH, setEditH] = useState('')
+  const [editM, setEditM] = useState('')
+  const [addH, setAddH] = useState('')
+  const [addM, setAddM] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function loadEntries() {
+    const { data } = await supabase
+      .from('time_entries')
+      .select('id, started_at, duration_seconds')
+      .eq('task_id', taskId)
+      .eq('team_member_id', memberId)
+      .not('ended_at', 'is', null)
+      .order('started_at', { ascending: false })
+    setEntries((data ?? []) as TimeEntryRow[])
+  }
+
+  useEffect(() => {
+    if (open) loadEntries()
+    setEditingId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, taskId])
+
+  function startEdit(e: TimeEntryRow) {
+    const secs = e.duration_seconds ?? 0
+    setEditingId(e.id)
+    setEditH(String(Math.floor(secs / 3600)))
+    setEditM(String(Math.floor((secs % 3600) / 60)))
+  }
+
+  async function saveEdit(entryId: string) {
+    const secs = (parseInt(editH) || 0) * 3600 + (parseInt(editM) || 0) * 60
+    setBusy(true)
+    await supabase.from('time_entries').update({ duration_seconds: secs }).eq('id', entryId)
+    setEditingId(null)
+    setBusy(false)
+    await loadEntries()
+    onChanged()
+  }
+
+  async function deleteEntry(entryId: string) {
+    setBusy(true)
+    await supabase.from('time_entries').delete().eq('id', entryId)
+    setBusy(false)
+    await loadEntries()
+    onChanged()
+  }
+
+  async function addManual() {
+    const secs = (parseInt(addH) || 0) * 3600 + (parseInt(addM) || 0) * 60
+    if (secs <= 0) return
+    setBusy(true)
+    const now = new Date().toISOString()
+    await supabase.from('time_entries').insert({
+      task_id: taskId,
+      team_member_id: memberId,
+      started_at: now,
+      ended_at: now,
+      duration_seconds: secs,
+    })
+    setAddH(''); setAddM('')
+    setBusy(false)
+    await loadEntries()
+    onChanged()
+  }
+
+  const numInput =
+    'w-12 text-xs border border-gray-200 rounded-md px-1.5 py-1 text-right focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white'
+
+  return (
+    <div className="mt-3 border-t border-gray-200 pt-2.5">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors"
+      >
+        <Pencil size={11} />
+        {open ? 'Сховати мій час' : 'Редагувати мій час'}
+      </button>
+
+      {open && (
+        <div className="mt-2.5 flex flex-col gap-1.5">
+          {entries.length === 0 && (
+            <p className="text-[11px] text-gray-400">У вас ще немає записів часу на цій задачі</p>
+          )}
+          {entries.map(e => (
+            <div key={e.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100">
+              <span className="text-[11px] text-gray-400 flex-shrink-0">
+                {new Date(e.started_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </span>
+              {editingId === e.id ? (
+                <span className="flex items-center gap-1">
+                  <input value={editH} onChange={ev => setEditH(ev.target.value)} type="number" min={0} className={numInput} />
+                  <span className="text-[10px] text-gray-400">г</span>
+                  <input value={editM} onChange={ev => setEditM(ev.target.value)} type="number" min={0} max={59} className={numInput} />
+                  <span className="text-[10px] text-gray-400">хв</span>
+                  <button onClick={() => saveEdit(e.id)} disabled={busy} className="text-teal-600 hover:text-teal-800 p-1">
+                    <Check size={13} />
+                  </button>
+                  <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 p-1">
+                    <X size={12} />
+                  </button>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <span className="text-xs font-medium text-gray-700">{formatHours(e.duration_seconds ?? 0)}</span>
+                  <button onClick={() => startEdit(e)} title="Змінити тривалість" className="text-gray-300 hover:text-teal-600 p-1">
+                    <Pencil size={11} />
+                  </button>
+                  <button onClick={() => deleteEntry(e.id)} disabled={busy} title="Видалити запис" className="text-gray-300 hover:text-red-400 p-1">
+                    <Trash2 size={11} />
+                  </button>
+                </span>
+              )}
+            </div>
+          ))}
+
+          {/* Manual add */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <input value={addH} onChange={e => setAddH(e.target.value)} type="number" min={0} placeholder="0" className={numInput} />
+            <span className="text-[10px] text-gray-400">г</span>
+            <input value={addM} onChange={e => setAddM(e.target.value)} type="number" min={0} max={59} placeholder="00" className={numInput} />
+            <span className="text-[10px] text-gray-400">хв</span>
+            <button
+              onClick={addManual}
+              disabled={busy || ((parseInt(addH) || 0) === 0 && (parseInt(addM) || 0) === 0)}
+              className="text-xs bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg px-2.5 py-1 ml-1 transition-colors"
+            >
+              + Додати час
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

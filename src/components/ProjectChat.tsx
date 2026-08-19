@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
 } from '@/components/chat/shared'
 import { getLastRead, markRead } from '@/lib/chatUnread'
 
@@ -48,6 +48,7 @@ export default function ProjectChat({ projectId, sender, onClose }: {
   const [error, setError] = useState('')
   const [people, setPeople] = useState<ChatPerson[]>([])
   const [digest, setDigest] = useState<Digest | null>(null)
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
   const [digestEdit, setDigestEdit] = useState<string | null>(null)
   const [digestBusy, setDigestBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -85,6 +86,20 @@ export default function ProjectChat({ projectId, sender, onClose }: {
       .limit(500)
     if (err) { setError('Таблиця project_messages не знайдена — запусти міграції з папки supabase/'); return }
     setMessages(data as Message[])
+
+    // Reactions come in one project-wide query (table may not exist yet)
+    const { data: rx } = await supabase
+      .from('message_reactions')
+      .select('message_id, emoji, reactor_key, reactor_name')
+      .eq('project_id', projectId)
+    if (rx) {
+      const map: Record<string, Reaction[]> = {}
+      for (const r of rx as Reaction[]) {
+        if (!map[r.message_id]) map[r.message_id] = []
+        map[r.message_id].push(r)
+      }
+      setReactions(map)
+    }
 
     // Pending AI digest draft (shown in the team channel until approved/dismissed)
     const { data: dg } = await supabase
@@ -157,6 +172,39 @@ export default function ProjectChat({ projectId, sender, onClose }: {
     setSending(true)
     await insertMessage(text)
     setSending(false)
+  }
+
+  const myReactorKey = sender.type === 'admin' ? 'admin' : `team:${sender.teamMemberId}`
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    const existing = (reactions[messageId] ?? []).find(
+      r => r.emoji === emoji && r.reactor_key === myReactorKey
+    )
+    if (existing) {
+      setReactions(prev => ({
+        ...prev,
+        [messageId]: (prev[messageId] ?? []).filter(r => !(r.emoji === emoji && r.reactor_key === myReactorKey)),
+      }))
+      await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('emoji', emoji)
+        .eq('reactor_key', myReactorKey)
+    } else {
+      const optimistic: Reaction = {
+        message_id: messageId, emoji, reactor_key: myReactorKey, reactor_name: sender.name,
+      }
+      setReactions(prev => ({ ...prev, [messageId]: [...(prev[messageId] ?? []), optimistic] }))
+      const { error: rxErr } = await supabase.from('message_reactions').insert({
+        message_id: messageId,
+        project_id: projectId,
+        emoji,
+        reactor_key: myReactorKey,
+        reactor_name: sender.name,
+      })
+      if (rxErr) setError('Реакції не збережуться — запусти міграцію chat_reactions_migration.sql')
+    }
   }
 
   async function sendFile(f: File) {
@@ -366,7 +414,7 @@ export default function ProjectChat({ projectId, sender, onClose }: {
         {channelMessages.map(m => {
           const mine = isMine(m)
           return (
-            <div key={m.id} className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
+            <div key={m.id} className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}>
               {!mine && (
                 <p className="text-[10px] text-gray-400 mb-0.5 px-1">
                   {m.sender_name}
@@ -379,20 +427,29 @@ export default function ProjectChat({ projectId, sender, onClose }: {
                   {m.sender_type === 'admin' && ' · адмін'}
                 </p>
               )}
-              <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                mine
-                  ? 'bg-gray-900 text-white rounded-br-md'
-                  : m.sender_type === 'client'
-                    ? 'bg-teal-50 text-gray-800 border border-teal-100 rounded-bl-md'
-                    : m.sender_type === 'bot'
-                      ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
-              }`}>
-                <MessageBody content={m.content} names={mentionNames} mine={mine} />
-                {m.file_url && (
-                  <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
-                )}
+              <div className={`flex items-center gap-0.5 ${mine ? 'flex-row-reverse' : ''}`}>
+                <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                  mine
+                    ? 'bg-gray-900 text-white rounded-br-md'
+                    : m.sender_type === 'client'
+                      ? 'bg-teal-50 text-gray-800 border border-teal-100 rounded-bl-md'
+                      : m.sender_type === 'bot'
+                        ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
+                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                }`}>
+                  <MessageBody content={m.content} names={mentionNames} mine={mine} />
+                  {m.file_url && (
+                    <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
+                  )}
+                </div>
+                <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
               </div>
+              <ReactionChips
+                reactions={reactions[m.id] ?? []}
+                myKey={myReactorKey}
+                onToggle={emoji => toggleReaction(m.id, emoji)}
+                mine={mine}
+              />
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </p>

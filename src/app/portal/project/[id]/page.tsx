@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowLeft, Calendar, Flag, Clock, MessageSquare, X, FilePen, Paperclip, Loader2, CalendarDays,
+  NotebookPen, Plus,
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
@@ -13,6 +14,7 @@ import {
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
+import ProjectNotepad from '@/components/ProjectNotepad'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
@@ -72,6 +74,8 @@ export default function PortalProjectPage() {
   const [loading, setLoading] = useState(true)
   const [denied, setDenied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [view, setView] = useState<'board' | 'timeline'>('board')
   const [crTask, setCrTask] = useState<PortalTask | null>(null)
 
@@ -143,7 +147,22 @@ export default function PortalProjectPage() {
         <div className="flex items-center gap-2">
           <ThemeToggle variant="sidebar" />
           <button
-            onClick={() => setChatOpen(v => !v)}
+            onClick={() => setAddTaskOpen(true)}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            title="Add a task to the backlog"
+          >
+            <Plus size={13} /> Add task
+          </button>
+          <button
+            onClick={() => { setChatOpen(false); setNotesOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              notesOpen ? 'bg-amber-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
+            }`}
+          >
+            <NotebookPen size={13} /> Notes
+          </button>
+          <button
+            onClick={() => { setNotesOpen(false); setChatOpen(v => !v) }}
             className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >
             <MessageSquare size={13} /> Team chat
@@ -250,6 +269,113 @@ export default function PortalProjectPage() {
           onClose={() => setChatOpen(false)}
         />
       )}
+
+      {notesOpen && token && (
+        <ProjectNotepad
+          projectId={project.id}
+          viewer={{ type: 'client', name: '' }}
+          portalToken={token}
+          lang="en"
+          onClose={() => setNotesOpen(false)}
+        />
+      )}
+
+      {addTaskOpen && token && (
+        <AddTaskModal
+          projectId={project.id}
+          token={token}
+          onClose={() => setAddTaskOpen(false)}
+          onCreated={() => { setAddTaskOpen(false); refetch(token) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Client adds a task (goes to the Backlog only) ──────────────────────────────
+
+function AddTaskModal({ projectId, token, onClose, onCreated }: {
+  projectId: string
+  token: string
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [desc, setDesc] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit() {
+    const t = title.trim()
+    if (!t || saving) return
+    setSaving(true)
+    setError('')
+    const res = await fetch(`/api/portal/project/${projectId}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: t, description: desc.trim() }),
+    })
+    setSaving(false)
+    if (!res.ok) {
+      const { error: err } = await res.json().catch(() => ({ error: 'Something went wrong' }))
+      setError(err)
+      return
+    }
+    onCreated()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Add a task</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              It lands in the Backlog — the team will review and schedule it
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="p-5 flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
+            <input
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submit() }}
+              placeholder="What needs to be done?"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Details (optional)</label>
+            <textarea
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              rows={4}
+              placeholder="Anything that helps the team understand the request"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+            />
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={saving || !title.trim()}
+              className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
+            >
+              {saving ? 'Adding...' : 'Add to Backlog'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

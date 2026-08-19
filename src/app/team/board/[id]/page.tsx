@@ -8,11 +8,12 @@ import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
 import {
   ArrowLeft, LogOut, Plus, Flag, Calendar, User, Play, Square, Timer,
-  BarChart2, X, Trash2, Clock, MessageSquare, Pencil, Check,
+  BarChart2, X, Trash2, Clock, MessageSquare, Pencil, Check, NotebookPen,
 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
+import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 
 interface Project {
@@ -76,6 +77,7 @@ export default function TeamBoardPage() {
   const [saving, setSaving] = useState(false)
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [notepadOpen, setNotepadOpen] = useState(false)
   // Team portal has no global sidebar — this hook also plays the ping sound
   const chatUnread = useChatUnread({ self: 'team', memberId: member?.id, projectId: id, sound: true, intervalMs: 8000 })
 
@@ -323,7 +325,16 @@ export default function TeamBoardPage() {
 
         <div className="ml-auto flex items-center gap-3">
           <button
-            onClick={() => setChatOpen(v => !v)}
+            onClick={() => { setChatOpen(false); setNotepadOpen(v => !v) }}
+            className={`flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
+              notepadOpen ? 'bg-amber-500 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+            title="Нотатки проєкту"
+          >
+            <NotebookPen size={14} /> Нотатки
+          </button>
+          <button
+            onClick={() => { setNotepadOpen(false); setChatOpen(v => !v) }}
             className={`relative flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
               chatOpen ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
             }`}
@@ -581,6 +592,15 @@ export default function TeamBoardPage() {
           projectId={id}
           sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
           onClose={() => setChatOpen(false)}
+        />
+      )}
+
+      {/* Project notepad drawer */}
+      {notepadOpen && member && (
+        <ProjectNotepad
+          projectId={id}
+          viewer={{ type: 'team', name: member.name, id: member.id }}
+          onClose={() => setNotepadOpen(false)}
         />
       )}
 

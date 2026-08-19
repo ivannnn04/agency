@@ -9,10 +9,11 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
-  Link2, Copy, MessageSquare, Clock, Send, Loader2,
+  Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
+import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
@@ -116,6 +117,7 @@ export default function BoardPage() {
   const [invitedClientId, setInvitedClientId] = useState<string | null>(null)
   const [clientInviteError, setClientInviteError] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
+  const [notepadOpen, setNotepadOpen] = useState(false)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const clientRef = useRef<HTMLDivElement>(null)
@@ -704,9 +706,20 @@ create policy "team_members_all" on team_members for all using (true) with check
             )}
           </div>
 
+          {/* Project notepad */}
+          <button
+            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              notepadOpen ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Нотатки проєкту"
+          >
+            <NotebookPen size={13} /> Нотатки
+          </button>
+
           {/* Project chat */}
           <button
-            onClick={() => { setSelectedTask(null); setChatOpen(v => !v) }}
+            onClick={() => { setSelectedTask(null); setNotepadOpen(false); setChatOpen(v => !v) }}
             className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               chatOpen ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
@@ -795,6 +808,15 @@ create policy "team_members_all" on team_members for all using (true) with check
           projectId={id}
           sender={{ type: 'admin', name: 'Ivan' }}
           onClose={() => setChatOpen(false)}
+        />
+      )}
+
+      {/* Project notepad drawer */}
+      {notepadOpen && (
+        <ProjectNotepad
+          projectId={id}
+          viewer={{ type: 'admin', name: 'Ivan' }}
+          onClose={() => setNotepadOpen(false)}
         />
       )}
 

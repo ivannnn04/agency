@@ -37,6 +37,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
   const [comment, setComment] = useState('')
   const [isPlanned, setIsPlanned] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   useEffect(() => {
     if (open) {
@@ -81,6 +82,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!amount || !accountId) return
+    setSubmitError('')
     setLoading(true)
 
     try {
@@ -120,16 +122,19 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
       }
 
       if (isEdit && transaction) {
-        // Undo the old balance effect, then apply the new one
+        // The DB write must succeed BEFORE balances move — otherwise a failed
+        // write silently corrupts account balances
+        const { error: updErr } = await supabase.from('transactions').update(payload).eq('id', transaction.id)
+        if (updErr) { setSubmitError(`Не збережено: ${updErr.message}`); return }
         await adjustBalancesForTransaction(transaction, -1)
         await adjustBalancesForTransaction({
           type, amount: txAmount, account_id: accountId,
           to_account_id: type === 'transfer' ? toAccountId || null : null,
           to_amount: type === 'transfer' ? toTxAmount : null,
         }, 1)
-        await supabase.from('transactions').update(payload).eq('id', transaction.id)
       } else {
-        await supabase.from('transactions').insert(payload)
+        const { error: insErr } = await supabase.from('transactions').insert(payload)
+        if (insErr) { setSubmitError(`Не збережено: ${insErr.message}`); return }
         await adjustBalancesForTransaction({
           type, amount: txAmount, account_id: accountId,
           to_account_id: type === 'transfer' ? toAccountId || null : null,
@@ -362,6 +367,10 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
             />
             <span className="text-sm text-gray-600">Плановий платіж</span>
           </label>
+
+          {submitError && (
+            <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{submitError}</p>
+          )}
 
           <button
             type="submit"

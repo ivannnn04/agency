@@ -15,6 +15,7 @@ export default function PaymentsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [fetchError, setFetchError] = useState('')
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -33,8 +34,12 @@ export default function PaymentsPage() {
     if (dateFrom) query = query.gte('date', dateFrom)
     if (dateTo) query = query.lte('date', dateTo)
 
-    const { data } = await query
-    if (data) {
+    const { data, error } = await query
+    if (error) {
+      // A silent failure here looks like "no transactions" — surface it instead
+      setFetchError(`Не вдалося завантажити платежі: ${error.message}`)
+    } else if (data) {
+      setFetchError('')
       const filtered = search
         ? data.filter(t =>
             t.counterparty?.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -156,8 +161,14 @@ export default function PaymentsPage() {
             {transactions.length === 0 && !loading && (
               <tr>
                 <td colSpan={8} className="text-center py-16 text-gray-400">
-                  <p className="text-4xl mb-3">💸</p>
-                  <p>Немає операцій</p>
+                  {fetchError ? (
+                    <p className="text-sm text-red-500">{fetchError}</p>
+                  ) : (
+                    <>
+                      <p className="text-4xl mb-3">💸</p>
+                      <p>Немає операцій</p>
+                    </>
+                  )}
                 </td>
               </tr>
             )}

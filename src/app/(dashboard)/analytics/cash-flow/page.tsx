@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRates } from '@/lib/use-rates'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { ArrowLeft, Download } from 'lucide-react'
 import Link from 'next/link'
@@ -11,10 +12,12 @@ export default function CashFlowPage() {
   const [incomeByCategory, setIncomeByCategory] = useState<any[]>([])
   const [expenseByCategory, setExpenseByCategory] = useState<any[]>([])
   const [year, setYear] = useState(new Date().getFullYear())
+  const { toUSD, loading: ratesLoading } = useRates()
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    fetchData()
-  }, [year])
+    if (!ratesLoading) fetchData()
+  }, [year, ratesLoading])
 
   async function fetchData() {
     const { data: txs } = await supabase
@@ -29,8 +32,8 @@ export default function CashFlowPage() {
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1
       const monthTxs = txs.filter(t => new Date(t.date).getMonth() + 1 === month)
-      const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+      const income = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const expense = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
       return {
         name: new Date(year, i, 1).toLocaleString('uk-UA', { month: 'short' }),
         Надходження: income,
@@ -53,7 +56,7 @@ export default function CashFlowPage() {
     const map: Record<string, number> = {}
     txs.forEach(t => {
       const name = t.category?.name ?? 'Без категорії'
-      map[name] = (map[name] ?? 0) + t.amount
+      map[name] = (map[name] ?? 0) + toUSD(t.amount, t.currency)
     })
     return Object.entries(map)
       .map(([name, amount]) => ({ name, amount }))
@@ -92,7 +95,7 @@ export default function CashFlowPage() {
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-            <Tooltip formatter={(v) => `₴ ${Number(v).toLocaleString('uk-UA')}`} />
+            <Tooltip formatter={(v) => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
             <Legend />
             <Line type="monotone" dataKey="Надходження" stroke="#14b8a6" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="Списання" stroke="#ef4444" strokeWidth={2} dot={false} />
@@ -104,13 +107,13 @@ export default function CashFlowPage() {
       <div className="grid grid-cols-2 gap-6">
         <div>
           <h3 className="font-semibold text-gray-700 mb-3">
-            Надходження ₴ {totalIncome.toLocaleString('uk-UA')}
+            Надходження ${totalIncome.toLocaleString('en-US', { maximumFractionDigits: 2 })}
           </h3>
           <div className="space-y-2">
             {incomeByCategory.map(c => (
               <div key={c.name} className="flex justify-between items-center py-1.5 border-b border-gray-50">
                 <span className="text-sm text-gray-600">{c.name}</span>
-                <span className="text-sm font-medium text-teal-600">₴ {c.amount.toLocaleString('uk-UA')}</span>
+                <span className="text-sm font-medium text-teal-600">${c.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
               </div>
             ))}
             {incomeByCategory.length === 0 && <p className="text-sm text-gray-400">Немає даних</p>}
@@ -118,13 +121,13 @@ export default function CashFlowPage() {
         </div>
         <div>
           <h3 className="font-semibold text-gray-700 mb-3">
-            Списання ₴ {totalExpense.toLocaleString('uk-UA')}
+            Списання ${totalExpense.toLocaleString('en-US', { maximumFractionDigits: 2 })}
           </h3>
           <div className="space-y-2">
             {expenseByCategory.map(c => (
               <div key={c.name} className="flex justify-between items-center py-1.5 border-b border-gray-50">
                 <span className="text-sm text-gray-600">{c.name}</span>
-                <span className="text-sm font-medium text-red-500">₴ {c.amount.toLocaleString('uk-UA')}</span>
+                <span className="text-sm font-medium text-red-500">${c.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
               </div>
             ))}
             {expenseByCategory.length === 0 && <p className="text-sm text-gray-400">Немає даних</p>}

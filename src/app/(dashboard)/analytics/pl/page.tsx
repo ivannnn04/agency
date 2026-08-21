@@ -11,7 +11,7 @@ export default function PLPage() {
   const [data, setData] = useState<any[]>([])
   const [byCategory, setByCategory] = useState<any[]>([])
   const [year, setYear] = useState(new Date().getFullYear())
-  const { toUSD, loading: ratesLoading } = useRates()
+  const { toEUR, loading: ratesLoading } = useRates()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ratesLoading) fetchData() }, [year, ratesLoading])
@@ -29,8 +29,8 @@ export default function PLPage() {
     const months = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1
       const mtxs = txs.filter(t => new Date(t.date).getMonth() + 1 === m)
-      const income = mtxs.filter(t => t.type === 'income').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
-      const expense = mtxs.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const income = mtxs.filter(t => t.type === 'income').reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
+      const expense = mtxs.filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
       return {
         name: new Date(year, i).toLocaleString('uk-UA', { month: 'short' }),
         Дохід: income,
@@ -44,8 +44,8 @@ export default function PLPage() {
     txs.forEach((t: any) => {
       const cat = t.category?.name ?? 'Без категорії'
       if (!map[cat]) map[cat] = { income: 0, expense: 0 }
-      if (t.type === 'income') map[cat].income += toUSD(t.amount, t.currency)
-      else if (t.type === 'expense') map[cat].expense += toUSD(t.amount, t.currency)
+      if (t.type === 'income') map[cat].income += toEUR(t.amount, t.currency)
+      else if (t.type === 'expense') map[cat].expense += toEUR(t.amount, t.currency)
     })
     setByCategory(Object.entries(map).map(([name, v]) => ({ name, ...v, profit: v.income - v.expense })).sort((a, b) => b.profit - a.profit))
   }
@@ -85,7 +85,7 @@ export default function PLPage() {
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
             <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
-            <Tooltip formatter={(v) => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
+            <Tooltip formatter={(v) => '€' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
             <Legend />
             <Area type="monotone" dataKey="Дохід"    stroke="#14b8a6" strokeWidth={2.5} fill="url(#gradIncome)"  dot={false} activeDot={{ r: 4 }} />
             <Area type="monotone" dataKey="Витрата"  stroke="#ef4444" strokeWidth={2.5} fill="url(#gradExpense)" dot={false} activeDot={{ r: 4 }} />
@@ -99,9 +99,9 @@ export default function PLPage() {
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="text-left py-3 px-4 text-gray-500 font-medium">Категорія</th>
-              <th className="text-right py-3 px-4 text-gray-500 font-medium">Дохід, $</th>
-              <th className="text-right py-3 px-4 text-gray-500 font-medium">Витрата, $</th>
-              <th className="text-right py-3 px-4 text-gray-500 font-medium">Прибуток, $</th>
+              <th className="text-right py-3 px-4 text-gray-500 font-medium">Дохід, €</th>
+              <th className="text-right py-3 px-4 text-gray-500 font-medium">Витрата, €</th>
+              <th className="text-right py-3 px-4 text-gray-500 font-medium">Прибуток, €</th>
             </tr>
           </thead>
           <tbody>

@@ -60,11 +60,11 @@ export default function Sidebar() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const { rates, loading: ratesLoading, toUSD, fmtUSD } = useRates()
+  const { rates, loading: ratesLoading, toEUR, fmtEUR } = useRates()
   // Chat notifications for the whole admin app: sidebar dots + Slack-style ping
   const chatUnread = useChatUnread({ self: 'admin', sound: true })
 
-  const totalUSD = accounts.reduce((s, a) => s + toUSD(a.balance, a.currency), 0)
+  const totalUSD = accounts.reduce((s, a) => s + toEUR(a.balance, a.currency), 0)
 
   useEffect(() => {
     setSection(isPMPath(pathname) ? 'projects' : 'finance')
@@ -193,8 +193,8 @@ export default function Sidebar() {
       .lte('date', in30Days.toISOString())
 
     if (data) {
-      const income  = data.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const expense = data.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const income  = data.filter(t => t.type === 'income').reduce((s, t)  => s + toEUR(t.amount, t.currency), 0)
+      const expense = data.filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
       setPlannedIncome(income)
       setPlannedExpense(expense)
     }
@@ -282,7 +282,7 @@ export default function Sidebar() {
             <div className="flex flex-col gap-4 p-4 flex-1 overflow-y-auto">
               <div>
                 <p className="text-xs text-gray-400 mb-1">Всього на рахунках</p>
-                <p className="text-2xl font-bold">{fmtUSD(totalUSD)}</p>
+                <p className="text-2xl font-bold">{fmtEUR(totalUSD)}</p>
               </div>
 
               {/* NBU rates */}
@@ -362,7 +362,7 @@ export default function Sidebar() {
                           )}
                           {editingId !== account.id && account.currency !== 'USD' && rates.USD > 0 && (
                             <div className="text-[10px] text-gray-600">
-                              ≈ {fmtUSD(toUSD(account.balance, account.currency))}
+                              ≈ {fmtEUR(toEUR(account.balance, account.currency))}
                             </div>
                           )}
                         </div>
@@ -395,11 +395,11 @@ export default function Sidebar() {
                 <div className="flex flex-col gap-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Доходи</span>
-                    <span className="text-teal-400">{fmtUSD(plannedIncome)}</span>
+                    <span className="text-teal-400">{fmtEUR(plannedIncome)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Витрати</span>
-                    <span className="text-red-400">{fmtUSD(plannedExpense)}</span>
+                    <span className="text-red-400">{fmtEUR(plannedExpense)}</span>
                   </div>
                 </div>
               </div>

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 
 export default function AnalyticsPage() {
-  const { toUSD, fmtUSD, loading: ratesLoading } = useRates()
+  const { toEUR, fmtEUR, loading: ratesLoading } = useRates()
   const [remaining, setRemaining] = useState(0)
   const [contractsCount, setContractsCount] = useState(0)
   const [openInvoices, setOpenInvoices] = useState(0)
@@ -38,7 +38,7 @@ export default function AnalyticsPage() {
     const incomeByProject: Record<string, number> = {}
     for (const t of txs ?? []) {
       if (!t.project_id) continue
-      incomeByProject[t.project_id] = (incomeByProject[t.project_id] ?? 0) + toUSD(t.amount, t.currency)
+      incomeByProject[t.project_id] = (incomeByProject[t.project_id] ?? 0) + toEUR(t.amount, t.currency)
     }
 
     // Revenue this calendar month — every actual income across the agency
@@ -46,7 +46,7 @@ export default function AnalyticsPage() {
     setMonthRevenue(
       (txs ?? [])
         .filter(t => String(t.date ?? '').startsWith(monthPrefix))
-        .reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+        .reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
     )
 
     let rem = 0, cnt = 0
@@ -54,8 +54,8 @@ export default function AnalyticsPage() {
     for (const p of projects ?? []) {
       if (!p.contract_amount || p.contract_amount <= 0) continue
       const cur = p.contract_currency ?? 'USD'
-      const contractUSD = toUSD(p.contract_amount, cur)
-      const receivedUSD = toUSD(p.received_before_app ?? 0, cur) + (incomeByProject[p.id] ?? 0)
+      const contractUSD = toEUR(p.contract_amount, cur)
+      const receivedUSD = toEUR(p.received_before_app ?? 0, cur) + (incomeByProject[p.id] ?? 0)
       const r = Math.max(0, contractUSD - receivedUSD)
       if (r > 0.5) { rem += r; cnt += 1 }
       // Sales amount: signed deals with nothing received yet
@@ -68,7 +68,7 @@ export default function AnalyticsPage() {
 
     let inv = 0
     for (const i of invoices ?? []) {
-      inv += toUSD(i.amount - (i.paid_amount ?? 0), i.currency)
+      inv += toEUR(i.amount - (i.paid_amount ?? 0), i.currency)
     }
     setOpenInvoices(inv)
     setOpenInvoicesCount((invoices ?? []).length)
@@ -108,7 +108,7 @@ export default function AnalyticsPage() {
       description: 'Всі рахунки до отримання — додавання, редагування, часткові оплати',
       accent: 'group-hover:text-amber-500',
       stat: loading ? null : openInvoicesCount > 0
-        ? `${fmtUSD(openInvoices)} · ${openInvoicesCount} відкритих`
+        ? `${fmtEUR(openInvoices)} · ${openInvoicesCount} відкритих`
         : 'Немає відкритих рахунків',
     },
   ]
@@ -124,7 +124,7 @@ export default function AnalyticsPage() {
             <Clock size={16} />
             <span className="text-xs font-medium uppercase tracking-wide">Має надійти з проєктів</span>
           </div>
-          <p className="text-3xl font-bold text-amber-600">{loading ? '…' : fmtUSD(remaining)}</p>
+          <p className="text-3xl font-bold text-amber-600">{loading ? '…' : fmtEUR(remaining)}</p>
           <p className="text-xs text-amber-500/70 mt-1">
             {loading ? '' : `за ${contractsCount} контрактами`}
           </p>
@@ -135,7 +135,7 @@ export default function AnalyticsPage() {
             <Wallet size={16} />
             <span className="text-xs font-medium uppercase tracking-wide">Revenue за місяць</span>
           </div>
-          <p className="text-3xl font-bold text-teal-600">{loading ? '…' : fmtUSD(monthRevenue)}</p>
+          <p className="text-3xl font-bold text-teal-600">{loading ? '…' : fmtEUR(monthRevenue)}</p>
           <p className="text-xs text-teal-500/70 mt-1">
             {loading ? '' : `фактичні надходження за ${new Date().toLocaleDateString('uk-UA', { month: 'long' })}`}
           </p>
@@ -146,7 +146,7 @@ export default function AnalyticsPage() {
             <PenLine size={16} />
             <span className="text-xs font-medium uppercase tracking-wide">Sales amount</span>
           </div>
-          <p className="text-3xl font-bold text-blue-600">{loading ? '…' : fmtUSD(salesAmount)}</p>
+          <p className="text-3xl font-bold text-blue-600">{loading ? '…' : fmtEUR(salesAmount)}</p>
           <p className="text-xs text-blue-500/70 mt-1">
             {loading ? '' : `підписано, ще без оплат — ${salesCount} угод`}
           </p>

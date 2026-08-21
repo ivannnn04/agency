@@ -24,8 +24,8 @@ function fmtDur(seconds: number): string {
   return m > 0 ? `${h}г ${m}хв` : `${h}г`
 }
 
-const fmtUSD = (n: number) =>
-  '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+const fmtEUR = (n: number) =>
+  '€' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
 export default function ProjectReport({ project, members, onClose }: {
   project: Project
@@ -37,7 +37,7 @@ export default function ProjectReport({ project, members, onClose }: {
   const [income, setIncome] = useState(0)
   const [expense, setExpense] = useState(0)
   const [loading, setLoading] = useState(true)
-  const { toUSD, loading: ratesLoading } = useRates()
+  const { toEUR, loading: ratesLoading } = useRates()
   const { width, startResize } = useChatWidth()
 
   useEffect(() => {
@@ -63,8 +63,8 @@ export default function ProjectReport({ project, members, onClose }: {
       ])
       setTasks((tx ?? []) as TaskRow[])
       setEntries((ents ?? []) as EntryRow[])
-      setIncome((txs ?? []).filter(t => t.type === 'income').reduce((s, t) => s + toUSD(t.amount, t.currency), 0))
-      setExpense((txs ?? []).filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0))
+      setIncome((txs ?? []).filter(t => t.type === 'income').reduce((s, t) => s + toEUR(t.amount, t.currency), 0))
+      setExpense((txs ?? []).filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0))
       setLoading(false)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,11 +85,12 @@ export default function ProjectReport({ project, members, onClose }: {
     byMember.set(e.team_member_id, (byMember.get(e.team_member_id) ?? 0) + secs)
   }
 
-  // Labor cost by hourly rates (fixed-salary members counted as hours only)
+  // Labor cost by hourly rates ($/год → EUR base); fixed-salary members
+  // are counted as hours only
   function costOf(memberId: string, seconds: number) {
     const m = memberById.get(memberId)
     if (!m || m.salary_type === 'monthly') return 0
-    return (seconds / 3600) * (m.hourly_rate_usd ?? 0)
+    return toEUR((seconds / 3600) * (m.hourly_rate_usd ?? 0), 'USD')
   }
   let laborCost = 0
   for (const [mid, secs] of byMember) laborCost += costOf(mid, secs)
@@ -130,18 +131,18 @@ export default function ProjectReport({ project, members, onClose }: {
             </div>
             <div className="bg-teal-50 rounded-xl p-3">
               <p className="text-[10px] text-teal-500 uppercase tracking-wide mb-0.5">Отримано</p>
-              <p className="text-lg font-bold text-teal-600">{fmtUSD(income)}</p>
+              <p className="text-lg font-bold text-teal-600">{fmtEUR(income)}</p>
             </div>
             <div className="bg-gray-50 rounded-xl p-3">
               <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Затрекано</p>
               <p className="text-lg font-bold text-gray-900 flex items-center gap-1.5">
                 <Clock size={14} className="text-gray-400" />{fmtDur(totalSeconds)}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">робота по рейтах: {fmtUSD(laborCost)}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">робота по рейтах: {fmtEUR(laborCost)}</p>
             </div>
             <div className="bg-red-50 rounded-xl p-3">
               <p className="text-[10px] text-red-400 uppercase tracking-wide mb-0.5">Витрати (факт)</p>
-              <p className="text-lg font-bold text-red-500">{fmtUSD(expense)}</p>
+              <p className="text-lg font-bold text-red-500">{fmtEUR(expense)}</p>
             </div>
           </div>
 
@@ -164,7 +165,7 @@ export default function ProjectReport({ project, members, onClose }: {
                       <span className="text-sm text-gray-800 font-medium truncate">{m?.name ?? 'Невідомо'}</span>
                       <span className="ml-auto text-xs text-gray-500">{fmtDur(secs)}</span>
                       <span className="text-xs font-semibold text-gray-800 w-16 text-right">
-                        {m?.salary_type === 'monthly' ? 'фікс' : fmtUSD(cost)}
+                        {m?.salary_type === 'monthly' ? 'фікс' : fmtEUR(cost)}
                       </span>
                     </div>
                   )
@@ -190,7 +191,7 @@ export default function ProjectReport({ project, members, onClose }: {
                       <span className="text-sm text-gray-800 truncate flex-1">{t.title}</span>
                       <span className="text-xs text-gray-500 flex-shrink-0">{fmtDur(secs)}</span>
                       <span className="text-xs font-semibold text-gray-800 w-14 text-right flex-shrink-0">
-                        {secs > 0 && cost > 0 ? fmtUSD(cost) : secs > 0 ? '' : '—'}
+                        {secs > 0 && cost > 0 ? fmtEUR(cost) : secs > 0 ? '' : '—'}
                       </span>
                     </div>
                     {tm && tm.size > 0 && (

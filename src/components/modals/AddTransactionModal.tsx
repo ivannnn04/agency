@@ -24,9 +24,9 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
 
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<Currency>('UAH')
+  const [currency, setCurrency] = useState<Currency>('EUR')
   const [toAmount, setToAmount] = useState('')
-  const [toCurrency, setToCurrency] = useState<Currency>('UAH')
+  const [toCurrency, setToCurrency] = useState<Currency>('EUR')
   const [accountId, setAccountId] = useState('')
   const [toAccountId, setToAccountId] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -152,9 +152,9 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
 
   function resetForm() {
     setAmount('')
-    setCurrency('UAH')
+    setCurrency('EUR')
     setToAmount('')
-    setToCurrency('UAH')
+    setToCurrency('EUR')
     setCategoryId('')
     setProjectId('')
     setCounterpartyId('')

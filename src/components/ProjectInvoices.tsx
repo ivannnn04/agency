@@ -44,7 +44,7 @@ export default function ProjectInvoices({ projectId, portalToken, onClose }: {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
   const [title, setTitle] = useState('')
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState('USD')
+  const [currency, setCurrency] = useState('EUR')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

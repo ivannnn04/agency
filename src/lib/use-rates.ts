@@ -42,10 +42,23 @@ export function useRates() {
     return amount
   }
 
+  /** Convert any amount+currency → EUR (the app's base reporting currency) */
+  function toEUR(amount: number, currency: string): number {
+    if (currency === 'EUR') return amount
+    if (currency === 'UAH') return rates.EUR > 0 ? amount / rates.EUR : 0
+    if (currency === 'USD') return rates.EUR > 0 ? (amount * rates.USD) / rates.EUR : 0
+    return amount
+  }
+
   /** Format as USD string */
   function fmtUSD(amount: number) {
     return '$' + amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
   }
 
-  return { rates, loading, toUSD, toUAH, fmtUSD }
+  /** Format as EUR string */
+  function fmtEUR(amount: number) {
+    return '€' + amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  }
+
+  return { rates, loading, toUSD, toUAH, toEUR, fmtUSD, fmtEUR }
 }

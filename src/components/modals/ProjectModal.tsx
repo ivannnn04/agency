@@ -16,7 +16,7 @@ export default function ProjectModal({ project, onClose, onSuccess }: {
 
   const [name, setName]               = useState(project?.name ?? '')
   const [contractAmount, setContractAmount] = useState(project?.contract_amount ? String(project.contract_amount) : '')
-  const [contractCurrency, setContractCurrency] = useState(project?.contract_currency ?? 'USD')
+  const [contractCurrency, setContractCurrency] = useState(project?.contract_currency ?? 'EUR')
   const [receivedBefore, setReceivedBefore] = useState(project?.received_before_app ? String(project.received_before_app) : '')
   const [error, setError]             = useState('')
   const [saving, setSaving]           = useState(false)

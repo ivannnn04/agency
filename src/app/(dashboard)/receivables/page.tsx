@@ -44,11 +44,11 @@ export default function ReceivablesPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [payInvoice, setPayInvoice] = useState<Invoice | null>(null)
-  const { toUSD, fmtUSD } = useRates()
+  const { toEUR, fmtEUR } = useRates()
 
   const unpaid = invoices.filter(i => i.status !== 'paid')
   const paid   = invoices.filter(i => i.status === 'paid')
-  const totalOwed = unpaid.reduce((s, i) => s + toUSD(i.amount - (i.paid_amount ?? 0), i.currency), 0)
+  const totalOwed = unpaid.reduce((s, i) => s + toEUR(i.amount - (i.paid_amount ?? 0), i.currency), 0)
   const overdueCnt = unpaid.filter(i => daysOverdue(i.due_date) > 0).length
 
   useEffect(() => { fetchAll() }, [])
@@ -91,7 +91,7 @@ export default function ReceivablesPage() {
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
           <p className="text-xs text-gray-500 mb-1">Всього до отримання</p>
-          <p className="text-2xl font-bold text-gray-900">{fmtUSD(totalOwed)}</p>
+          <p className="text-2xl font-bold text-gray-900">{fmtEUR(totalOwed)}</p>
           <p className="text-xs text-gray-400 mt-1">{unpaid.length} відкритих рахунків</p>
         </div>
         <div className={`rounded-xl p-4 border ${overdueCnt > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -102,7 +102,7 @@ export default function ReceivablesPage() {
         <div className="bg-teal-50 rounded-xl p-4 border border-teal-100">
           <p className="text-xs text-gray-500 mb-1">Отримано (всього)</p>
           <p className="text-2xl font-bold text-teal-600">
-            {fmtUSD(paid.reduce((s, i) => s + toUSD(i.amount, i.currency), 0))}
+            {fmtEUR(paid.reduce((s, i) => s + toEUR(i.amount, i.currency), 0))}
           </p>
           <p className="text-xs text-gray-400 mt-1">{paid.length} закритих рахунків</p>
         </div>
@@ -156,7 +156,7 @@ export default function ReceivablesPage() {
                         <>
                           <div className="font-semibold text-gray-900">{sym}{inv.amount.toLocaleString('en-US')}</div>
                           {inv.currency !== 'USD' && (
-                            <div className="text-[11px] text-gray-400">≈ {fmtUSD(toUSD(inv.amount, inv.currency))}</div>
+                            <div className="text-[11px] text-gray-400">≈ {fmtEUR(toEUR(inv.amount, inv.currency))}</div>
                           )}
                         </>
                       )}
@@ -212,7 +212,7 @@ export default function ReceivablesPage() {
 
       {/* Paid invoices */}
       {paid.length > 0 && (
-        <PaidSection paid={paid} fmtDate={fmtDate} fmtUSD={fmtUSD} toUSD={toUSD} onEdit={setEditInvoice} />
+        <PaidSection paid={paid} fmtDate={fmtDate} fmtEUR={fmtEUR} toEUR={toEUR} onEdit={setEditInvoice} />
       )}
 
       {addOpen && (
@@ -388,8 +388,8 @@ function ReceivePaymentModal({ invoice, accounts, onClose, onSuccess }: {
 function PaidSection({ paid, fmtDate, onEdit }: {
   paid: Invoice[]
   fmtDate: (d: string) => string
-  fmtUSD: (n: number) => string
-  toUSD: (amount: number, currency: string) => number
+  fmtEUR: (n: number) => string
+  toEUR: (amount: number, currency: string) => number
   onEdit: (inv: Invoice) => void
 }) {
   const [open, setOpen] = useState(false)

@@ -47,7 +47,7 @@ const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 function fmt(n: number) {
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  return '€' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
 export default function ProjectsPage() {
@@ -62,7 +62,7 @@ export default function ProjectsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [addOpen, setAddOpen]     = useState(false)
   const [editProject, setEditProject] = useState<Project | null>(null)
-  const { toUSD, loading: ratesLoading } = useRates()
+  const { toEUR, loading: ratesLoading } = useRates()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!ratesLoading) fetchSummary() }, [year, ratesLoading])
@@ -106,7 +106,8 @@ export default function ProjectsPage() {
       if (paidSet.has(`${e.team_member_id}|${monthKey}`)) continue
       accrued[projectId] = (accrued[projectId] ?? 0) + ((e.duration_seconds ?? 0) / 3600) * rate
     }
-    for (const k of Object.keys(accrued)) accrued[k] = Math.round(accrued[k] * 100) / 100
+    // Rates are $/hour — convert the accrued totals into the EUR base
+    for (const k of Object.keys(accrued)) accrued[k] = Math.round(toEUR(accrued[k], 'USD') * 100) / 100
     return accrued
   }
 
@@ -133,10 +134,10 @@ export default function ProjectsPage() {
       const actual  = ptxs.filter(t => !t.is_planned)
       const planned = ptxs.filter(t => t.is_planned)
 
-      const income          = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
-      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0)
-      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+      const income          = actual.filter(t => t.type === 'income').reduce((s, t)  => s + toEUR(t.amount, t.currency), 0)
+      const expense         = actual.filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
+      const planned_income  = planned.filter(t => t.type === 'income').reduce((s, t)  => s + toEUR(t.amount, t.currency), 0)
+      const planned_expense = planned.filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0)
 
       const accrued_salary = accruedByProject[p.id] ?? 0
 
@@ -173,8 +174,8 @@ export default function ProjectsPage() {
       const mo = txs.filter(t => new Date(t.date).getMonth() === i)
       return {
         month: m,
-        income:  mo.filter(t => t.type === 'income').reduce((s, t)  => s + toUSD(t.amount, t.currency), 0),
-        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + toUSD(t.amount, t.currency), 0),
+        income:  mo.filter(t => t.type === 'income').reduce((s, t)  => s + toEUR(t.amount, t.currency), 0),
+        expense: mo.filter(t => t.type === 'expense').reduce((s, t) => s + toEUR(t.amount, t.currency), 0),
       }
     }).filter(m => m.income > 0 || m.expense > 0)
 
@@ -189,7 +190,7 @@ export default function ProjectsPage() {
       }
       if (!name) name = 'Без контрагента'
       if (!personMap[name]) personMap[name] = { name, income: 0, expense: 0, profit: 0 }
-      const amtUSD = toUSD(t.amount, t.currency)
+      const amtUSD = toEUR(t.amount, t.currency)
       if (t.type === 'income')  personMap[name].income  += amtUSD
       if (t.type === 'expense') personMap[name].expense += amtUSD
     }
@@ -513,7 +514,7 @@ export default function ProjectsPage() {
                                           {(t.category as { name?: string } | null)?.name || '—'}
                                         </td>
                                         <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
-                                          {t.type === 'income' ? '+' : '−'}{fmt(toUSD(t.amount, t.currency))}
+                                          {t.type === 'income' ? '+' : '−'}{fmt(toEUR(t.amount, t.currency))}
                                           {t.currency !== 'USD' && <span className="text-xs text-gray-400 ml-1">({t.currency})</span>}
                                         </td>
                                         <td className="py-2 px-4 text-right">

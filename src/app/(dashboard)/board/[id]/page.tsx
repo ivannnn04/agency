@@ -9,12 +9,13 @@ import { PMColumn, PMTask } from '@/types/pm'
 import {
   Plus, X, MoreHorizontal, Trash2, Calendar, Flag,
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
-  Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen, ReceiptText,
+  Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen, ReceiptText, BarChart2,
 } from 'lucide-react'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import ProjectInvoices from '@/components/ProjectInvoices'
+import ProjectReport from '@/components/ProjectReport'
 import { useChatUnread } from '@/lib/chatUnread'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
@@ -120,6 +121,7 @@ export default function BoardPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [notepadOpen, setNotepadOpen] = useState(false)
   const [invoicesOpen, setInvoicesOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const clientRef = useRef<HTMLDivElement>(null)
@@ -708,9 +710,20 @@ create policy "team_members_all" on team_members for all using (true) with check
             )}
           </div>
 
+          {/* Admin-only project report: tasks, tracked hours, budget vs costs */}
+          <button
+            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(false); setInvoicesOpen(false); setReportOpen(v => !v) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              reportOpen ? 'bg-teal-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title="Звіт: таски, години, бюджет (бачите тільки ви)"
+          >
+            <BarChart2 size={13} /> Звіт
+          </button>
+
           {/* Invoices — admin & client only, the team never sees these */}
           <button
-            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(false); setInvoicesOpen(v => !v) }}
+            onClick={() => { setSelectedTask(null); setChatOpen(false); setNotepadOpen(false); setReportOpen(false); setInvoicesOpen(v => !v) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               invoicesOpen ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
@@ -836,6 +849,11 @@ create policy "team_members_all" on team_members for all using (true) with check
       {/* Invoices drawer (admin) */}
       {invoicesOpen && (
         <ProjectInvoices projectId={id} onClose={() => setInvoicesOpen(false)} />
+      )}
+
+      {/* Admin-only report drawer */}
+      {reportOpen && project && (
+        <ProjectReport project={project} members={members} onClose={() => setReportOpen(false)} />
       )}
 
       {/* Task detail drawer */}
@@ -1247,6 +1265,9 @@ function TaskDetailPanel({
           />
         </div>
 
+        {/* Tracked time (who + how much) */}
+        <TaskTrackedTime taskId={task.id} members={members} />
+
         {/* Fields */}
         <div className="px-6 pb-4 flex flex-col gap-0.5">
           {/* Status */}
@@ -1407,6 +1428,67 @@ function TaskDetailPanel({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tracked time summary inside the admin task panel ────────────────────────────
+
+function TaskTrackedTime({ taskId, members }: { taskId: string; members: TeamMember[] }) {
+  const [byMember, setByMember] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    supabase
+      .from('time_entries')
+      .select('team_member_id, duration_seconds')
+      .eq('task_id', taskId)
+      .not('ended_at', 'is', null)
+      .then(({ data }) => {
+        const map: Record<string, number> = {}
+        for (const e of data ?? []) {
+          map[e.team_member_id] = (map[e.team_member_id] ?? 0) + (e.duration_seconds ?? 0)
+        }
+        setByMember(map)
+      })
+  }, [taskId])
+
+  const total = Object.values(byMember).reduce((a, b) => a + b, 0)
+  if (total === 0) return null
+
+  const fmt = (s: number) => {
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    if (h === 0) return `${m}хв`
+    return m > 0 ? `${h}г ${m}хв` : `${h}г`
+  }
+
+  return (
+    <div className="mx-6 mb-3 p-3.5 bg-gray-50 rounded-xl">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="flex items-center gap-1.5 text-xs text-gray-400">
+          <Clock size={12} /> Затрекано
+        </span>
+        <span className="text-sm font-bold text-gray-900">{fmt(total)}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {Object.entries(byMember)
+          .sort((a, b) => b[1] - a[1])
+          .map(([mid, secs]) => {
+            const m = members.find(x => x.id === mid)
+            return (
+              <div key={mid} className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
+                  style={{ backgroundColor: m?.color ?? '#9ca3af' }}
+                >
+                  {(m?.name ?? '?').charAt(0)}
+                </div>
+                <span className="text-xs text-gray-600 truncate">{m?.name ?? 'Невідомо'}</span>
+                <span className="ml-auto text-xs text-gray-500">{fmt(secs)}</span>
+              </div>
+            )
+          })}
       </div>
     </div>
   )

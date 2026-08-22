@@ -12,14 +12,15 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'Gudrix',
-    statusBarStyle: 'black-translucent',
+    // Opaque status bar: content starts BELOW the clock/battery strip —
+    // 'black-translucent' overlaid it and swallowed taps on the burger
+    statusBarStyle: 'black',
   },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  viewportFit: 'cover',
   themeColor: '#0f1117',
 }
 

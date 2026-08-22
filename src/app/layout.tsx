@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
@@ -8,6 +8,19 @@ const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 export const metadata: Metadata = {
   title: 'Gudrix Cowork Space',
   description: 'Gudrix Cowork Space',
+  icons: { apple: '/apple-touch-icon.png' },
+  appleWebApp: {
+    capable: true,
+    title: 'Gudrix',
+    statusBarStyle: 'black-translucent',
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#0f1117',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

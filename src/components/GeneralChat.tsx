@@ -184,7 +184,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
 
   return (
     <div
-      className="fixed right-0 top-0 h-full bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
+      className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
       style={{ width }}
     >
       <ChatResizeHandle onMouseDown={startResize} />

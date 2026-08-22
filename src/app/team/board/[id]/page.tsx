@@ -295,7 +295,7 @@ export default function TeamBoardPage() {
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-[#0f1117] text-white px-6 py-3 flex items-center gap-3 flex-shrink-0">
+      <header className="bg-[#0f1117] text-white px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap">
         <button
           onClick={() => router.push('/team/dashboard')}
           className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
@@ -726,7 +726,7 @@ function TaskPanel({
   const overEstimate = estimateSec !== null && trackedSeconds > estimateSec
 
   return (
-    <div className="w-[400px] min-w-[400px] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shadow-xl">
+    <div className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-[400px] md:min-w-[400px] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shadow-xl">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
         {currentCol && (

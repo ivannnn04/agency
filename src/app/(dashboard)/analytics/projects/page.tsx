@@ -287,7 +287,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Table */}
-      <div className="border border-gray-100 rounded-xl overflow-hidden">
+      <div className="border border-gray-100 rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
@@ -460,7 +460,7 @@ export default function ProjectsPage() {
                             {det.byPerson.length > 0 && (
                               <div>
                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">По співробітниках / контрагентах</p>
-                                <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                                <div className="bg-white border border-gray-100 rounded-xl overflow-x-auto">
                                   <table className="w-full text-sm">
                                     <thead>
                                       <tr className="bg-gray-50 border-b border-gray-100">
@@ -490,7 +490,7 @@ export default function ProjectsPage() {
                             {/* Transactions list */}
                             <div>
                               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Всі транзакції</p>
-                              <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                              <div className="bg-white border border-gray-100 rounded-xl overflow-x-auto">
                                 <table className="w-full text-sm">
                                   <thead>
                                     <tr className="bg-gray-50 border-b border-gray-100">

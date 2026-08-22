@@ -475,7 +475,7 @@ create policy "team_members_all" on team_members for all using (true) with check
     <div className="flex h-full overflow-hidden bg-white">
       {/* Board area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
+        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 flex-shrink-0 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
             <h1 className="text-base font-semibold text-gray-900">{project?.name}</h1>
             {/* Tab switcher */}
@@ -1231,7 +1231,7 @@ function TaskDetailPanel({
   const unassignedMembers = members.filter(m => !assigneeIds.includes(m.id))
 
   return (
-    <div className="w-[480px] min-w-[480px] border-l border-gray-100 bg-white flex flex-col h-full overflow-hidden">
+    <div className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-[480px] md:min-w-[480px] border-l border-gray-100 bg-white flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 text-sm text-gray-500">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
-import { Plus, X, ChevronDown, Check, Trash2 } from 'lucide-react'
+import { Plus, X, ChevronDown, Check, Trash2, Search } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -72,18 +72,23 @@ export default function MyLeadsPage() {
   const [saving, setSaving]     = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'leads' | 'pings'>('leads')
+  const [scope, setScope] = useState<'mine' | 'all'>('mine')
+  const [query, setQuery] = useState('')
+  const [managerNames, setManagerNames] = useState<Record<string, string>>({})
 
   const fetchAll = useCallback(async () => {
     if (!managerId) return
     setLoading(true)
-    const [{ data: l }, { data: a }] = await Promise.all([
+    const [{ data: l }, { data: a }, { data: mgrs }] = await Promise.all([
+      // All managers' leads come down; 'mine' is derived client-side
       supabase.from('leads')
         .select('*')
-        .eq('manager_id', managerId)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('outreach_accounts').select('name').order('name'),
+      supabase.from('lead_managers').select('id, name'),
     ])
+    if (mgrs) setManagerNames(Object.fromEntries(mgrs.map((m: { id: string; name: string }) => [m.id, m.name])))
     // Paid-out leads stay visible (with a "виплачено" badge) — hiding them made
     // managers think their leads disappeared
     if (l) setLeads(l as Lead[])
@@ -94,11 +99,21 @@ export default function MyLeadsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Only not-yet-paid leads count toward the current payout
-  const totalEarned = leads.filter(l => !l.is_earnings_paid).reduce((s, l) => s + calcEarnings(l), 0)
-  const replied = leads.filter(l => l.phase_reply).length
-  const called  = leads.filter(l => l.phase_call).length
-  const sold    = leads.filter(l => l.phase_sale).length
+  const myLeads = leads.filter(l => l.manager_id === managerId)
+
+  // Search across the whole lead card: name, country, account, request, letter
+  const q = query.trim().toLowerCase()
+  const matchesQuery = (l: Lead) =>
+    !q ||
+    [l.lead_name, l.country, l.account, l.request_text, l.cover_letter]
+      .some(v => (v ?? '').toLowerCase().includes(q))
+  const visibleLeads = (scope === 'mine' ? myLeads : leads).filter(matchesQuery)
+
+  // Earnings and stats are always the manager's own — the 'all' view is read-only
+  const totalEarned = myLeads.filter(l => !l.is_earnings_paid).reduce((s, l) => s + calcEarnings(l), 0)
+  const replied = myLeads.filter(l => l.phase_reply).length
+  const called  = myLeads.filter(l => l.phase_call).length
+  const sold    = myLeads.filter(l => l.phase_sale).length
 
   async function submitLead(e: React.FormEvent) {
     e.preventDefault()
@@ -146,7 +161,7 @@ export default function MyLeadsPage() {
     fetchAll()
   }
 
-  const pingLeads = leads.filter(l => getPingLevel(l) !== null)
+  const pingLeads = myLeads.filter(l => getPingLevel(l) !== null)
 
   return (
     <div>
@@ -242,6 +257,39 @@ export default function MyLeadsPage() {
       {/* ── Leads tab ── */}
       {activeTab === 'leads' && <>
 
+      {/* Scope switcher + search */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-shrink-0">
+          <button onClick={() => setScope('mine')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              scope === 'mine' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            Мої ліди
+          </button>
+          <button onClick={() => setScope('all')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              scope === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            Всі ліди
+          </button>
+        </div>
+        <div className="relative flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Пошук: ім'я, країна, акаунт, текст запиту чи листа..."
+            className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          />
+          {query && (
+            <button onClick={() => setQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Add button / form */}
       {!formOpen ? (
         <button onClick={() => setFormOpen(true)}
@@ -321,13 +369,13 @@ export default function MyLeadsPage() {
         {loading && (
           <p className="text-center py-12 text-gray-400 text-sm">Завантаження...</p>
         )}
-        {!loading && leads.length === 0 && (
+        {!loading && visibleLeads.length === 0 && (
           <div className="text-center py-16 text-gray-400">
-            <p className="text-3xl mb-2">📬</p>
-            <p className="text-sm">Ще немає лідів. Додайте перший!</p>
+            <p className="text-3xl mb-2">{q ? '🔍' : '📬'}</p>
+            <p className="text-sm">{q ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
           </div>
         )}
-        {leads.map((lead, i) => (
+        {visibleLeads.map((lead, i) => (
           <div key={lead.id} className={`${i > 0 ? 'border-t border-gray-100' : ''}`}>
             {/* Card header */}
             <div className="px-4 py-3"
@@ -338,6 +386,11 @@ export default function MyLeadsPage() {
                   <p className="text-xs text-gray-400 mt-0.5">
                     {new Date(lead.date).toLocaleDateString('uk-UA')}
                     {lead.country ? ` · ${lead.country}` : ''}
+                    {scope === 'all' && (
+                      <span className="ml-1.5 text-[10px] bg-violet-50 text-violet-600 px-1.5 py-px rounded font-medium">
+                        {managerNames[lead.manager_id] ?? '—'}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -357,21 +410,29 @@ export default function MyLeadsPage() {
                   {lead.account}
                 </span>
                 <div onClick={e => e.stopPropagation()}>
-                  <select
-                    value={lead.status}
-                    onChange={e => setStatus(lead, e.target.value as LeadStatus)}
-                    className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none cursor-pointer ${STATUS_COLORS[lead.status]}`}>
-                    {STATUS_ORDER.map(s => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                    ))}
-                  </select>
+                  {lead.manager_id === managerId ? (
+                    <select
+                      value={lead.status}
+                      onChange={e => setStatus(lead, e.target.value as LeadStatus)}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none cursor-pointer ${STATUS_COLORS[lead.status]}`}>
+                      {STATUS_ORDER.map(s => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_COLORS[lead.status]}`}>
+                      {STATUS_LABELS[lead.status]}
+                    </span>
+                  )}
                 </div>
                 <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteLead(lead.id) }}
-                    className="text-gray-300 hover:text-red-500 p-1 transition-colors">
-                    <Trash2 size={14} />
-                  </button>
+                  {lead.manager_id === managerId && (
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteLead(lead.id) }}
+                      className="text-gray-300 hover:text-red-500 p-1 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                   <ChevronDown size={14} className={`text-gray-400 transition-transform ${expanded === lead.id ? 'rotate-180' : ''}`} />
                 </div>
               </div>
@@ -428,13 +489,13 @@ export default function MyLeadsPage() {
             {loading && (
               <tr><td colSpan={8} className="text-center py-12 text-gray-400">Завантаження...</td></tr>
             )}
-            {!loading && leads.length === 0 && (
+            {!loading && visibleLeads.length === 0 && (
               <tr><td colSpan={8} className="text-center py-16 text-gray-400">
-                <p className="text-3xl mb-2">📬</p>
-                <p>Ще немає лідів. Додайте перший!</p>
+                <p className="text-3xl mb-2">{q ? '🔍' : '📬'}</p>
+                <p>{q ? 'Нічого не знайдено' : 'Ще немає лідів. Додайте перший!'}</p>
               </td></tr>
             )}
-            {leads.map(lead => (
+            {visibleLeads.map(lead => (
               <>
                 <tr key={lead.id}
                   className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
@@ -444,20 +505,31 @@ export default function MyLeadsPage() {
                   </td>
                   <td className="py-3 px-4 font-medium text-gray-800 max-w-48">
                     <span className="truncate block">{lead.lead_name}</span>
+                    {scope === 'all' && (
+                      <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-px rounded font-medium">
+                        {managerNames[lead.manager_id] ?? '—'}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-gray-500 text-xs">{lead.country || '—'}</td>
                   <td className="py-3 px-4">
                     <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">{lead.account}</span>
                   </td>
                   <td className="py-3 px-4" onClick={e => e.stopPropagation()}>
-                    <select
-                      value={lead.status}
-                      onChange={e => setStatus(lead, e.target.value as LeadStatus)}
-                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-gray-400 cursor-pointer ${STATUS_COLORS[lead.status]}`}>
-                      {STATUS_ORDER.map(s => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
+                    {lead.manager_id === managerId ? (
+                      <select
+                        value={lead.status}
+                        onChange={e => setStatus(lead, e.target.value as LeadStatus)}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-gray-400 cursor-pointer ${STATUS_COLORS[lead.status]}`}>
+                        {STATUS_ORDER.map(s => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_COLORS[lead.status]}`}>
+                        {STATUS_LABELS[lead.status]}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-right font-semibold text-gray-700">
                     ${calcEarnings(lead).toFixed(2)}
@@ -472,11 +544,13 @@ export default function MyLeadsPage() {
                   </td>
                   <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-1 justify-end">
-                      <button
-                        onClick={() => deleteLead(lead.id)}
-                        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1 rounded transition-all">
-                        <Trash2 size={13} />
-                      </button>
+                      {lead.manager_id === managerId && (
+                        <button
+                          onClick={() => deleteLead(lead.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1 rounded transition-all">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                       <ChevronDown
                         size={13}
                         className={`text-gray-400 transition-transform cursor-pointer ${expanded === lead.id ? 'rotate-180' : ''}`}

@@ -8,6 +8,7 @@ export interface TeamMember {
   hourly_rate_usd?: number | null
   salary_type?: 'hourly' | 'monthly'
   monthly_salary_usd?: number | null
+  can_create_projects?: boolean
   supabase_user_id?: string | null
   invited_at?: string | null
   created_at: string

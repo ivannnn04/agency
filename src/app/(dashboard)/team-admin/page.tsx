@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { Plus, Trash2, Users, Eye, EyeOff, KeyRound, X, Send, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Users, Eye, EyeOff, KeyRound, X, Send, Loader2, FolderKanban } from 'lucide-react'
 
 const COLOR_PALETTE = [
   '#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444',
@@ -110,6 +110,19 @@ export default function TeamAdminPage() {
       body: JSON.stringify({ id }),
     })
     setMembers(prev => prev.filter(m => m.id !== id))
+  }
+
+  async function toggleCanCreateProjects(m: TeamMember) {
+    const next = !m.can_create_projects
+    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, can_create_projects: next } : x))
+    const { error: err } = await supabase
+      .from('team_members')
+      .update({ can_create_projects: next })
+      .eq('id', m.id)
+    if (err) {
+      setMembers(prev => prev.map(x => x.id === m.id ? { ...x, can_create_projects: !next } : x))
+      setError('Запусти міграцію team_project_creation_migration.sql')
+    }
   }
 
   function startRateEdit(m: TeamMember) {
@@ -334,6 +347,20 @@ export default function TeamAdminPage() {
                       : `$${m.hourly_rate_usd ?? 0}/год`}
                   </button>
                 )}
+                <button
+                  onClick={() => toggleCanCreateProjects(m)}
+                  title={m.can_create_projects
+                    ? 'Може створювати проєкти — клікни, щоб заборонити'
+                    : 'Не може створювати проєкти — клікни, щоб дозволити'}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
+                    m.can_create_projects
+                      ? 'text-violet-700 bg-violet-50 hover:bg-violet-100'
+                      : 'text-gray-400 bg-gray-50 hover:bg-gray-100 hover:text-gray-600'
+                  }`}
+                >
+                  <FolderKanban size={12} />
+                  {m.can_create_projects ? 'Проєкти ✓' : 'Проєкти'}
+                </button>
                 <button
                   onClick={() => sendInvite(m)}
                   disabled={invitingId === m.id}

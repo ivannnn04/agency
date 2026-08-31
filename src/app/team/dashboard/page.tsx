@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Hash } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Hash, Plus } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -43,6 +43,9 @@ export default function TeamDashboardPage() {
   const [myTasks, setMyTasks] = useState<MyTask[]>([])
   const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
   const [openChat, setOpenChat] = useState<GeneralChatInfo | null>(null)
+  const [addingProject, setAddingProject] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [creatingProject, setCreatingProject] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadData() }, [])
@@ -157,6 +160,34 @@ export default function TeamDashboardPage() {
     setLoading(false)
   }
 
+  // Members with the admin-granted flag can create a project themselves.
+  // They become its first member; the admin gets a bell notification.
+  async function createProject() {
+    const name = newProjectName.trim()
+    if (!name || !member || creatingProject) return
+    setCreatingProject(true)
+    const palette = ['#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#10b981']
+    const color = palette[projects.length % palette.length]
+    const { data: proj, error } = await supabase
+      .from('projects')
+      .insert({ name, status: 'active', color })
+      .select('id, name')
+      .single()
+    if (error || !proj) { setCreatingProject(false); return }
+    await supabase.from('project_members').insert({ project_id: proj.id, team_member_id: member.id })
+    await supabase.from('notifications').insert({
+      type: 'project_created',
+      message: `${member.name} створив(ла) проєкт «${proj.name}»`,
+      project_id: proj.id,
+      team_member_id: member.id,
+      recipient_team_member_id: null,
+    })
+    setNewProjectName('')
+    setAddingProject(false)
+    setCreatingProject(false)
+    router.push(`/team/board/${proj.id}`)
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.replace('/team/login')
@@ -213,7 +244,46 @@ export default function TeamDashboardPage() {
 
       <main className="max-w-5xl mx-auto p-6">
         {/* Projects section */}
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Мої проєкти</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">Мої проєкти</h2>
+          {member?.can_create_projects && !addingProject && (
+            <button
+              onClick={() => setAddingProject(true)}
+              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white px-3.5 py-2 rounded-xl text-sm font-medium transition-colors"
+            >
+              <Plus size={14} /> Новий проєкт
+            </button>
+          )}
+        </div>
+
+        {member?.can_create_projects && addingProject && (
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              autoFocus
+              value={newProjectName}
+              onChange={e => setNewProjectName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') createProject()
+                if (e.key === 'Escape') { setAddingProject(false); setNewProjectName('') }
+              }}
+              placeholder="Назва проєкту..."
+              className="flex-1 max-w-sm border border-gray-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+            />
+            <button
+              onClick={createProject}
+              disabled={creatingProject || !newProjectName.trim()}
+              className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            >
+              {creatingProject ? 'Створюємо...' : 'Створити'}
+            </button>
+            <button
+              onClick={() => { setAddingProject(false); setNewProjectName('') }}
+              className="text-gray-400 hover:text-gray-600 text-sm px-2"
+            >
+              Скасувати
+            </button>
+          </div>
+        )}
 
         {projects.length === 0 ? (
           <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100 mb-8">

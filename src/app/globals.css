@@ -113,6 +113,7 @@ body {
 /* Utilities whose meaning must survive the remap. Same-or-higher specificity
    than the generated utility, so these win inside .dark. */
 .dark .text-white { color: #ffffff; }
+.dark .hover\:text-white:hover { color: #ffffff; }
 
 /* Dark buttons / own chat bubbles: stay dark, just lifted off the dark bg */
 .dark .bg-gray-900 { background-color: #2e3947; }

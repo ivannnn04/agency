@@ -28,11 +28,13 @@ interface Message {
   created_at: string
 }
 
-export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
+// embedded renders the chat in-flow (Discord-style hub pane) instead of a drawer.
+export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded }: {
   chat: GeneralChatInfo
   sender: ChatSender
   onClose: () => void
   onDeleted?: () => void
+  embedded?: boolean
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
@@ -223,15 +225,18 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
 
   return (
     <div
-      className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
-      style={{ width }}
+      className={embedded
+        ? 'h-full w-full min-w-0 bg-white flex flex-col'
+        : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
+      style={embedded ? undefined : { width }}
     >
-      <ChatResizeHandle onMouseDown={startResize} />
+      {!embedded && <ChatResizeHandle onMouseDown={startResize} />}
 
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Hash size={15} className="text-teal-500 flex-shrink-0" />
           <p className="text-sm font-semibold text-gray-800 truncate">{chat.name}</p>
+          <span className="text-[10px] text-gray-400 flex-shrink-0">загальний чат</span>
         </div>
         <div className="flex items-center gap-1">
           {sender.type === 'admin' && (
@@ -252,7 +257,9 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
               </button>
             </>
           )}
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
+          {!embedded && (
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
+          )}
         </div>
       </div>
 

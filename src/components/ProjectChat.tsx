@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -35,10 +35,14 @@ interface Digest {
 
 // Right-side chat drawer for internal users (admin + team members).
 // Two channels: 'team' (internal only) and 'client' (visible to the client portal).
-export default function ProjectChat({ projectId, sender, onClose }: {
+// projectName shows in the header so it's always clear whose chat this is.
+// embedded renders the chat in-flow (Discord-style hub pane) instead of a drawer.
+export default function ProjectChat({ projectId, projectName, sender, onClose, embedded }: {
   projectId: string
+  projectName?: string
   sender: ChatSender
   onClose: () => void
+  embedded?: boolean
 }) {
   const [channel, setChannel] = useState<'team' | 'client'>('team')
   const [messages, setMessages] = useState<Message[]>([])
@@ -283,13 +287,25 @@ export default function ProjectChat({ projectId, sender, onClose }: {
 
   return (
     <div
-      className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
-      style={{ width }}
+      className={embedded
+        ? 'h-full w-full min-w-0 bg-white flex flex-col'
+        : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
+      style={embedded ? undefined : { width }}
     >
-      <ChatResizeHandle onMouseDown={startResize} />
-      {/* Header with channel tabs */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+      {!embedded && <ChatResizeHandle onMouseDown={startResize} />}
+      {/* Header: which chat this is + channel tabs */}
+      <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Hash size={15} className="text-teal-500 flex-shrink-0" />
+            <p className="text-sm font-semibold text-gray-800 truncate">{projectName ?? 'Проєкт'}</p>
+            <span className="text-[10px] text-gray-400 flex-shrink-0">чат проєкту</span>
+          </div>
+          {!embedded && (
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded flex-shrink-0"><X size={16} /></button>
+          )}
+        </div>
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
           <button
             onClick={() => setChannel('team')}
             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
@@ -314,7 +330,6 @@ export default function ProjectChat({ projectId, sender, onClose }: {
             )}
           </button>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
       </div>
 
       {channel === 'client' && (

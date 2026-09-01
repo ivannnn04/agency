@@ -671,6 +671,7 @@ export default function TeamBoardPage() {
       {chatOpen && member && (
         <ProjectChat
           projectId={id}
+          projectName={project?.name}
           sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
           onClose={() => setChatOpen(false)}
         />

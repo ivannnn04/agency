@@ -832,6 +832,7 @@ create policy "team_members_all" on team_members for all using (true) with check
       {chatOpen && (
         <ProjectChat
           projectId={id}
+          projectName={project?.name}
           sender={{ type: 'admin', name: 'Ivan' }}
           onClose={() => setChatOpen(false)}
         />

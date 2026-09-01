@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 
@@ -32,7 +32,7 @@ const financeNav = [
 ]
 
 function isPMPath(p: string) {
-  return p.startsWith('/board') || p.startsWith('/team-admin')
+  return p.startsWith('/board') || p.startsWith('/team-admin') || p.startsWith('/chats')
 }
 
 const SIDEBAR_MIN = 200
@@ -487,6 +487,20 @@ export default function Sidebar() {
               >
                 <Users size={13} className="flex-shrink-0" />
                 <span>Команда</span>
+              </button>
+
+              {/* Discord-style hub with every project + general chat */}
+              <button
+                onClick={() => router.push('/chats')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-2 text-left ${
+                  pathname.startsWith('/chats') ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <MessageSquare size={13} className="flex-shrink-0" />
+                <span>Чати</span>
+                {Object.values(chatUnread).some(u => u.team || u.client) && (
+                  <span className="ml-auto flex-shrink-0 w-2 h-2 rounded-full bg-teal-400 animate-pulse" title="Нові повідомлення" />
+                )}
               </button>
 
               <div className="border-t border-white/5 mb-2" />

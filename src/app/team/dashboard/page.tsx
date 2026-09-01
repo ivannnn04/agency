@@ -174,6 +174,18 @@ export default function TeamDashboardPage() {
       .select('id, name')
       .single()
     if (error || !proj) { setCreatingProject(false); return }
+    // Seed the standard column set so tasks can be created right away
+    const DEFAULT_COLUMNS = [
+      { name: 'TO DO',                 color: '#F59E0B', position: 0 },
+      { name: 'IN PROGRESS',           color: '#6B7280', position: 1 },
+      { name: 'INTERNAL REVIEW',       color: '#F97316', position: 2 },
+      { name: 'READY FOR REPORT',      color: '#8B5CF6', position: 3 },
+      { name: 'WAITING FOR FEEDBACK',  color: '#EF4444', position: 4 },
+      { name: 'READY FOR DEVELOPMENT', color: '#10B981', position: 5 },
+      { name: 'BLOCKED',               color: '#EC4899', position: 6 },
+      { name: 'TO BE INVOICED',        color: '#6366F1', position: 7 },
+    ]
+    await supabase.from('pm_columns').insert(DEFAULT_COLUMNS.map(c => ({ ...c, project_id: proj.id })))
     await supabase.from('project_members').insert({ project_id: proj.id, team_member_id: member.id })
     await supabase.from('notifications').insert({
       type: 'project_created',

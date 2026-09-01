@@ -255,8 +255,41 @@ export default function TeamBoardPage() {
 
   async function removeSelfAssignee(taskId: string) {
     if (!member) return
-    await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('team_member_id', member.id)
-    const next = (assigneesByTask[taskId] ?? []).filter(mid => mid !== member.id)
+    await removeMemberFromTask(taskId, member.id)
+  }
+
+  // Members with can_create_projects may assign anyone (like the admin does)
+  async function assignMemberToTask(taskId: string, memberId: string) {
+    const current = assigneesByTask[taskId] ?? []
+    if (current.includes(memberId)) return
+    await supabase.from('task_assignees').insert({ task_id: taskId, team_member_id: memberId })
+    // Assignment makes them part of the project so it shows in their dashboard
+    await supabase.from('project_members').upsert(
+      { project_id: id, team_member_id: memberId },
+      { onConflict: 'project_id,team_member_id', ignoreDuplicates: true }
+    )
+    const next = [...current, memberId]
+    setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
+    const primary = next[0] ?? null
+    await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, team_member_id: primary } : t))
+    setSelectedTask(prev => prev?.id === taskId ? { ...prev, team_member_id: primary } : prev)
+    if (memberId !== member?.id) {
+      const task = tasks.find(t => t.id === taskId)
+      await supabase.from('notifications').insert({
+        type: 'task_assigned',
+        message: `Вам призначено задачу «${task?.title ?? ''}» у проєкті «${project?.name ?? ''}»`,
+        project_id: id,
+        task_id: taskId,
+        team_member_id: memberId,
+        recipient_team_member_id: memberId,
+      })
+    }
+  }
+
+  async function removeMemberFromTask(taskId: string, memberId: string) {
+    await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('team_member_id', memberId)
+    const next = (assigneesByTask[taskId] ?? []).filter(mid => mid !== memberId)
     setAssigneesByTask(prev => ({ ...prev, [taskId]: next }))
     const primary = next[0] ?? null
     await supabase.from('pm_tasks').update({ team_member_id: primary }).eq('id', taskId)
@@ -324,6 +357,23 @@ export default function TeamBoardPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          {/* Running timer — always visible in the header */}
+          {activeTimer && (
+            <div className="flex items-center gap-2 bg-white/10 rounded-lg pl-2.5 pr-1.5 py-1">
+              <Timer size={13} className="text-teal-400 flex-shrink-0" />
+              <span className="text-[11px] text-gray-300 max-w-[120px] truncate hidden sm:inline">
+                {tasks.find(t => t.id === activeTimer.taskId)?.title ?? 'Задача'}
+              </span>
+              <span className="font-mono text-xs text-teal-400">{formatElapsed(elapsed)}</span>
+              <button
+                onClick={stopTimer}
+                className="text-red-400 hover:text-red-300 transition-colors p-1"
+                title="Зупинити таймер"
+              >
+                <Square size={11} className="fill-red-400" />
+              </button>
+            </div>
+          )}
           <button
             onClick={() => { setChatOpen(false); setNotepadOpen(v => !v) }}
             className={`flex items-center gap-1.5 transition-colors text-xs px-2.5 py-1 rounded-lg ${
@@ -572,6 +622,9 @@ export default function TeamBoardPage() {
             assigneeIds={assigneesByTask[selectedTask.id] ?? []}
             onAddSelf={() => addSelfAssignee(selectedTask.id)}
             onRemoveSelf={() => removeSelfAssignee(selectedTask.id)}
+            canAssignOthers={!!member?.can_create_projects}
+            onAssignMember={mid => assignMemberToTask(selectedTask.id, mid)}
+            onRemoveMember={mid => removeMemberFromTask(selectedTask.id, mid)}
             trackedSeconds={(timeByTask[selectedTask.id] ?? 0) + (activeTimer?.taskId === selectedTask.id ? elapsed : 0)}
             isTimerActive={activeTimer?.taskId === selectedTask.id}
             otherTimerActive={!!activeTimer && activeTimer.taskId !== selectedTask.id}
@@ -604,22 +657,7 @@ export default function TeamBoardPage() {
         />
       )}
 
-      {/* Active timer indicator */}
-      {activeTimer && !selectedTask && (
-        <div className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2.5 z-30">
-          <Timer size={14} className="text-teal-400" />
-          <span className="text-xs text-gray-300">
-            {tasks.find(t => t.id === activeTimer.taskId)?.title ?? 'Задача'}
-          </span>
-          <span className="font-mono text-sm text-teal-400">{formatElapsed(elapsed)}</span>
-          <button
-            onClick={stopTimer}
-            className="ml-1 text-red-400 hover:text-red-300 transition-colors"
-          >
-            <Square size={13} className="fill-red-400" />
-          </button>
-        </div>
-      )}
+
     </div>
   )
 }
@@ -671,6 +709,7 @@ function AssigneeStack({ memberIds, allMembers, currentMemberId, max = 3 }: {
 
 function TaskPanel({
   task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
+  canAssignOthers, onAssignMember, onRemoveMember,
   trackedSeconds, isTimerActive, otherTimerActive, elapsed,
   onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove,
 }: {
@@ -681,6 +720,9 @@ function TaskPanel({
   assigneeIds: string[]
   onAddSelf: () => void
   onRemoveSelf: () => void
+  canAssignOthers: boolean
+  onAssignMember: (memberId: string) => void
+  onRemoveMember: (memberId: string) => void
   trackedSeconds: number
   isTimerActive: boolean
   otherTimerActive: boolean
@@ -814,7 +856,7 @@ function TaskPanel({
             <div className="flex-1 flex flex-col gap-1.5">
               {assignedMembers.length > 0 ? (
                 assignedMembers.map(m => (
-                  <div key={m.id} className="flex items-center gap-2">
+                  <div key={m.id} className="flex items-center gap-2 group/assignee">
                     <div
                       className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0"
                       style={{ backgroundColor: m.color }}
@@ -824,6 +866,15 @@ function TaskPanel({
                     <span className={`text-sm ${m.id === member?.id ? 'font-medium text-teal-600' : 'text-gray-600'}`}>
                       {m.name}{m.id === member?.id ? ' (ви)' : ''}
                     </span>
+                    {canAssignOthers && (
+                      <button
+                        onClick={() => onRemoveMember(m.id)}
+                        className="opacity-0 group-hover/assignee:opacity-100 text-gray-300 hover:text-red-400 transition-all"
+                        title="Зняти виконавця"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
                 ))
               ) : (
@@ -839,6 +890,18 @@ function TaskPanel({
               >
                 {isMine ? 'Зняти з себе' : 'Взяти задачу'}
               </button>
+              {canAssignOthers && allMembers.some(m => !assigneeIds.includes(m.id)) && (
+                <select
+                  value=""
+                  onChange={e => { if (e.target.value) onAssignMember(e.target.value) }}
+                  className="mt-1 self-start text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                >
+                  <option value="">+ Призначити виконавця...</option>
+                  {allMembers.filter(m => !assigneeIds.includes(m.id)).map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 

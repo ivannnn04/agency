@@ -15,6 +15,7 @@ import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
+import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 
 interface Project {
   id: string
@@ -61,6 +62,8 @@ export default function TeamBoardPage() {
   const [member, setMember] = useState<TeamMember | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [columns, setColumns] = useState<PMColumn[]>([])
+  const [seedingColumns, setSeedingColumns] = useState(false)
+  const [seedError, setSeedError] = useState('')
   const [tasks, setTasks] = useState<PMTask[]>([])
   const [assigneesByTask, setAssigneesByTask] = useState<Record<string, string[]>>({})
   const [allMembers, setAllMembers] = useState<Pick<TeamMember, 'id' | 'name' | 'color'>[]>([])
@@ -154,6 +157,21 @@ export default function TeamBoardPage() {
     }
 
     setLoading(false)
+  }
+
+  // Rescue for projects that ended up without columns (created before the
+  // auto-seed, or the seed insert failed): empowered members can seed them here.
+  async function seedDefaultColumns() {
+    if (seedingColumns) return
+    setSeedingColumns(true)
+    setSeedError('')
+    const { data, error } = await supabase
+      .from('pm_columns')
+      .insert(DEFAULT_COLUMNS.map(c => ({ ...c, project_id: id })))
+      .select('*')
+    setSeedingColumns(false)
+    if (error) { setSeedError('Не вдалося створити колонки: ' + error.message); return }
+    if (data) setColumns((data as PMColumn[]).sort((a, b) => a.position - b.position))
   }
 
   // Re-sum a task's tracked time after manual edits in the entries editor
@@ -601,8 +619,18 @@ export default function TeamBoardPage() {
             })}
 
             {columns.length === 0 && (
-              <div className="flex-1 flex items-center justify-center py-20 text-gray-400">
+              <div className="flex-1 flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
                 <p className="text-sm">Немає колонок у цьому проєкті</p>
+                {member?.can_create_projects && (
+                  <button
+                    onClick={seedDefaultColumns}
+                    disabled={seedingColumns}
+                    className="bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    {seedingColumns ? 'Створюємо...' : 'Створити стандартні колонки'}
+                  </button>
+                )}
+                {seedError && <p className="text-xs text-red-500">{seedError}</p>}
               </div>
             )}
           </div>

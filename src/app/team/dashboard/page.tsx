@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Hash, Plus } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Hash, Plus, MessageSquare } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
+import ProjectChat from '@/components/ProjectChat'
+import { useChatUnread } from '@/lib/chatUnread'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import ThemeToggle from '@/components/ThemeToggle'
 import Link from 'next/link'
@@ -42,11 +44,18 @@ export default function TeamDashboardPage() {
   const [projects, setProjects] = useState<ProjectCard[]>([])
   const [myTasks, setMyTasks] = useState<MyTask[]>([])
   const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
+  // chat_id -> member ids; a chat absent from the map is open to the whole team
+  const [chatMembership, setChatMembership] = useState<Record<string, string[]>>({})
   const [openChat, setOpenChat] = useState<GeneralChatInfo | null>(null)
+  const [openProjectChat, setOpenProjectChat] = useState<ProjectCard | null>(null)
+  const [tab, setTab] = useState<'overview' | 'chats'>('overview')
   const [addingProject, setAddingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // Unread dots for the Чати tab (keyed by project_id, team channel)
+  const unread = useChatUnread({ self: 'team', memberId: member?.id ?? null })
 
   useEffect(() => { loadData() }, [])
 
@@ -63,12 +72,22 @@ export default function TeamDashboardPage() {
 
     // Membership + assigned tasks in parallel — a task assignment alone must
     // be enough to see the project, even if membership wasn't added
-    const [{ data: pm }, { data: myAssignments }, { data: chats }] = await Promise.all([
+    const [{ data: pm }, { data: myAssignments }, { data: chats }, chatMembersRes] = await Promise.all([
       supabase.from('project_members').select('project_id').eq('team_member_id', mem.id),
       supabase.from('task_assignees').select('task_id').eq('team_member_id', mem.id),
       supabase.from('general_chats').select('id, name').order('created_at'),
+      supabase.from('general_chat_members').select('chat_id, team_member_id'),
     ])
     if (chats) setGeneralChats(chats as GeneralChatInfo[])
+    // If the migration isn't run yet the query errors — then every chat is open to all
+    if (!chatMembersRes.error && chatMembersRes.data) {
+      const map: Record<string, string[]> = {}
+      for (const r of chatMembersRes.data as { chat_id: string; team_member_id: string }[]) {
+        if (!map[r.chat_id]) map[r.chat_id] = []
+        map[r.chat_id].push(r.team_member_id)
+      }
+      setChatMembership(map)
+    }
 
     const myTaskIds = [...new Set((myAssignments ?? []).map((r: { task_id: string }) => r.task_id))]
 
@@ -211,6 +230,12 @@ export default function TeamDashboardPage() {
     </div>
   )
 
+  // General chats visible to this member: no membership rows = open to the whole team
+  const visibleGeneralChats = generalChats.filter(c => {
+    const ids = chatMembership[c.id]
+    return !ids || ids.length === 0 || (member ? ids.includes(member.id) : false)
+  })
+
   // Group myTasks by project
   const tasksByProject: Record<string, { projectName: string; tasks: MyTask[] }> = {}
   for (const t of myTasks) {
@@ -255,6 +280,30 @@ export default function TeamDashboardPage() {
       </header>
 
       <main className="max-w-5xl mx-auto p-6">
+        {/* Tab switcher */}
+        <div className="flex items-center gap-1 bg-gray-200/60 rounded-xl p-1 w-fit mb-6">
+          <button
+            onClick={() => setTab('overview')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Проєкти
+          </button>
+          <button
+            onClick={() => setTab('chats')}
+            className={`relative px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'chats' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Чати
+            {projects.some(p => unread[p.id]?.team) && (
+              <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-teal-500" />
+            )}
+          </button>
+        </div>
+
+        {tab === 'overview' && (<>
         {/* Projects section */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">Мої проєкти</h2>
@@ -337,24 +386,6 @@ export default function TeamDashboardPage() {
           </div>
         )}
 
-        {/* General team chats */}
-        {generalChats.length > 0 && (
-          <>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Чати команди</h2>
-            <div className="flex flex-wrap gap-2 mb-10">
-              {generalChats.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setOpenChat(c)}
-                  className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-teal-300 text-gray-700 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm"
-                >
-                  <Hash size={13} className="text-teal-500" /> {c.name}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
         {/* My tasks section */}
         <h2 className="text-lg font-bold text-gray-900 mb-4">Мої задачі</h2>
 
@@ -416,6 +447,69 @@ export default function TeamDashboardPage() {
             ))}
           </div>
         )}
+        </>)}
+
+        {tab === 'chats' && (
+          <div className="flex flex-col gap-8">
+            {/* Project team chats — the same chat as inside the board, so always in sync */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Чати проєктів</h2>
+              {projects.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 bg-white rounded-2xl border border-gray-100">
+                  <p className="text-sm">Немає проєктів — немає й чатів</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {projects.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setOpenProjectChat(p)}
+                      className="flex items-center gap-3 bg-white border border-gray-100 hover:border-teal-300 rounded-xl px-4 py-3 text-left transition-colors shadow-sm"
+                    >
+                      <span
+                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: p.color + '22' }}
+                      >
+                        <MessageSquare size={14} style={{ color: p.color }} />
+                      </span>
+                      <span className="text-sm font-medium text-gray-900 min-w-0 truncate">{p.name}</span>
+                      {unread[p.id]?.team && (
+                        <span className="ml-auto flex items-center gap-1.5 text-[10px] font-semibold text-teal-600 flex-shrink-0">
+                          <span className="w-2 h-2 rounded-full bg-teal-500" /> нове
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* General chats (visible by membership; empty membership = whole team) */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Загальні чати</h2>
+              {visibleGeneralChats.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 bg-white rounded-2xl border border-gray-100">
+                  <p className="text-sm">Поки що немає загальних чатів</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {visibleGeneralChats.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setOpenChat(c)}
+                      className="flex items-center gap-3 bg-white border border-gray-100 hover:border-teal-300 rounded-xl px-4 py-3 text-left transition-colors shadow-sm"
+                    >
+                      <span className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
+                        <Hash size={14} className="text-teal-500" />
+                      </span>
+                      <span className="text-sm font-medium text-gray-900 min-w-0 truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* General team chat drawer */}
@@ -424,6 +518,15 @@ export default function TeamDashboardPage() {
           chat={openChat}
           sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
           onClose={() => setOpenChat(null)}
+        />
+      )}
+
+      {/* Project chat drawer — same project_messages team channel as the board chat */}
+      {openProjectChat && member && (
+        <ProjectChat
+          projectId={openProjectChat.id}
+          sender={{ type: 'team', name: member.name, teamMemberId: member.id }}
+          onClose={() => setOpenProjectChat(null)}
         />
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Hash, Trash2 } from 'lucide-react'
+import { MessageSquare, X, Hash, Trash2, Users } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -44,16 +44,55 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
   const bottomRef = useRef<HTMLDivElement>(null)
   const { width, startResize } = useChatWidth()
 
+  // Admin-only membership management: no rows = the whole team sees the chat
+  const [manageOpen, setManageOpen] = useState(false)
+  const [allMembers, setAllMembers] = useState<{ id: string; name: string; color: string }[]>([])
+  const [chatMemberIds, setChatMemberIds] = useState<Set<string>>(new Set())
+  const [membersSupported, setMembersSupported] = useState(true)
+
   // Everyone internal can be mentioned: admin + all team members
   useEffect(() => {
     ;(async () => {
-      const { data: mems } = await supabase.from('team_members').select('name').order('name')
+      const { data: mems } = await supabase.from('team_members').select('id, name, color').order('name')
+      const rows = (mems ?? []) as { id: string; name: string; color: string }[]
+      setAllMembers(rows)
       setPeople([
         { name: 'Ivan', type: 'admin' },
-        ...(mems ?? []).map(m => ({ name: m.name as string, type: 'team' as const })),
+        ...rows.map(m => ({ name: m.name, type: 'team' as const })),
       ])
     })()
   }, [])
+
+  useEffect(() => {
+    if (sender.type !== 'admin') return
+    ;(async () => {
+      const { data, error: err } = await supabase
+        .from('general_chat_members')
+        .select('team_member_id')
+        .eq('chat_id', chat.id)
+      if (err) { setMembersSupported(false); return }
+      setChatMemberIds(new Set((data ?? []).map((r: { team_member_id: string }) => r.team_member_id)))
+    })()
+  }, [chat.id, sender.type])
+
+  async function toggleChatMember(teamMemberId: string) {
+    const next = new Set(chatMemberIds)
+    if (next.has(teamMemberId)) {
+      next.delete(teamMemberId)
+      setChatMemberIds(next)
+      await supabase
+        .from('general_chat_members')
+        .delete()
+        .eq('chat_id', chat.id)
+        .eq('team_member_id', teamMemberId)
+    } else {
+      next.add(teamMemberId)
+      setChatMemberIds(next)
+      await supabase
+        .from('general_chat_members')
+        .insert({ chat_id: chat.id, team_member_id: teamMemberId })
+    }
+  }
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -196,17 +235,71 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted }: {
         </div>
         <div className="flex items-center gap-1">
           {sender.type === 'admin' && (
-            <button
-              onClick={deleteChat}
-              className="text-gray-300 hover:text-red-400 p-1 rounded transition-colors"
-              title="Видалити чат"
-            >
-              <Trash2 size={14} />
-            </button>
+            <>
+              <button
+                onClick={() => setManageOpen(v => !v)}
+                className={`p-1 rounded transition-colors ${manageOpen ? 'text-teal-500' : 'text-gray-300 hover:text-teal-500'}`}
+                title="Учасники чату"
+              >
+                <Users size={14} />
+              </button>
+              <button
+                onClick={deleteChat}
+                className="text-gray-300 hover:text-red-400 p-1 rounded transition-colors"
+                title="Видалити чат"
+              >
+                <Trash2 size={14} />
+              </button>
+            </>
           )}
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
         </div>
       </div>
+
+      {/* Admin: pick who sees this chat. No one selected = the whole team sees it. */}
+      {manageOpen && sender.type === 'admin' && (
+        <div className="border-b border-gray-100 px-4 py-3 flex-shrink-0 bg-gray-50">
+          {!membersSupported ? (
+            <p className="text-[11px] text-red-500">Запусти міграцію general_chat_members_migration.sql</p>
+          ) : (
+            <>
+              <p className="text-[11px] text-gray-400 mb-2">
+                {chatMemberIds.size === 0
+                  ? 'Нікого не обрано — чат бачить вся команда'
+                  : 'Чат бачать тільки обрані учасники (і адмін)'}
+              </p>
+              <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
+                {allMembers.map(m => {
+                  const on = chatMemberIds.has(m.id)
+                  return (
+                    <label
+                      key={m.id}
+                      className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-white rounded-lg px-2 py-1.5 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => toggleChatMember(m.id)}
+                        className="accent-teal-500"
+                      />
+                      <span
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                        style={{ backgroundColor: m.color || '#14b8a6' }}
+                      >
+                        {m.name.charAt(0)}
+                      </span>
+                      {m.name}
+                    </label>
+                  )
+                })}
+                {allMembers.length === 0 && (
+                  <p className="text-[11px] text-gray-300">Немає учасників команди</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5">
         {messages.length === 0 && !error && (

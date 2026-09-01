@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 
@@ -54,6 +54,7 @@ export default function Sidebar() {
   const [openChat, setOpenChat] = useState<GeneralChatInfo | null>(null)
   const [newPmName, setNewPmName] = useState('')
   const [addingPm, setAddingPm]   = useState(false)
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false)
   const [plannedIncome, setPlannedIncome]   = useState(0)
   const [plannedExpense, setPlannedExpense] = useState(0)
   const [addAccountOpen, setAddAccountOpen] = useState(false)
@@ -76,7 +77,15 @@ export default function Sidebar() {
     fetchPmProjects()
     const saved = Number(localStorage.getItem('sidebarWidth'))
     if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) setSidebarWidth(saved)
+    setProjectsCollapsed(localStorage.getItem('sidebarProjectsCollapsed') === '1')
   }, [])
+
+  function toggleProjectsCollapsed() {
+    setProjectsCollapsed(prev => {
+      localStorage.setItem('sidebarProjectsCollapsed', prev ? '0' : '1')
+      return !prev
+    })
+  }
 
   // Keep the PM project list fresh: refetch on navigation and whenever any page
   // creates/edits a project (ProjectModal and CRM won-conversion dispatch this event).
@@ -411,9 +420,25 @@ export default function Sidebar() {
         {section === 'projects' && (
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 flex-shrink-0">
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Проєкти</p>
               <button
-                onClick={() => setAddingPm(true)}
+                onClick={toggleProjectsCollapsed}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white font-medium uppercase tracking-wide transition-colors min-w-0"
+                title={projectsCollapsed ? 'Розгорнути список проєктів' : 'Згорнути список проєктів'}
+              >
+                {projectsCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                Проєкти
+                {projectsCollapsed && pmProjects.length > 0 && (
+                  <span className="text-[10px] text-gray-600 normal-case tracking-normal">({pmProjects.length})</span>
+                )}
+                {projectsCollapsed && pmProjects.some(p => {
+                  const u = chatUnread[p.id]
+                  return u?.team || u?.client
+                }) && (
+                  <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse flex-shrink-0" title="Нове повідомлення в чаті проєкту" />
+                )}
+              </button>
+              <button
+                onClick={() => { setAddingPm(true); if (projectsCollapsed) toggleProjectsCollapsed() }}
                 className="text-gray-500 hover:text-white transition-colors p-0.5 rounded"
                 title="Новий проєкт"
               >
@@ -466,7 +491,7 @@ export default function Sidebar() {
 
               <div className="border-t border-white/5 mb-2" />
 
-              {pmProjects.length === 0 && !addingPm && (
+              {pmProjects.length === 0 && !addingPm && !projectsCollapsed && (
                 <button
                   onClick={() => setAddingPm(true)}
                   className="w-full text-xs text-gray-500 hover:text-gray-300 py-2 text-left transition-colors"
@@ -474,7 +499,7 @@ export default function Sidebar() {
                   + Створити перший проєкт
                 </button>
               )}
-              {pmProjects.map(p => {
+              {!projectsCollapsed && pmProjects.map(p => {
                 const isActive = pathname.startsWith(`/board/${p.id}`)
                 const u = chatUnread[p.id]
                 return (

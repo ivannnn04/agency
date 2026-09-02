@@ -73,11 +73,16 @@ export default function ActiveTimerChip({ memberId }: { memberId: string }) {
     })
   }, [memberId])
 
-  // Initial check + periodic re-check (the timer can start/stop on other pages/tabs)
+  // Initial check + periodic re-check (the timer can start/stop on other pages/tabs).
+  // 'gudrix:timer-changed' fires when this browser starts/stops a timer elsewhere.
   useEffect(() => {
     check()
     const iv = setInterval(check, 15000)
-    return () => clearInterval(iv)
+    window.addEventListener('gudrix:timer-changed', check)
+    return () => {
+      clearInterval(iv)
+      window.removeEventListener('gudrix:timer-changed', check)
+    }
   }, [check])
 
   // Second-by-second ticking while running
@@ -99,6 +104,7 @@ export default function ActiveTimerChip({ memberId }: { memberId: string }) {
       .eq('id', entry.entryId)
     setEntry(null)
     setElapsed(0)
+    window.dispatchEvent(new Event('gudrix:timer-changed'))
   }
 
   if (!entry) return null

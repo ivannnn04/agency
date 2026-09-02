@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge, Play, Square } from 'lucide-react'
 import WorkloadView from '@/components/WorkloadView'
 import ActiveTimerChip from '@/components/ActiveTimerChip'
 import { GeneralChatInfo } from '@/components/GeneralChat'
@@ -54,6 +54,8 @@ export default function TeamDashboardPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
   const [loading, setLoading] = useState(true)
+  // The member's currently running time entry (for quick start/stop in task rows)
+  const [activeEntry, setActiveEntry] = useState<{ entryId: string; taskId: string; startedAt: string } | null>(null)
 
   // Unread dots for the Чати tab (keyed by project_id, team channel)
   const unread = useChatUnread({ self: 'team', memberId: member?.id ?? null })
@@ -73,12 +75,17 @@ export default function TeamDashboardPage() {
 
     // Membership + assigned tasks in parallel — a task assignment alone must
     // be enough to see the project, even if membership wasn't added
-    const [{ data: pm }, { data: myAssignments }, { data: chats }, chatMembersRes] = await Promise.all([
+    const [{ data: pm }, { data: myAssignments }, { data: chats }, chatMembersRes, { data: openEntries }] = await Promise.all([
       supabase.from('project_members').select('project_id').eq('team_member_id', mem.id),
       supabase.from('task_assignees').select('task_id').eq('team_member_id', mem.id),
       supabase.from('general_chats').select('id, name').order('created_at'),
       supabase.from('general_chat_members').select('chat_id, team_member_id'),
+      supabase.from('time_entries').select('id, task_id, started_at')
+        .eq('team_member_id', mem.id).is('ended_at', null)
+        .order('started_at', { ascending: false }).limit(1),
     ])
+    const open = openEntries?.[0]
+    setActiveEntry(open ? { entryId: open.id, taskId: open.task_id, startedAt: open.started_at } : null)
     if (chats) setGeneralChats(chats as GeneralChatInfo[])
     // If the migration isn't run yet the query errors — then every chat is open to all
     if (!chatMembersRes.error && chatMembersRes.data) {
@@ -216,6 +223,50 @@ export default function TeamDashboardPage() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.replace('/team/login')
+  }
+
+  // Keep the row play/stop buttons in sync when the header chip stops the timer
+  useEffect(() => {
+    const onChange = async () => {
+      if (!member) return
+      const { data } = await supabase
+        .from('time_entries')
+        .select('id, task_id, started_at')
+        .eq('team_member_id', member.id)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1)
+      const open = data?.[0]
+      setActiveEntry(open ? { entryId: open.id, taskId: open.task_id, startedAt: open.started_at } : null)
+    }
+    window.addEventListener('gudrix:timer-changed', onChange)
+    return () => window.removeEventListener('gudrix:timer-changed', onChange)
+  }, [member])
+
+  // Quick start/stop tracking straight from the «Мої задачі» rows.
+  // Starting on one task first closes any other running entry.
+  async function toggleTracking(taskId: string) {
+    if (!member) return
+    if (activeEntry) {
+      const ended = new Date()
+      const duration = Math.floor((ended.getTime() - new Date(activeEntry.startedAt).getTime()) / 1000)
+      await supabase
+        .from('time_entries')
+        .update({ ended_at: ended.toISOString(), duration_seconds: duration })
+        .eq('id', activeEntry.entryId)
+      setActiveEntry(null)
+      if (activeEntry.taskId === taskId) {
+        window.dispatchEvent(new Event('gudrix:timer-changed'))
+        return
+      }
+    }
+    const { data } = await supabase
+      .from('time_entries')
+      .insert({ task_id: taskId, team_member_id: member.id, started_at: new Date().toISOString() })
+      .select('id, task_id, started_at')
+      .single()
+    if (data) setActiveEntry({ entryId: data.id, taskId: data.task_id, startedAt: data.started_at })
+    window.dispatchEvent(new Event('gudrix:timer-changed'))
   }
 
   if (loading) return (
@@ -432,14 +483,30 @@ export default function TeamDashboardPage() {
                 <div className="flex flex-col gap-2">
                   {group.tasks.map(task => {
                     const isOverdue = task.due_date && new Date(task.due_date) < new Date()
+                    const tracking = activeEntry?.taskId === task.id
                     return (
                       <div
                         key={task.id}
-                        className="bg-white rounded-xl border border-gray-100 p-4 hover:border-gray-200 transition-colors"
+                        onClick={() => task.project_id && router.push(`/team/board/${task.project_id}?task=${task.id}`)}
+                        className={`bg-white rounded-xl border p-4 transition-colors ${
+                          task.project_id ? 'cursor-pointer hover:border-teal-300' : ''
+                        } ${tracking ? 'border-teal-300 ring-1 ring-teal-200' : 'border-gray-100 hover:border-gray-200'}`}
+                        title={task.project_id ? 'Відкрити картку задачі' : undefined}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-sm font-medium text-gray-900 leading-snug">{task.title}</p>
                           <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleTracking(task.id) }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                tracking
+                                  ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                                  : 'bg-teal-50 text-teal-600 hover:bg-teal-100'
+                              }`}
+                              title={tracking ? 'Зупинити трекання' : 'Почати трекати час'}
+                            >
+                              {tracking ? <Square size={11} fill="currentColor" /> : <Play size={11} fill="currentColor" />}
+                            </button>
                             {task.column_name && (
                               <span
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded-full"

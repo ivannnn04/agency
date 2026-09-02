@@ -114,22 +114,26 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
 
   const load = useCallback(async () => {
     // pinned column may not be migrated yet — fall back to the base select
-    let { data, error: err } = await supabase
+    const withPins = await supabase
       .from('project_messages')
       .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, pinned, created_at')
       .eq('chat_id', chat.id)
       .order('created_at', { ascending: true })
       .limit(500)
+    let rows: Message[] | null = withPins.data as Message[] | null
+    let err = withPins.error
     if (err && err.message.includes('pinned')) {
-      ;({ data, error: err } = await supabase
+      const plain = await supabase
         .from('project_messages')
         .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at')
         .eq('chat_id', chat.id)
         .order('created_at', { ascending: true })
-        .limit(500))
+        .limit(500)
+      rows = plain.data as Message[] | null
+      err = plain.error
     }
     if (err) { setError('Запусти міграцію general_chats_migration.sql'); return }
-    setMessages(data as Message[])
+    setMessages(rows ?? [])
 
     const { data: rx } = await supabase
       .from('message_reactions')

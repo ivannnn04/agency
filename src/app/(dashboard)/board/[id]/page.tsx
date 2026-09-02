@@ -17,6 +17,7 @@ import ProjectNotepad from '@/components/ProjectNotepad'
 import ProjectInvoices from '@/components/ProjectInvoices'
 import ProjectReport from '@/components/ProjectReport'
 import { useChatUnread } from '@/lib/chatUnread'
+import { suggestEstimate } from '@/lib/preEstimate'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -194,20 +195,26 @@ export default function BoardPage() {
   async function addTask(columnId: string, patch: Partial<PMTask> & { title: string; team_member_ids?: string[] }) {
     const memberIds = patch.team_member_ids ?? []
     const primary = memberIds[0] ?? null
-    const { data, error } = await supabase
+    const baseTask = {
+      finance_project_id: id,
+      column_id: columnId,
+      title: patch.title,
+      status: 'todo',
+      priority: patch.priority ?? 'medium',
+      team_member_id: primary,
+      due_date: patch.due_date ?? null,
+      description: null,
+    }
+    // Auto pre-estimate from the title; editable later. Retry without the
+    // field if the estimate_hours column isn't in the DB yet.
+    let { data, error } = await supabase
       .from('pm_tasks')
-      .insert({
-        finance_project_id: id,
-        column_id: columnId,
-        title: patch.title,
-        status: 'todo',
-        priority: patch.priority ?? 'medium',
-        team_member_id: primary,
-        due_date: patch.due_date ?? null,
-        description: null,
-      })
+      .insert({ ...baseTask, estimate_hours: suggestEstimate(patch.title) })
       .select()
       .single()
+    if (error && error.message.includes('estimate_hours')) {
+      ;({ data, error } = await supabase.from('pm_tasks').insert(baseTask).select().single())
+    }
     setAddingInColumn(null)
     if (error) {
       setDbError(`Помилка збереження задачі: ${error.message}`)

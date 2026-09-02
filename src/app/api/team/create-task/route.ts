@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { suggestEstimate } from '@/lib/preEstimate'
 
 function adminClient() {
   return createClient(
@@ -18,20 +19,27 @@ export async function POST(req: Request) {
 
   const admin = adminClient()
 
-  const { data: task, error } = await admin
+  const base = {
+    title,
+    finance_project_id,
+    column_id,
+    team_member_id: team_member_id ?? null,
+    status: 'todo',
+    priority: 'medium',
+  }
+
+  // Auto pre-estimate from the title (people forget to set it manually);
+  // stays editable. Fall back without the field if the column doesn't exist yet.
+  let { data: task, error } = await admin
     .from('pm_tasks')
-    .insert({
-      title,
-      finance_project_id,
-      column_id,
-      team_member_id: team_member_id ?? null,
-      status: 'todo',
-      priority: 'medium',
-    })
+    .insert({ ...base, estimate_hours: suggestEstimate(title) })
     .select()
     .single()
+  if (error && error.message.includes('estimate_hours')) {
+    ;({ data: task, error } = await admin.from('pm_tasks').insert(base).select().single())
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (error || !task) return NextResponse.json({ error: error?.message ?? 'insert failed' }, { status: 400 })
 
   await admin.from('notifications').insert({
     type: 'task_created',

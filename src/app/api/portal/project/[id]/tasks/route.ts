@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
+import { suggestEstimate } from '@/lib/preEstimate'
 
 // Clients can add tasks — but only into the project's Backlog column.
 
@@ -42,19 +43,28 @@ export async function POST(
   }
 
   const clientName = client.name || client.email
-  const { data: task, error } = await supabaseAdmin
+  const baseTask = {
+    title: cleanTitle.slice(0, 200),
+    description: String(description ?? '').trim().slice(0, 4000) || null,
+    finance_project_id: id,
+    column_id: backlog.id,
+    priority: 'medium',
+  }
+  // Auto pre-estimate from the title; falls back if the column isn't migrated yet
+  let { data: task, error } = await supabaseAdmin
     .from('pm_tasks')
-    .insert({
-      title: cleanTitle.slice(0, 200),
-      description: String(description ?? '').trim().slice(0, 4000) || null,
-      finance_project_id: id,
-      column_id: backlog.id,
-      priority: 'medium',
-    })
+    .insert({ ...baseTask, estimate_hours: suggestEstimate(baseTask.title) })
     .select('id, title, description, column_id, priority, start_date, due_date, created_at')
     .single()
+  if (error && error.message.includes('estimate_hours')) {
+    ;({ data: task, error } = await supabaseAdmin
+      .from('pm_tasks')
+      .insert(baseTask)
+      .select('id, title, description, column_id, priority, start_date, due_date, created_at')
+      .single())
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (error || !task) return NextResponse.json({ error: error?.message ?? 'insert failed' }, { status: 400 })
 
   // Ping the admin bell so the request doesn't sit unnoticed in the backlog
   const { data: project } = await supabaseAdmin.from('projects').select('name').eq('id', id).single()

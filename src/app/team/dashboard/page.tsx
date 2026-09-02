@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare } from 'lucide-react'
 import { GeneralChatInfo } from '@/components/GeneralChat'
 import ChatsHub from '@/components/chat/ChatsHub'
 import { useChatUnread } from '@/lib/chatUnread'
@@ -47,7 +47,7 @@ export default function TeamDashboardPage() {
   const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
   // chat_id -> member ids; a chat absent from the map is open to the whole team
   const [chatMembership, setChatMembership] = useState<Record<string, string[]>>({})
-  const [tab, setTab] = useState<'overview' | 'chats'>('overview')
+  const [tab, setTab] = useState<'projects' | 'tasks' | 'chats'>('projects')
   const [addingProject, setAddingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
@@ -238,8 +238,63 @@ export default function TeamDashboardPage() {
     tasksByProject[key].tasks.push(t)
   }
 
+  const chatsUnread = projects.some(p => unread[p.id]?.team)
+
+  // ClickUp-style navigation: icon rail on the left (desktop),
+  // bottom tab bar on mobile.
+  const navItems: { key: 'projects' | 'tasks' | 'chats' | 'reports'; label: string; icon: typeof FolderKanban; dot?: boolean }[] = [
+    { key: 'projects', label: 'Проєкти', icon: FolderKanban },
+    { key: 'tasks',    label: 'Задачі',  icon: CheckSquare },
+    { key: 'chats',    label: 'Чати',    icon: MessageSquare, dot: chatsUnread },
+    { key: 'reports',  label: 'Звіт',    icon: BarChart2 },
+  ]
+
+  function onNav(key: 'projects' | 'tasks' | 'chats' | 'reports') {
+    if (key === 'reports') { router.push('/team/reports'); return }
+    setTab(key)
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left icon rail (desktop) */}
+      <aside className="hidden md:flex w-[76px] bg-[#0f1117] flex-col items-center py-4 gap-1.5 flex-shrink-0 sticky top-0 h-screen">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold text-sm mb-3"
+          style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+          title={member?.name}
+        >
+          {member?.name.charAt(0)}
+        </div>
+        {navItems.map(item => {
+          const Icon = item.icon
+          const active = item.key === tab
+          return (
+            <button
+              key={item.key}
+              onClick={() => onNav(item.key)}
+              className={`relative w-14 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-colors ${
+                active ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Icon size={18} />
+              <span className="text-[9px] font-medium">{item.label}</span>
+              {item.dot && <span className="absolute top-1.5 right-3 w-2 h-2 rounded-full bg-teal-400 animate-pulse" />}
+            </button>
+          )
+        })}
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <ThemeToggle variant="sidebar" />
+          <button
+            onClick={handleLogout}
+            className="text-gray-500 hover:text-white transition-colors p-2 rounded-xl hover:bg-white/5"
+            title="Вийти"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col">
       <header className="bg-[#0f1117] text-white px-6 py-4 flex items-center gap-3">
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
@@ -252,18 +307,12 @@ export default function TeamDashboardPage() {
           <p className="text-xs text-gray-400">{member?.role}</p>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <button
-            onClick={() => router.push('/team/reports')}
-            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-xs"
-            title="Звіт по годинах"
-          >
-            <BarChart2 size={14} /> Звіт
-          </button>
           {member && <TeamNotificationBell memberId={member.id} />}
-          <ThemeToggle variant="sidebar" />
+          {/* On desktop the theme toggle and logout live in the left rail */}
+          <span className="md:hidden"><ThemeToggle variant="sidebar" /></span>
           <button
             onClick={handleLogout}
-            className="text-gray-400 hover:text-white transition-colors p-1.5 rounded"
+            className="md:hidden text-gray-400 hover:text-white transition-colors p-1.5 rounded"
             title="Вийти"
           >
             <LogOut size={16} />
@@ -271,31 +320,8 @@ export default function TeamDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6">
-        {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-gray-200/60 rounded-xl p-1 w-fit mb-6">
-          <button
-            onClick={() => setTab('overview')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Проєкти
-          </button>
-          <button
-            onClick={() => setTab('chats')}
-            className={`relative px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === 'chats' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Чати
-            {projects.some(p => unread[p.id]?.team) && (
-              <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-teal-500" />
-            )}
-          </button>
-        </div>
-
-        {tab === 'overview' && (<>
+      <main className="w-full max-w-5xl mx-auto p-6 pb-24 md:pb-6">
+        {tab === 'projects' && (<>
         {/* Projects section */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">Мої проєкти</h2>
@@ -377,7 +403,9 @@ export default function TeamDashboardPage() {
             ))}
           </div>
         )}
+        </>)}
 
+        {tab === 'tasks' && (<>
         {/* My tasks section */}
         <h2 className="text-lg font-bold text-gray-900 mb-4">Мої задачі</h2>
 
@@ -450,6 +478,31 @@ export default function TeamDashboardPage() {
           />
         )}
       </main>
+      </div>
+
+      {/* Bottom tab bar (mobile) */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 bg-[#0f1117] border-t border-white/10 flex z-30"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {navItems.map(item => {
+          const Icon = item.icon
+          const active = item.key === tab
+          return (
+            <button
+              key={item.key}
+              onClick={() => onNav(item.key)}
+              className={`relative flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors ${
+                active ? 'text-white' : 'text-gray-500'
+              }`}
+            >
+              <Icon size={18} />
+              <span className="text-[10px] font-medium">{item.label}</span>
+              {item.dot && <span className="absolute top-1.5 right-[28%] w-2 h-2 rounded-full bg-teal-400 animate-pulse" />}
+            </button>
+          )
+        })}
+      </nav>
     </div>
   )
 }

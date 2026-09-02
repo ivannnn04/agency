@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
-import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare } from 'lucide-react'
+import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge } from 'lucide-react'
+import WorkloadView from '@/components/WorkloadView'
 import { GeneralChatInfo } from '@/components/GeneralChat'
 import ChatsHub from '@/components/chat/ChatsHub'
 import { useChatUnread } from '@/lib/chatUnread'
@@ -47,7 +48,7 @@ export default function TeamDashboardPage() {
   const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
   // chat_id -> member ids; a chat absent from the map is open to the whole team
   const [chatMembership, setChatMembership] = useState<Record<string, string[]>>({})
-  const [tab, setTab] = useState<'projects' | 'tasks' | 'chats'>('projects')
+  const [tab, setTab] = useState<'projects' | 'tasks' | 'chats' | 'workload'>('projects')
   const [addingProject, setAddingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
@@ -242,14 +243,18 @@ export default function TeamDashboardPage() {
 
   // ClickUp-style navigation: icon rail on the left (desktop),
   // bottom tab bar on mobile.
-  const navItems: { key: 'projects' | 'tasks' | 'chats' | 'reports'; label: string; icon: typeof FolderKanban; dot?: boolean }[] = [
+  const navItems: { key: 'projects' | 'tasks' | 'chats' | 'workload' | 'reports'; label: string; icon: typeof FolderKanban; dot?: boolean }[] = [
     { key: 'projects', label: 'Проєкти', icon: FolderKanban },
     { key: 'tasks',    label: 'Задачі',  icon: CheckSquare },
     { key: 'chats',    label: 'Чати',    icon: MessageSquare, dot: chatsUnread },
+    // Workload planning is for empowered members only
+    ...(member?.can_create_projects
+      ? [{ key: 'workload' as const, label: 'Люди', icon: Gauge }]
+      : []),
     { key: 'reports',  label: 'Звіт',    icon: BarChart2 },
   ]
 
-  function onNav(key: 'projects' | 'tasks' | 'chats' | 'reports') {
+  function onNav(key: 'projects' | 'tasks' | 'chats' | 'workload' | 'reports') {
     if (key === 'reports') { router.push('/team/reports'); return }
     setTab(key)
   }
@@ -468,6 +473,18 @@ export default function TeamDashboardPage() {
           </div>
         )}
         </>)}
+
+        {tab === 'workload' && member?.can_create_projects && (
+          <>
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Завантаженість</h2>
+              <p className="text-xs text-gray-400 mt-1">
+                Черга активних задач кожного учасника. «Старт через» рахується з естімейтів мінус уже затреканий час.
+              </p>
+            </div>
+            <WorkloadView canEdit />
+          </>
+        )}
 
         {tab === 'chats' && member && (
           <ChatsHub

@@ -378,9 +378,7 @@ export default function TeamDashboardPage() {
         </div>
       </header>
 
-      <main className={tab === 'chats' || tab === 'workload'
-        ? 'w-full p-4 md:p-6 pb-24 md:pb-6'
-        : 'w-full max-w-5xl mx-auto p-6 pb-24 md:pb-6'}>
+      <main className="w-full p-4 md:p-6 pb-24 md:pb-6">
         {tab === 'projects' && (<>
         {/* Projects section */}
         <div className="flex items-center justify-between mb-4">

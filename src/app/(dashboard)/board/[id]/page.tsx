@@ -18,6 +18,7 @@ import ProjectInvoices from '@/components/ProjectInvoices'
 import ProjectReport from '@/components/ProjectReport'
 import { useChatUnread } from '@/lib/chatUnread'
 import { suggestEstimate } from '@/lib/preEstimate'
+import MoveTaskProject from '@/components/MoveTaskProject'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -307,6 +308,37 @@ export default function BoardPage() {
 
   // Assigning a task must also make the member part of the project —
   // otherwise their dashboard and board access won't include it
+  // Move a task to another project: same-named column (or the leftmost one),
+  // assignees follow as project members of the target project.
+  async function moveTaskToProject(taskId: string, targetProjectId: string) {
+    if (targetProjectId === id) return
+    const task = tasks.find(t => t.id === taskId)
+    const currentCol = columns.find(c => c.id === task?.column_id)
+    const { data: cols } = await supabase
+      .from('pm_columns')
+      .select('id, name, position')
+      .eq('project_id', targetProjectId)
+      .order('position')
+    const target =
+      (cols ?? []).find(c => currentCol && c.name.toLowerCase() === currentCol.name.toLowerCase())
+      ?? (cols ?? [])[0]
+      ?? null
+    const { error } = await supabase
+      .from('pm_tasks')
+      .update({ finance_project_id: targetProjectId, column_id: target?.id ?? null })
+      .eq('id', taskId)
+    if (error) { setDbError(`Не вдалося перенести задачу: ${error.message}`); return }
+    const mids = assigneesByTask[taskId] ?? []
+    if (mids.length > 0) {
+      await supabase.from('project_members').upsert(
+        mids.map(m => ({ project_id: targetProjectId, team_member_id: m })),
+        { onConflict: 'project_id,team_member_id' }
+      )
+    }
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+    setSelectedTask(null)
+  }
+
   async function ensureProjectMembers(memberIds: string[]) {
     const missing = memberIds.filter(mid => !projectMembers.some(m => m.id === mid))
     if (missing.length === 0) return
@@ -877,6 +909,7 @@ create policy "team_members_all" on team_members for all using (true) with check
           onUpdate={patch => updateTask(selectedTask.id, patch)}
           onDelete={() => deleteTask(selectedTask.id)}
           onMove={colId => moveTask(selectedTask.id, colId)}
+          onMoveProject={pid => moveTaskToProject(selectedTask.id, pid)}
         />
       )}
     </div>
@@ -1196,7 +1229,7 @@ function TaskCard({
 // ── Task detail panel ──────────────────────────────────────────────────────────
 
 function TaskDetailPanel({
-  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove,
+  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove, onMoveProject,
 }: {
   task: PMTask
   columns: PMColumn[]
@@ -1208,6 +1241,7 @@ function TaskDetailPanel({
   onUpdate: (patch: Partial<PMTask>) => void
   onDelete: () => void
   onMove: (colId: string) => void
+  onMoveProject: (projectId: string) => void
 }) {
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc]   = useState(task.description ?? '')
@@ -1290,6 +1324,11 @@ function TaskDetailPanel({
               {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
+
+          {/* Move to another project */}
+          {task.finance_project_id && (
+            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
+          )}
 
           {/* Assignees */}
           <div className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">

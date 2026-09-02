@@ -16,6 +16,7 @@ import ProjectChat from '@/components/ProjectChat'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
+import MoveTaskProject from '@/components/MoveTaskProject'
 
 interface Project {
   id: string
@@ -170,6 +171,37 @@ export default function TeamBoardPage() {
     }
 
     setLoading(false)
+  }
+
+  // Move a task to another project: it lands in the column with the same
+  // name (or the leftmost one), assignees follow as project members.
+  async function moveTaskToProject(taskId: string, targetProjectId: string) {
+    if (targetProjectId === id) return
+    const task = tasks.find(t => t.id === taskId)
+    const currentCol = columns.find(c => c.id === task?.column_id)
+    const { data: cols } = await supabase
+      .from('pm_columns')
+      .select('id, name, position')
+      .eq('project_id', targetProjectId)
+      .order('position')
+    const target =
+      (cols ?? []).find(c => currentCol && c.name.toLowerCase() === currentCol.name.toLowerCase())
+      ?? (cols ?? [])[0]
+      ?? null
+    const { error } = await supabase
+      .from('pm_tasks')
+      .update({ finance_project_id: targetProjectId, column_id: target?.id ?? null })
+      .eq('id', taskId)
+    if (error) return
+    const mids = assigneesByTask[taskId] ?? []
+    if (mids.length > 0) {
+      await supabase.from('project_members').upsert(
+        mids.map(m => ({ project_id: targetProjectId, team_member_id: m })),
+        { onConflict: 'project_id,team_member_id' }
+      )
+    }
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+    setSelectedTask(null)
   }
 
   // Rescue for projects that ended up without columns (created before the
@@ -676,6 +708,7 @@ export default function TeamBoardPage() {
             onClose={() => setSelectedTask(null)}
             onUpdate={patch => updateTask(selectedTask.id, patch)}
             onMove={colId => moveTask(selectedTask.id, colId)}
+            onMoveProject={pid => moveTaskToProject(selectedTask.id, pid)}
           />
         )}
       </div>
@@ -753,7 +786,7 @@ function TaskPanel({
   task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
   canAssignOthers, onAssignMember, onRemoveMember,
   trackedSeconds, isTimerActive, otherTimerActive, elapsed,
-  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove,
+  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove, onMoveProject,
 }: {
   task: PMTask
   columns: PMColumn[]
@@ -775,6 +808,7 @@ function TaskPanel({
   onClose: () => void
   onUpdate: (patch: Partial<PMTask>) => void
   onMove: (colId: string) => void
+  onMoveProject: (projectId: string) => void
 }) {
   const isMine = !!member && assigneeIds.includes(member.id)
   const assignedMembers = assigneeIds
@@ -959,6 +993,11 @@ function TaskPanel({
               {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
+
+          {/* Move to another project */}
+          {task.finance_project_id && (
+            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
+          )}
 
           {/* Priority */}
           <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">

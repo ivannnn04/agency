@@ -38,17 +38,30 @@ export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
   const [colInfo, setColInfo] = useState<Record<string, { name: string; color: string }>>({})
   const [trackedByTask, setTrackedByTask] = useState<Record<string, number>>({}) // seconds
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
   const [editingTask, setEditingTask] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
   const load = useCallback(async () => {
-    const [{ data: mems }, { data: tx }, { data: asg }, { data: projs }] = await Promise.all([
+    const [{ data: mems }, txRes, { data: asg }, { data: projs }] = await Promise.all([
       supabase.from('team_members').select('id, name, color, role').order('name'),
       supabase.from('pm_tasks').select('id, title, status, priority, due_date, column_id, finance_project_id, estimate_hours, team_member_id, created_at'),
       supabase.from('task_assignees').select('task_id, team_member_id'),
       supabase.from('projects').select('id, name'),
     ])
     setMembers((mems ?? []) as Member[])
+
+    if (txRes.error) {
+      setFetchError(
+        txRes.error.message.includes('estimate_hours')
+          ? 'У базі немає колонки estimate_hours — запусти міграцію estimate_migration.sql'
+          : 'Не вдалося завантажити задачі: ' + txRes.error.message
+      )
+      setLoading(false)
+      return
+    }
+    setFetchError('')
+    const tx = txRes.data
 
     const open = ((tx ?? []) as WTask[]).filter(t => (t.status ?? '') !== 'completed')
 
@@ -127,10 +140,19 @@ export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">Завантаження...</p>
 
+  if (fetchError) return (
+    <div className="bg-red-50 border border-red-100 text-red-600 text-sm rounded-2xl px-4 py-3">
+      {fetchError}
+    </div>
+  )
+
   const unassigned = sortTasks(tasks.filter(t => taskMembers(t).length === 0))
 
   return (
-    <div className="flex gap-4 overflow-x-auto items-start pb-4">
+    <div
+      className="grid gap-4 items-start pb-4"
+      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
+    >
       {members.map(m => {
         const myTasks = sortTasks(tasks.filter(t => taskMembers(t).includes(m.id)))
         const queueHours = myTasks.reduce((s, t) => s + (remainingHours(t) ?? 0), 0)
@@ -138,7 +160,7 @@ export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
         let offset = 0
 
         return (
-          <div key={m.id} className="flex-shrink-0 w-[280px] bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm min-w-0">
             {/* Member header */}
             <div className="px-4 py-3 border-b border-gray-100">
               <div className="flex items-center gap-2.5">
@@ -250,7 +272,7 @@ export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
 
       {/* Unassigned open tasks — candidates to hand out */}
       {unassigned.length > 0 && (
-        <div className="flex-shrink-0 w-[280px] bg-white rounded-2xl border border-dashed border-gray-200">
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 min-w-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
               <UserRound size={14} className="text-gray-400" />

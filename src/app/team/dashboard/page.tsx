@@ -431,7 +431,7 @@ export default function TeamDashboardPage() {
             <p className="text-sm mt-1">Зверніться до адміністратора</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
             {projects.map(project => (
               <Link
                 key={project.id}

@@ -17,13 +17,14 @@ export interface HubProject {
   color: string
 }
 
-export default function ChatsHub({ projects, generalChats, sender, unread, onCreateGeneral, onGeneralDeleted }: {
+export default function ChatsHub({ projects, generalChats, sender, unread, onCreateGeneral, onGeneralDeleted, heightOffset = 210 }: {
   projects: HubProject[]
   generalChats: GeneralChatInfo[]
   sender: ChatSender
   unread: Record<string, ChannelUnread>
   onCreateGeneral?: () => void
   onGeneralDeleted?: (id: string) => void
+  heightOffset?: number
 }) {
   const [selected, setSelected] = useState<{ kind: 'project' | 'general'; id: string } | null>(null)
   const [drawerProject, setDrawerProject] = useState<HubProject | null>(null)
@@ -48,7 +49,7 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
     <>
       <div
         className="flex bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm"
-        style={{ height: 'calc(100vh - 210px)', minHeight: 420 }}
+        style={{ height: `calc(100vh - ${heightOffset}px)`, minHeight: 420 }}
       >
         {/* Channel list */}
         <div className="w-full md:w-64 md:max-w-[45vw] flex-shrink-0 md:border-r border-gray-100 bg-gray-50 overflow-y-auto py-3">

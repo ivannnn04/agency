@@ -55,6 +55,7 @@ export default function AdminChatsPage() {
           unread={unread}
           onCreateGeneral={createGeneralChat}
           onGeneralDeleted={id => setGeneralChats(prev => prev.filter(c => c.id !== id))}
+          heightOffset={130}
         />
       )}
     </div>

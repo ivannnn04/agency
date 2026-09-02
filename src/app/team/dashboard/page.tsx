@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { TeamMember } from '@/types'
 import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge } from 'lucide-react'
 import WorkloadView from '@/components/WorkloadView'
+import ActiveTimerChip from '@/components/ActiveTimerChip'
 import { GeneralChatInfo } from '@/components/GeneralChat'
 import ChatsHub from '@/components/chat/ChatsHub'
 import { useChatUnread } from '@/lib/chatUnread'
@@ -311,7 +312,8 @@ export default function TeamDashboardPage() {
           <p className="font-semibold text-sm">{member?.name}</p>
           <p className="text-xs text-gray-400">{member?.role}</p>
         </div>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-3 min-w-0">
+          {member && <ActiveTimerChip memberId={member.id} />}
           {member && <TeamNotificationBell memberId={member.id} />}
           {/* On desktop the theme toggle and logout live in the left rail */}
           <span className="md:hidden"><ThemeToggle variant="sidebar" /></span>
@@ -380,9 +382,10 @@ export default function TeamDashboardPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
             {projects.map(project => (
-              <div
+              <Link
                 key={project.id}
-                className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow"
+                href={`/team/board/${project.id}`}
+                className="block bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
                 style={{ borderLeft: `4px solid ${project.color}` }}
               >
                 <div className="p-5">
@@ -398,15 +401,14 @@ export default function TeamDashboardPage() {
                       <FolderKanban size={16} style={{ color: project.color }} />
                     </div>
                   </div>
-                  <Link
-                    href={`/team/board/${project.id}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg transition-colors"
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg"
                     style={{ backgroundColor: project.color }}
                   >
                     Відкрити борду
-                  </Link>
+                  </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

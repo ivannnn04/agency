@@ -75,6 +75,19 @@ export default function TeamBoardPage() {
   const [elapsed, setElapsed] = useState(0)
 
   const [selectedTask, setSelectedTask] = useState<PMTask | null>(null)
+  const [deepLinkDone, setDeepLinkDone] = useState(false)
+
+  // ?task=<id> deep link (from the global timer chip) opens that task's panel
+  useEffect(() => {
+    if (deepLinkDone || tasks.length === 0) return
+    const taskId = new URLSearchParams(window.location.search).get('task')
+    if (taskId) {
+      const t = tasks.find(x => x.id === taskId)
+      if (t) setSelectedTask(t)
+    }
+    setDeepLinkDone(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, deepLinkDone])
   const [addingInColumn, setAddingInColumn] = useState<string | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [saving, setSaving] = useState(false)

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Hash, Trash2, Users } from 'lucide-react'
+import { MessageSquare, X, Hash, Trash2, Users, Pin } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -25,6 +25,7 @@ interface Message {
   content: string
   file_url: string | null
   file_name: string | null
+  pinned?: boolean | null
   created_at: string
 }
 
@@ -44,7 +45,22 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
+
+  async function togglePin(m: Message) {
+    const next = !m.pinned
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, pinned: next } : x))
+    const { error: err } = await supabase
+      .from('project_messages')
+      .update({ pinned: next })
+      .eq('id', m.id)
+    if (err) setError('Закріплення не збереглося — запусти міграцію chat_pins_migration.sql')
+  }
+
+  function scrollToMessage(id: string) {
+    msgRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   // Admin-only membership management: no rows = the whole team sees the chat
   const [manageOpen, setManageOpen] = useState(false)
@@ -97,12 +113,21 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   }
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase
+    // pinned column may not be migrated yet — fall back to the base select
+    let { data, error: err } = await supabase
       .from('project_messages')
-      .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at')
+      .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, pinned, created_at')
       .eq('chat_id', chat.id)
       .order('created_at', { ascending: true })
       .limit(500)
+    if (err && err.message.includes('pinned')) {
+      ;({ data, error: err } = await supabase
+        .from('project_messages')
+        .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: true })
+        .limit(500))
+    }
     if (err) { setError('Запусти міграцію general_chats_migration.sql'); return }
     setMessages(data as Message[])
 
@@ -308,6 +333,31 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         </div>
       )}
 
+      {/* Pinned messages strip */}
+      {messages.some(m => m.pinned) && (
+        <div className="border-b border-amber-100 bg-amber-50/70 flex-shrink-0 max-h-28 overflow-y-auto">
+          {messages.filter(m => m.pinned).map(m => (
+            <div key={m.id} className="flex items-center gap-2 px-4 py-1.5">
+              <Pin size={11} className="text-amber-500 flex-shrink-0" />
+              <button
+                onClick={() => scrollToMessage(m.id)}
+                className="flex-1 min-w-0 text-left text-[11px] text-gray-700 truncate hover:text-gray-900"
+                title="Показати повідомлення"
+              >
+                <span className="font-semibold">{m.sender_name}:</span> {m.content || m.file_name || 'файл'}
+              </button>
+              <button
+                onClick={() => togglePin(m)}
+                className="text-gray-300 hover:text-red-400 flex-shrink-0 p-0.5"
+                title="Відкріпити"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5">
         {messages.length === 0 && !error && (
           <p className="text-xs text-gray-300 text-center mt-8 flex flex-col items-center gap-2">
@@ -318,7 +368,16 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         {messages.map(m => {
           const mine = isMine(m)
           return (
-            <div key={m.id} className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}>
+            <div
+              key={m.id}
+              ref={el => { msgRefs.current[m.id] = el }}
+              className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}
+            >
+              {m.pinned && (
+                <p className={`flex items-center gap-1 text-[9px] text-amber-500 mb-0.5 px-1 ${mine ? 'justify-end' : ''}`}>
+                  <Pin size={9} /> закріплено
+                </p>
+              )}
               {!mine && (
                 <p className="text-[10px] text-gray-400 mb-0.5 px-1">
                   {m.sender_name}
@@ -335,6 +394,15 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
                   )}
                 </div>
                 <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
+                <button
+                  onClick={() => togglePin(m)}
+                  className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 ${
+                    m.pinned ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-amber-500'
+                  }`}
+                  title={m.pinned ? 'Відкріпити' : 'Закріпити'}
+                >
+                  <Pin size={12} />
+                </button>
               </div>
               <ReactionChips
                 reactions={reactions[m.id] ?? []}

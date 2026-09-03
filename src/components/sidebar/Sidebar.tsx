@@ -23,7 +23,6 @@ function currencySymbol(currency: string) {
 }
 
 const financeNav = [
-  { label: 'Мій день',  href: '/daily',       icon: Sun },
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },
@@ -214,8 +213,51 @@ export default function Sidebar() {
     if (!ratesLoading) fetchPlanned()
   }, [ratesLoading])
 
+  // Icon rail sections: Фінанси / Мій день / Проєкти
+  const onDaily = pathname.startsWith('/daily')
+  const railItems = [
+    {
+      key: 'finance', label: 'Фінанси', icon: TrendingUp,
+      active: section === 'finance' && !onDaily,
+      go: () => { setSection('finance'); router.push('/') },
+    },
+    {
+      key: 'daily', label: 'Мій день', icon: Sun,
+      active: onDaily,
+      go: () => router.push('/daily'),
+    },
+    {
+      key: 'projects', label: 'Проєкти', icon: FolderKanban,
+      active: section === 'projects',
+      go: () => { setSection('projects'); router.push('/board') },
+    },
+  ]
+
   return (
     <>
+    <div className="flex h-full flex-shrink-0">
+      {/* Icon rail */}
+      <div className="w-[68px] bg-[#0b0d12] border-r border-white/5 flex flex-col items-center py-4 gap-1.5 flex-shrink-0">
+        <div className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center mb-2">
+          <span className="text-white font-bold text-sm">G</span>
+        </div>
+        {railItems.map(item => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.key}
+              onClick={item.go}
+              className={`w-14 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-colors ${
+                item.active ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Icon size={18} />
+              <span className="text-[9px] font-medium">{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
       <aside
         className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
@@ -227,43 +269,14 @@ export default function Sidebar() {
           title="Потягніть, щоб змінити ширину"
         />
 
-        {/* Logo */}
+        {/* Header */}
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-white font-bold text-sm">G</span>
-              </div>
-              <div>
-                <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
-                <p className="text-gray-500 text-xs">Cowork Space</p>
-              </div>
+            <div>
+              <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
+              <p className="text-gray-500 text-xs">Cowork Space</p>
             </div>
             <ThemeToggle variant="sidebar" />
-          </div>
-        </div>
-
-        {/* Section tabs */}
-        <div className="px-3 py-3 border-b border-white/5 flex-shrink-0">
-          <div className="flex bg-white/5 rounded-lg p-0.5 gap-0.5">
-            <button
-              onClick={() => { setSection('finance'); router.push('/') }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                section === 'finance' ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <TrendingUp size={12} />
-              Фінанси
-            </button>
-            <button
-              onClick={() => { setSection('projects'); router.push('/board') }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                section === 'projects' ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <FolderKanban size={12} />
-              Проєкти
-            </button>
           </div>
         </div>
 
@@ -590,6 +603,7 @@ export default function Sidebar() {
           </div>
         )}
       </aside>
+      </div>
 
       {openChat && (
         <GeneralChat

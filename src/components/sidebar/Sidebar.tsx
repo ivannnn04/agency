@@ -256,8 +256,15 @@ export default function Sidebar() {
             </button>
           )
         })}
+        {onDaily && (
+          <div className="mt-auto">
+            <ThemeToggle variant="sidebar" />
+          </div>
+        )}
       </div>
 
+      {/* On «Мій день» only the icon rail stays — no section panel */}
+      {!onDaily && (
       <aside
         className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
@@ -603,6 +610,7 @@ export default function Sidebar() {
           </div>
         )}
       </aside>
+      )}
       </div>
 
       {openChat && (

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Hash, Trash2, Users, Pin, CornerUpLeft, Phone } from 'lucide-react'
-import VoiceRoom from '@/components/chat/VoiceRoom'
+import { startCall } from '@/lib/callBus'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -51,7 +51,6 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
   const [replyTo, setReplyTo] = useState<Message | null>(null)
-  const [inVoice, setInVoice] = useState(false)
 
   async function togglePin(m: Message) {
     const next = !m.pinned
@@ -286,15 +285,13 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
           <span className="text-[10px] text-gray-400 flex-shrink-0">загальний чат</span>
         </div>
         <div className="flex items-center gap-1">
-          {!inVoice && (
-            <button
-              onClick={() => setInVoice(true)}
-              className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
-              title="Голосовий канал"
-            >
-              <Phone size={14} />
-            </button>
-          )}
+          <button
+            onClick={() => startCall({ roomKey: `chat-${chat.id}`, roomName: chat.name })}
+            className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
+            title="Голосовий канал"
+          >
+            <Phone size={14} />
+          </button>
           {sender.type === 'admin' && (
             <>
               <button
@@ -362,20 +359,6 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
             </>
           )}
         </div>
-      )}
-
-      {/* Live voice room */}
-      {inVoice && (
-        <VoiceRoom
-          roomKey={`chat-${chat.id}`}
-          roomName={chat.name}
-          self={{
-            key: sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`,
-            name: sender.name,
-            color: sender.type === 'admin' ? '#0ea5e9' : '#14b8a6',
-          }}
-          onLeave={() => setInVoice(false)}
-        />
       )}
 
       {/* Pinned messages strip */}

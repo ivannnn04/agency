@@ -9,7 +9,7 @@ import {
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
-import VoiceRoom from '@/components/chat/VoiceRoom'
+import { startCall } from '@/lib/callBus'
 
 // Direct messages between two internal users (admin + team). Never shown
 // to clients. Rows live in project_messages with dm_key = sorted pair.
@@ -53,7 +53,6 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [replyTo, setReplyTo] = useState<Message | null>(null)
-  const [inVoice, setInVoice] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
@@ -219,33 +218,18 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
           <span className="text-[10px] text-gray-400 flex-shrink-0">особисті</span>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {!inVoice && (
-            <button
-              onClick={() => setInVoice(true)}
-              className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
-              title="Подзвонити"
-            >
-              <Phone size={14} />
-            </button>
-          )}
+          <button
+            onClick={() => startCall({ roomKey: `dm-${dmKey}`, roomName: peer.name, ringKeys: [peer.key] })}
+            className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
+            title={`Подзвонити ${peer.name}`}
+          >
+            <Phone size={14} />
+          </button>
           {!embedded && (
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
           )}
         </div>
       </div>
-
-      {inVoice && (
-        <VoiceRoom
-          roomKey={`dm-${dmKey}`}
-          roomName={peer.name}
-          self={{
-            key: selfKey,
-            name: sender.name,
-            color: sender.type === 'admin' ? '#0ea5e9' : '#14b8a6',
-          }}
-          onLeave={() => setInVoice(false)}
-        />
-      )}
 
       {/* Pinned strip */}
       {messages.some(m => m.pinned) && (

@@ -7,7 +7,6 @@ import { TeamMember } from '@/types'
 import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge, Play, Square } from 'lucide-react'
 import WorkloadView from '@/components/WorkloadView'
 import ActiveTimerChip from '@/components/ActiveTimerChip'
-import CallListener from '@/components/chat/CallListener'
 import { GeneralChatInfo } from '@/components/GeneralChat'
 import ChatsHub from '@/components/chat/ChatsHub'
 import { useChatUnread } from '@/lib/chatUnread'
@@ -318,10 +317,6 @@ export default function TeamDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Incoming voice-call invites */}
-      {member && (
-        <CallListener selfKey={`team-${member.id}`} selfName={member.name} selfColor={member.color || '#14b8a6'} />
-      )}
       {/* Left icon rail (desktop) */}
       <aside className="hidden md:flex w-[76px] bg-[#0f1117] flex-col items-center py-4 gap-1.5 flex-shrink-0 sticky top-0 h-screen">
         <div

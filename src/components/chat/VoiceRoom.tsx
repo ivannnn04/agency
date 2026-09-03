@@ -2,16 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2 } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
-// Live voice room for internal chats (Discord-style): WebRTC mesh audio
-// between participants, with Supabase Realtime as the signaling layer
-// (presence = who's in the room, broadcast = offer/answer/ICE exchange).
-// Team + admin only — the client portal never renders this.
+// Live voice room (Discord-style): WebRTC mesh audio + screen share between
+// participants, Supabase Realtime as signaling (presence = who's here,
+// broadcast = offer/answer/ICE). Team + admin only.
+//
+// variant 'bar'   — compact strip (floating panel / chat header)
+// variant 'modal' — big centered call window (direct calls)
+// ringKeys        — auto-ring these people once the room is live
 
 export interface VoicePeerInfo {
-  key: string   // unique id: team member id or 'admin'
+  key: string   // unique id: 'admin' or 'team-<id>'
   name: string
   color: string
 }
@@ -22,8 +25,6 @@ interface SignalMsg {
   kind: 'offer' | 'answer' | 'ice'
   sdp?: string
   candidate?: RTCIceCandidateInit
-  name?: string
-  color?: string
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -33,22 +34,29 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
 }
 
-export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
+export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize, variant = 'bar', ringKeys }: {
   roomKey: string
   roomName?: string
   self: VoicePeerInfo
   onLeave: () => void
+  onMinimize?: () => void
+  variant?: 'bar' | 'modal'
+  ringKeys?: string[]
 }) {
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting')
   const [error, setError] = useState('')
   const [muted, setMuted] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [participants, setParticipants] = useState<VoicePeerInfo[]>([])
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
+  const [remoteAudio, setRemoteAudio] = useState<Record<string, MediaStream>>({})
+  const [remoteVideo, setRemoteVideo] = useState<Record<string, MediaStream>>({})
 
   const channelRef = useRef<RealtimeChannel | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const screenStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map())
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map())
+  const rangRef = useRef(false)
 
   const sendSignal = useCallback((msg: SignalMsg) => {
     channelRef.current?.send({ type: 'broadcast', event: 'signal', payload: msg })
@@ -63,13 +71,17 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
       peersRef.current.delete(key)
     }
     pendingIceRef.current.delete(key)
-    setRemoteStreams(prev => {
-      if (!(key in prev)) return prev
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
+    setRemoteAudio(prev => { const n = { ...prev }; delete n[key]; return n })
+    setRemoteVideo(prev => { const n = { ...prev }; delete n[key]; return n })
   }, [])
+
+  const renegotiate = useCallback(async (peerKey: string, pc: RTCPeerConnection) => {
+    try {
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      sendSignal({ from: self.key, to: peerKey, kind: 'offer', sdp: offer.sdp })
+    } catch { /* transient state — the next sync will retry */ }
+  }, [self.key, sendSignal])
 
   const createPeer = useCallback((peerKey: string): RTCPeerConnection => {
     let pc = peersRef.current.get(peerKey)
@@ -79,6 +91,8 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
 
     const local = localStreamRef.current
     if (local) for (const track of local.getTracks()) pc.addTrack(track, local)
+    const screen = screenStreamRef.current
+    if (screen) for (const track of screen.getTracks()) pc.addTrack(track, screen)
 
     pc.onicecandidate = e => {
       if (e.candidate) {
@@ -87,7 +101,18 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
     }
     pc.ontrack = e => {
       const stream = e.streams[0]
-      if (stream) setRemoteStreams(prev => ({ ...prev, [peerKey]: stream }))
+      if (!stream) return
+      if (e.track.kind === 'video') {
+        setRemoteVideo(prev => ({ ...prev, [peerKey]: stream }))
+        e.track.onended = () => setRemoteVideo(prev => { const n = { ...prev }; delete n[peerKey]; return n })
+        stream.onremovetrack = () => {
+          if (stream.getVideoTracks().length === 0) {
+            setRemoteVideo(prev => { const n = { ...prev }; delete n[peerKey]; return n })
+          }
+        }
+      } else {
+        setRemoteAudio(prev => ({ ...prev, [peerKey]: stream }))
+      }
     }
     pc.onconnectionstatechange = () => {
       if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) {
@@ -101,51 +126,49 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
     const queued = pendingIceRef.current.get(peerKey) ?? []
     pendingIceRef.current.delete(peerKey)
     for (const c of queued) {
-      try { await pc.addIceCandidate(c) } catch { /* ignore stale candidates */ }
+      try { await pc.addIceCandidate(c) } catch { /* stale */ }
     }
   }, [])
 
   const handleSignal = useCallback(async (msg: SignalMsg) => {
     if (msg.to !== self.key) return
-    if (msg.kind === 'offer' && msg.sdp) {
-      const pc = createPeer(msg.from)
-      await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp })
-      await flushPendingIce(msg.from, pc)
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-      sendSignal({ from: self.key, to: msg.from, kind: 'answer', sdp: answer.sdp })
-    } else if (msg.kind === 'answer' && msg.sdp) {
-      const pc = peersRef.current.get(msg.from)
-      if (pc && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp })
+    try {
+      if (msg.kind === 'offer' && msg.sdp) {
+        const pc = createPeer(msg.from)
+        await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp })
         await flushPendingIce(msg.from, pc)
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        sendSignal({ from: self.key, to: msg.from, kind: 'answer', sdp: answer.sdp })
+      } else if (msg.kind === 'answer' && msg.sdp) {
+        const pc = peersRef.current.get(msg.from)
+        if (pc && pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp })
+          await flushPendingIce(msg.from, pc)
+        }
+      } else if (msg.kind === 'ice' && msg.candidate) {
+        const pc = peersRef.current.get(msg.from)
+        if (pc && pc.remoteDescription) {
+          try { await pc.addIceCandidate(msg.candidate) } catch { /* ignore */ }
+        } else {
+          const q = pendingIceRef.current.get(msg.from) ?? []
+          q.push(msg.candidate)
+          pendingIceRef.current.set(msg.from, q)
+        }
       }
-    } else if (msg.kind === 'ice' && msg.candidate) {
-      const pc = peersRef.current.get(msg.from)
-      if (pc && pc.remoteDescription) {
-        try { await pc.addIceCandidate(msg.candidate) } catch { /* ignore */ }
-      } else {
-        const q = pendingIceRef.current.get(msg.from) ?? []
-        q.push(msg.candidate)
-        pendingIceRef.current.set(msg.from, q)
-      }
-    }
+    } catch { /* renegotiation glare — the initiator retries on next change */ }
   }, [self.key, createPeer, sendSignal, flushPendingIce])
 
-  // Deterministic initiator: for every peer present that we have no
-  // connection to, the side with the lexicographically smaller key offers.
+  // Deterministic initiator: the side with the smaller key offers.
   const connectToPeers = useCallback(async (peerKeys: string[]) => {
     for (const peerKey of peerKeys) {
       if (peerKey === self.key || peersRef.current.has(peerKey)) continue
       if (self.key < peerKey) {
         const pc = createPeer(peerKey)
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        sendSignal({ from: self.key, to: peerKey, kind: 'offer', sdp: offer.sdp })
+        await renegotiate(peerKey, pc)
       }
-      // otherwise the other side will offer to us
     }
-  }, [self.key, createPeer, sendSignal])
+  }, [self.key, createPeer, renegotiate])
 
   useEffect(() => {
     let cancelled = false
@@ -177,7 +200,6 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
         }))
         setParticipants(people)
         connectToPeers(people.map(p => p.key))
-        // Drop connections to people who left
         for (const key of [...peersRef.current.keys()]) {
           if (!people.some(p => p.key === key)) closePeer(key)
         }
@@ -203,21 +225,39 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
       for (const key of [...peersRef.current.keys()]) closePeer(key)
       localStreamRef.current?.getTracks().forEach(t => t.stop())
       localStreamRef.current = null
+      screenStreamRef.current?.getTracks().forEach(t => t.stop())
+      screenStreamRef.current = null
       if (channelRef.current) supabase.removeChannel(channelRef.current)
       channelRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomKey, self.key])
 
-  function toggleMute() {
-    const stream = localStreamRef.current
-    if (!stream) return
-    const next = !muted
-    stream.getAudioTracks().forEach(t => { t.enabled = !next })
-    setMuted(next)
-  }
+  // ── Ringing people (outgoing call / invite picker) ──────────────────────────
 
-  // ── Invite others: ring their personal call-<key> channel ──────────────────
+  const ringPeers = useCallback(async (keys: string[]) => {
+    for (const k of keys) {
+      if (k === self.key) continue
+      const ch = supabase.channel(`call-${k}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => { if (s === 'SUBSCRIBED') resolve() })
+      })
+      await ch.send({
+        type: 'broadcast',
+        event: 'ring',
+        payload: { roomKey, roomName: roomName ?? 'Голосовий', from: self.name },
+      })
+      setTimeout(() => supabase.removeChannel(ch), 1500)
+    }
+  }, [roomKey, roomName, self.key, self.name])
+
+  // Outgoing direct call: ring the peer(s) as soon as we're live
+  useEffect(() => {
+    if (status !== 'live' || rangRef.current || !ringKeys || ringKeys.length === 0) return
+    rangRef.current = true
+    ringPeers(ringKeys)
+  }, [status, ringKeys, ringPeers])
+
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteList, setInviteList] = useState<VoicePeerInfo[]>([])
   const [inviteSel, setInviteSel] = useState<Set<string>>(new Set())
@@ -238,148 +278,311 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
 
   async function callSelected() {
     const keys = [...inviteSel].filter(k => !participants.some(p => p.key === k))
-    for (const k of keys) {
-      const ch = supabase.channel(`call-${k}`)
-      await new Promise<void>(resolve => {
-        ch.subscribe(s => { if (s === 'SUBSCRIBED') resolve() })
-      })
-      await ch.send({
-        type: 'broadcast',
-        event: 'ring',
-        payload: { roomKey, roomName: roomName ?? 'Голосовий', from: self.name },
-      })
-      setTimeout(() => supabase.removeChannel(ch), 1500)
-    }
+    await ringPeers(keys)
     setInviteSel(new Set())
     setInviteSent(true)
     setTimeout(() => { setInviteSent(false); setInviteOpen(false) }, 1500)
   }
 
-  return (
-    <div className="relative px-4 py-2.5 border-b border-teal-100 bg-teal-50/70 flex items-center gap-3 flex-shrink-0">
-      {status === 'connecting' && <Loader2 size={14} className="text-teal-500 animate-spin flex-shrink-0" />}
-      {status === 'live' && <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse flex-shrink-0" />}
+  // ── Controls ────────────────────────────────────────────────────────────────
 
-      <div className="flex items-center gap-1 min-w-0 flex-1">
-        {status === 'error' ? (
-          <p className="text-[11px] text-red-500 truncate">{error}</p>
-        ) : (
-          <>
-            <div className="flex -space-x-1.5">
-              {participants.map(p => (
-                <span
-                  key={p.key}
-                  className="w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center text-white text-[9px] font-semibold"
-                  style={{ backgroundColor: p.color }}
-                  title={p.name}
-                >
-                  {p.name.charAt(0)}
-                </span>
+  function toggleMute() {
+    const stream = localStreamRef.current
+    if (!stream) return
+    const next = !muted
+    stream.getAudioTracks().forEach(t => { t.enabled = !next })
+    setMuted(next)
+  }
+
+  async function startShare() {
+    if (sharing) { stopShare(); return }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+      screenStreamRef.current = stream
+      setSharing(true)
+      const track = stream.getVideoTracks()[0]
+      if (track) track.onended = () => stopShare()
+      for (const [key, pc] of peersRef.current) {
+        for (const t of stream.getTracks()) pc.addTrack(t, stream)
+        renegotiate(key, pc)
+      }
+    } catch { /* user cancelled the picker */ }
+  }
+
+  function stopShare() {
+    const stream = screenStreamRef.current
+    if (!stream) { setSharing(false); return }
+    for (const [key, pc] of peersRef.current) {
+      for (const sender of pc.getSenders()) {
+        if (sender.track && sender.track.kind === 'video') pc.removeTrack(sender)
+      }
+      renegotiate(key, pc)
+    }
+    stream.getTracks().forEach(t => t.stop())
+    screenStreamRef.current = null
+    setSharing(false)
+  }
+
+  // ── Shared UI pieces ────────────────────────────────────────────────────────
+
+  const audioSinks = Object.entries(remoteAudio).map(([key, stream]) => (
+    <RemoteMedia key={`a-${key}`} stream={stream} kind="audio" />
+  ))
+
+  const videoArea = Object.keys(remoteVideo).length > 0 && (
+    <div className={`grid gap-2 ${variant === 'modal' ? 'grid-cols-1' : 'grid-cols-1'} bg-black`}>
+      {Object.entries(remoteVideo).map(([key, stream]) => (
+        <RemoteMedia key={`v-${key}`} stream={stream} kind="video" />
+      ))}
+    </div>
+  )
+
+  const invitePanel = inviteOpen && (
+    <div className={variant === 'modal'
+      ? 'w-full bg-gray-50 rounded-xl p-2 mt-3'
+      : 'absolute top-full right-2 mt-1 z-50 w-60 bg-white border border-gray-200 rounded-xl shadow-xl p-2'}
+    >
+      {inviteSent ? (
+        <p className="flex items-center gap-1.5 text-xs text-teal-600 font-medium px-2 py-2">
+          <Check size={13} /> Виклик надіслано
+        </p>
+      ) : (
+        <>
+          <p className="text-[10px] text-gray-400 font-semibold uppercase px-2 pt-1 pb-1.5">Кого запросити</p>
+          <div className="max-h-44 overflow-y-auto flex flex-col">
+            {inviteList
+              .filter(p => !participants.some(x => x.key === p.key))
+              .map(p => (
+                <label key={p.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-white rounded-lg px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={inviteSel.has(p.key)}
+                    onChange={() => setInviteSel(prev => {
+                      const next = new Set(prev)
+                      if (next.has(p.key)) next.delete(p.key)
+                      else next.add(p.key)
+                      return next
+                    })}
+                    className="accent-teal-500"
+                  />
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                    style={{ backgroundColor: p.color }}
+                  >
+                    {p.name.charAt(0)}
+                  </span>
+                  {p.name}
+                </label>
               ))}
-            </div>
-            <p className="text-[11px] text-teal-700 ml-2 truncate">
-              {participants.length <= 1
-                ? 'Ти в голосовому — чекаємо інших...'
-                : participants.map(p => p.name).join(', ')}
-            </p>
-          </>
-        )}
-      </div>
-
-      {status === 'live' && (
-        <button
-          onClick={() => setInviteOpen(v => !v)}
-          className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
-            inviteOpen ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
-          }`}
-          title="Запросити в голосовий"
-        >
-          <UserPlus size={13} />
-        </button>
+            {inviteList.filter(p => !participants.some(x => x.key === p.key)).length === 0 && (
+              <p className="text-[11px] text-gray-300 px-2 py-2">Всі вже тут 🎉</p>
+            )}
+          </div>
+          <button
+            onClick={callSelected}
+            disabled={inviteSel.size === 0}
+            className="w-full mt-1.5 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white text-xs font-medium py-1.5 rounded-lg transition-colors"
+          >
+            Подзвонити
+          </button>
+        </>
       )}
+    </div>
+  )
 
-      {/* Invite picker */}
-      {inviteOpen && (
-        <div className="absolute top-full right-2 mt-1 z-50 w-60 bg-white border border-gray-200 rounded-xl shadow-xl p-2">
-          {inviteSent ? (
-            <p className="flex items-center gap-1.5 text-xs text-teal-600 font-medium px-2 py-2">
-              <Check size={13} /> Виклик надіслано
-            </p>
-          ) : (
-            <>
-              <p className="text-[10px] text-gray-400 font-semibold uppercase px-2 pt-1 pb-1.5">Кого запросити</p>
-              <div className="max-h-44 overflow-y-auto flex flex-col">
-                {inviteList
-                  .filter(p => !participants.some(x => x.key === p.key))
-                  .map(p => (
-                    <label key={p.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1.5">
-                      <input
-                        type="checkbox"
-                        checked={inviteSel.has(p.key)}
-                        onChange={() => setInviteSel(prev => {
-                          const next = new Set(prev)
-                          if (next.has(p.key)) next.delete(p.key)
-                          else next.add(p.key)
-                          return next
-                        })}
-                        className="accent-teal-500"
-                      />
+  // ── Modal variant: big call window ──────────────────────────────────────────
+
+  if (variant === 'modal') {
+    const alone = participants.length <= 1
+    return (
+      <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+            <p className="text-sm font-bold text-gray-800 truncate">📞 {roomName ?? 'Дзвінок'}</p>
+            {onMinimize && (
+              <button
+                onClick={onMinimize}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Згорнути (дзвінок триває)"
+              >
+                <Minimize2 size={15} />
+              </button>
+            )}
+          </div>
+
+          {videoArea && <div className="max-h-[45vh] overflow-hidden">{videoArea}</div>}
+
+          <div className="px-6 py-6 flex flex-col items-center gap-4">
+            {status === 'error' ? (
+              <p className="text-sm text-red-500 text-center">{error}</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-center gap-4 flex-wrap">
+                  {participants.map(p => (
+                    <div key={p.key} className="flex flex-col items-center gap-1.5">
                       <span
-                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                        className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold ${
+                          alone ? 'animate-pulse' : ''
+                        }`}
                         style={{ backgroundColor: p.color }}
                       >
                         {p.name.charAt(0)}
                       </span>
-                      {p.name}
-                    </label>
+                      <span className="text-xs text-gray-600 font-medium max-w-[90px] truncate">{p.name}</span>
+                    </div>
                   ))}
-                {inviteList.filter(p => !participants.some(x => x.key === p.key)).length === 0 && (
-                  <p className="text-[11px] text-gray-300 px-2 py-2">Всі вже тут 🎉</p>
-                )}
-              </div>
+                </div>
+                <p className="text-sm text-gray-400">
+                  {status === 'connecting'
+                    ? 'Підключення...'
+                    : alone
+                      ? (ringKeys && ringKeys.length > 0 ? 'Дзвонимо... 🔔' : 'Чекаємо інших...')
+                      : 'У розмові'}
+                </p>
+              </>
+            )}
+
+            <div className="flex items-center gap-3 mt-1">
+              {status === 'live' && (
+                <>
+                  <button
+                    onClick={() => setInviteOpen(v => !v)}
+                    className={`p-3 rounded-full transition-colors border ${
+                      inviteOpen ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+                    }`}
+                    title="Запросити ще"
+                  >
+                    <UserPlus size={17} />
+                  </button>
+                  <button
+                    onClick={startShare}
+                    className={`p-3 rounded-full transition-colors border ${
+                      sharing ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+                    }`}
+                    title={sharing ? 'Зупинити демонстрацію' : 'Демонстрація екрана'}
+                  >
+                    {sharing ? <MonitorOff size={17} /> : <Monitor size={17} />}
+                  </button>
+                  <button
+                    onClick={toggleMute}
+                    className={`p-3 rounded-full transition-colors border ${
+                      muted ? 'bg-red-100 text-red-500 border-red-200' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+                    }`}
+                    title={muted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
+                  >
+                    {muted ? <MicOff size={17} /> : <Mic size={17} />}
+                  </button>
+                </>
+              )}
               <button
-                onClick={callSelected}
-                disabled={inviteSel.size === 0}
-                className="w-full mt-1.5 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white text-xs font-medium py-1.5 rounded-lg transition-colors"
+                onClick={onLeave}
+                className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-full transition-colors"
+                title="Завершити дзвінок"
               >
-                Подзвонити
+                <PhoneOff size={17} />
               </button>
+            </div>
+
+            {invitePanel}
+          </div>
+          {audioSinks}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Bar variant ─────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex flex-col">
+      <div className="relative px-4 py-2.5 border-b border-teal-100 bg-teal-50/70 flex items-center gap-3 flex-shrink-0">
+        {status === 'connecting' && <Loader2 size={14} className="text-teal-500 animate-spin flex-shrink-0" />}
+        {status === 'live' && <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse flex-shrink-0" />}
+
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          {status === 'error' ? (
+            <p className="text-[11px] text-red-500 truncate">{error}</p>
+          ) : (
+            <>
+              <div className="flex -space-x-1.5">
+                {participants.map(p => (
+                  <span
+                    key={p.key}
+                    className="w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center text-white text-[9px] font-semibold"
+                    style={{ backgroundColor: p.color }}
+                    title={p.name}
+                  >
+                    {p.name.charAt(0)}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-teal-700 ml-2 truncate">
+                {participants.length <= 1
+                  ? 'Ти в голосовому — чекаємо інших...'
+                  : participants.map(p => p.name).join(', ')}
+              </p>
             </>
           )}
         </div>
-      )}
 
-      {status !== 'error' && (
+        {status === 'live' && (
+          <>
+            <button
+              onClick={() => setInviteOpen(v => !v)}
+              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
+                inviteOpen ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+              }`}
+              title="Запросити в голосовий"
+            >
+              <UserPlus size={13} />
+            </button>
+            <button
+              onClick={startShare}
+              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
+                sharing ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+              }`}
+              title={sharing ? 'Зупинити демонстрацію' : 'Демонстрація екрана'}
+            >
+              {sharing ? <MonitorOff size={13} /> : <Monitor size={13} />}
+            </button>
+          </>
+        )}
+
+        {invitePanel}
+
+        {status !== 'error' && (
+          <button
+            onClick={toggleMute}
+            className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+              muted ? 'bg-red-100 text-red-500 hover:bg-red-200' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+            title={muted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
+          >
+            {muted ? <MicOff size={13} /> : <Mic size={13} />}
+          </button>
+        )}
         <button
-          onClick={toggleMute}
-          className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-            muted ? 'bg-red-100 text-red-500 hover:bg-red-200' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
-          }`}
-          title={muted ? 'Увімкнути мікрофон' : 'Вимкнути мікрофон'}
+          onClick={onLeave}
+          className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-lg transition-colors flex-shrink-0"
+          title="Вийти з голосового"
         >
-          {muted ? <MicOff size={13} /> : <Mic size={13} />}
+          <PhoneOff size={13} />
         </button>
-      )}
-      <button
-        onClick={onLeave}
-        className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-lg transition-colors flex-shrink-0"
-        title="Вийти з голосового"
-      >
-        <PhoneOff size={13} />
-      </button>
 
-      {/* Hidden audio sinks for every remote participant */}
-      {Object.entries(remoteStreams).map(([key, stream]) => (
-        <RemoteAudio key={key} stream={stream} />
-      ))}
+        {audioSinks}
+      </div>
+      {videoArea}
     </div>
   )
 }
 
-function RemoteAudio({ stream }: { stream: MediaStream }) {
-  const ref = useRef<HTMLAudioElement>(null)
+function RemoteMedia({ stream, kind }: { stream: MediaStream; kind: 'audio' | 'video' }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream
-  }, [stream])
-  return <audio ref={ref} autoPlay className="hidden" />
+    if (kind === 'audio' && audioRef.current) audioRef.current.srcObject = stream
+    if (kind === 'video' && videoRef.current) videoRef.current.srcObject = stream
+  }, [stream, kind])
+  if (kind === 'audio') return <audio ref={audioRef} autoPlay className="hidden" />
+  return <video ref={videoRef} autoPlay playsInline className="w-full max-h-[45vh] object-contain bg-black" />
 }

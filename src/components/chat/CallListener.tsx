@@ -2,13 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Phone, PhoneOff } from 'lucide-react'
+import { Phone, PhoneOff, Maximize2 } from 'lucide-react'
 import VoiceRoom from '@/components/chat/VoiceRoom'
+import type { CallRequest } from '@/lib/callBus'
 
-// Global incoming-call listener: every internal user (admin + team) mounts
-// this once per page. Invites arrive on the personal Realtime channel
-// call-<selfKey>; an incoming call pops a ringing toast, and accepting it
-// joins the voice room in a floating panel — no need to open the chat.
+// Global call host, mounted once per layout (admin layout / team layout).
+// Because it lives in the layout, an active call keeps running while the
+// user navigates between pages. It handles:
+// - outgoing/joined calls requested via the gudrix:start-call event
+// - incoming invites on the personal Realtime channel call-<selfKey>
+// Direct (dm-*) calls open as a big call window; it can be minimized to a
+// floating panel and expanded back — the call never drops.
 
 interface IncomingCall {
   roomKey: string
@@ -22,7 +26,8 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
   selfColor: string
 }) {
   const [incoming, setIncoming] = useState<IncomingCall | null>(null)
-  const [activeCall, setActiveCall] = useState<IncomingCall | null>(null)
+  const [activeCall, setActiveCall] = useState<CallRequest | null>(null)
+  const [minimized, setMinimized] = useState(false)
   const ringStopRef = useRef<(() => void) | null>(null)
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRoomRef = useRef<string | null>(null)
@@ -63,6 +68,19 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
     }
   }
 
+  // Outgoing / joined calls from any chat on the page
+  useEffect(() => {
+    const onStart = (e: Event) => {
+      const req = (e as CustomEvent<CallRequest>).detail
+      if (!req?.roomKey) return
+      setActiveCall(req)
+      setMinimized(false)
+    }
+    window.addEventListener('gudrix:start-call', onStart)
+    return () => window.removeEventListener('gudrix:start-call', onStart)
+  }, [])
+
+  // Incoming invites
   useEffect(() => {
     const channel = supabase.channel(`call-${selfKey}`)
     channel.on('broadcast', { event: 'ring' }, ({ payload }) => {
@@ -85,7 +103,8 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
   function accept() {
     if (!incoming) return
     stopRinging()
-    setActiveCall(incoming)
+    setActiveCall({ roomKey: incoming.roomKey, roomName: incoming.roomName })
+    setMinimized(false)
     setIncoming(null)
   }
 
@@ -94,11 +113,14 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
     setIncoming(null)
   }
 
+  const isDirect = activeCall?.roomKey.startsWith('dm-')
+  const showModal = activeCall && isDirect && !minimized
+
   return (
     <>
       {/* Incoming call toast */}
       {incoming && (
-        <div className="fixed top-4 right-4 z-[70] w-[320px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-gray-100 p-4">
+        <div className="fixed top-4 right-4 z-[90] w-[320px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-gray-100 p-4">
           <div className="flex items-center gap-3 mb-3">
             <span className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center flex-shrink-0 animate-pulse">
               <Phone size={17} className="text-white" />
@@ -125,13 +147,32 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
         </div>
       )}
 
-      {/* Floating voice panel for an accepted call */}
+      {/* Active call: big window for direct calls, floating panel otherwise
+          (or when a direct call is minimized). The call itself never
+          unmounts on minimize — only its container changes. */}
       {activeCall && (
-        <div className="fixed bottom-4 right-4 z-[70] w-[360px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
-          <p className="px-4 pt-2.5 text-[11px] font-semibold text-gray-500 truncate"># {activeCall.roomName}</p>
+        <div className={showModal ? '' : 'fixed bottom-4 right-4 z-[70] w-[380px] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden'}>
+          {!showModal && (
+            <div className="flex items-center justify-between px-4 pt-2.5">
+              <p className="text-[11px] font-semibold text-gray-500 truncate"># {activeCall.roomName}</p>
+              {isDirect && (
+                <button
+                  onClick={() => setMinimized(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"
+                  title="Розгорнути вікно дзвінка"
+                >
+                  <Maximize2 size={13} />
+                </button>
+              )}
+            </div>
+          )}
           <VoiceRoom
+            key={activeCall.roomKey}
             roomKey={activeCall.roomKey}
             roomName={activeCall.roomName}
+            ringKeys={activeCall.ringKeys}
+            variant={showModal ? 'modal' : 'bar'}
+            onMinimize={isDirect ? () => setMinimized(true) : undefined}
             self={{ key: selfKey, name: selfName, color: selfColor }}
             onLeave={() => setActiveCall(null)}
           />

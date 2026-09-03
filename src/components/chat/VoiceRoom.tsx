@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2, Maximize2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2, Maximize2, Video, VideoOff, SmilePlus } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Live voice room (Discord-style): WebRTC mesh audio + screen share between
@@ -47,16 +47,28 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
   const [error, setError] = useState('')
   const [muted, setMuted] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [camOn, setCamOn] = useState(false)
   const [participants, setParticipants] = useState<VoicePeerInfo[]>([])
   const [remoteAudio, setRemoteAudio] = useState<Record<string, MediaStream>>({})
-  const [remoteVideo, setRemoteVideo] = useState<Record<string, MediaStream>>({})
+  // Video tiles keyed by stream id — a peer can send camera AND screen
+  const [remoteVideo, setRemoteVideo] = useState<Record<string, { peer: string; stream: MediaStream }>>({})
+  const [localCam, setLocalCam] = useState<MediaStream | null>(null)
+  // Google-Meet-style floating reactions
+  const [reactions, setReactions] = useState<{ id: number; emoji: string; name: string }[]>([])
 
   const channelRef = useRef<RealtimeChannel | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
+  const camStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map())
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map())
   const rangRef = useRef(false)
+
+  const addReaction = useCallback((emoji: string, name: string) => {
+    const id = Date.now() + Math.random()
+    setReactions(prev => [...prev.slice(-5), { id, emoji, name }])
+    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3200)
+  }, [])
 
   const sendSignal = useCallback((msg: SignalMsg) => {
     channelRef.current?.send({ type: 'broadcast', event: 'signal', payload: msg })
@@ -72,7 +84,11 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
     }
     pendingIceRef.current.delete(key)
     setRemoteAudio(prev => { const n = { ...prev }; delete n[key]; return n })
-    setRemoteVideo(prev => { const n = { ...prev }; delete n[key]; return n })
+    setRemoteVideo(prev => {
+      const n = { ...prev }
+      for (const sid of Object.keys(n)) if (n[sid].peer === key) delete n[sid]
+      return n
+    })
   }, [])
 
   const renegotiate = useCallback(async (peerKey: string, pc: RTCPeerConnection) => {
@@ -93,6 +109,8 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
     if (local) for (const track of local.getTracks()) pc.addTrack(track, local)
     const screen = screenStreamRef.current
     if (screen) for (const track of screen.getTracks()) pc.addTrack(track, screen)
+    const cam = camStreamRef.current
+    if (cam) for (const track of cam.getTracks()) pc.addTrack(track, cam)
 
     pc.onicecandidate = e => {
       if (e.candidate) {
@@ -103,13 +121,11 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
       const stream = e.streams[0]
       if (!stream) return
       if (e.track.kind === 'video') {
-        setRemoteVideo(prev => ({ ...prev, [peerKey]: stream }))
-        e.track.onended = () => setRemoteVideo(prev => { const n = { ...prev }; delete n[peerKey]; return n })
-        stream.onremovetrack = () => {
-          if (stream.getVideoTracks().length === 0) {
-            setRemoteVideo(prev => { const n = { ...prev }; delete n[peerKey]; return n })
-          }
-        }
+        const sid = stream.id
+        setRemoteVideo(prev => ({ ...prev, [sid]: { peer: peerKey, stream } }))
+        const drop = () => setRemoteVideo(prev => { const n = { ...prev }; delete n[sid]; return n })
+        e.track.onended = drop
+        stream.onremovetrack = () => { if (stream.getVideoTracks().length === 0) drop() }
       } else {
         setRemoteAudio(prev => ({ ...prev, [peerKey]: stream }))
       }
@@ -209,6 +225,11 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
         handleSignal(payload as SignalMsg)
       })
 
+      channel.on('broadcast', { event: 'reaction' }, ({ payload }) => {
+        const r = payload as { emoji: string; name: string }
+        if (r?.emoji) addReaction(r.emoji, r.name ?? '')
+      })
+
       channel.subscribe(async s => {
         if (s === 'SUBSCRIBED') {
           await channel.track({ name: self.name, color: self.color })
@@ -227,6 +248,8 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
       localStreamRef.current = null
       screenStreamRef.current?.getTracks().forEach(t => t.stop())
       screenStreamRef.current = null
+      camStreamRef.current?.getTracks().forEach(t => t.stop())
+      camStreamRef.current = null
       if (channelRef.current) supabase.removeChannel(channelRef.current)
       channelRef.current = null
     }
@@ -312,9 +335,10 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
   function stopShare() {
     const stream = screenStreamRef.current
     if (!stream) { setSharing(false); return }
+    const ids = new Set(stream.getTracks().map(t => t.id))
     for (const [key, pc] of peersRef.current) {
       for (const sender of pc.getSenders()) {
-        if (sender.track && sender.track.kind === 'video') pc.removeTrack(sender)
+        if (sender.track && ids.has(sender.track.id)) pc.removeTrack(sender)
       }
       renegotiate(key, pc)
     }
@@ -323,16 +347,98 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
     setSharing(false)
   }
 
+  // ── Camera ──────────────────────────────────────────────────────────────────
+
+  async function toggleCam() {
+    if (camOn) { stopCam(); return }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 } },
+      })
+      camStreamRef.current = stream
+      setLocalCam(stream)
+      setCamOn(true)
+      const track = stream.getVideoTracks()[0]
+      if (track) track.onended = () => stopCam()
+      for (const [key, pc] of peersRef.current) {
+        for (const t of stream.getTracks()) pc.addTrack(t, stream)
+        renegotiate(key, pc)
+      }
+    } catch { /* camera denied */ }
+  }
+
+  function stopCam() {
+    const stream = camStreamRef.current
+    if (!stream) { setCamOn(false); setLocalCam(null); return }
+    const ids = new Set(stream.getTracks().map(t => t.id))
+    for (const [key, pc] of peersRef.current) {
+      for (const sender of pc.getSenders()) {
+        if (sender.track && ids.has(sender.track.id)) pc.removeTrack(sender)
+      }
+      renegotiate(key, pc)
+    }
+    stream.getTracks().forEach(t => t.stop())
+    camStreamRef.current = null
+    setLocalCam(null)
+    setCamOn(false)
+  }
+
+  // ── Meet-style reactions ────────────────────────────────────────────────────
+
+  const CALL_REACTIONS = ['👍', '❤️', '😂', '😮', '🎉', '👏']
+  const [reactOpen, setReactOpen] = useState(false)
+
+  function sendReaction(emoji: string) {
+    channelRef.current?.send({ type: 'broadcast', event: 'reaction', payload: { emoji, name: self.name } })
+    addReaction(emoji, self.name)
+    setReactOpen(false)
+  }
+
   // ── Shared UI pieces ────────────────────────────────────────────────────────
 
   const audioSinks = Object.entries(remoteAudio).map(([key, stream]) => (
     <RemoteMedia key={`a-${key}`} stream={stream} kind="audio" />
   ))
 
-  const videoArea = Object.keys(remoteVideo).length > 0 && (
-    <div className={`grid gap-2 ${variant === 'modal' ? 'grid-cols-1' : 'grid-cols-1'} bg-black`}>
-      {Object.entries(remoteVideo).map(([key, stream]) => (
-        <RemoteMedia key={`v-${key}`} stream={stream} kind="video" />
+  const videoTileCount = Object.keys(remoteVideo).length + (localCam ? 1 : 0)
+  const videoArea = videoTileCount > 0 && (
+    <div className={`grid gap-1 bg-black ${videoTileCount > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {Object.entries(remoteVideo).map(([sid, v]) => (
+        <RemoteMedia
+          key={`v-${sid}`}
+          stream={v.stream}
+          kind="video"
+          label={participants.find(p => p.key === v.peer)?.name}
+        />
+      ))}
+      {localCam && <RemoteMedia stream={localCam} kind="video" muted mirrored label="Ти" />}
+    </div>
+  )
+
+  const reactionOverlay = reactions.length > 0 && (
+    <div className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 z-[85] flex flex-col items-center gap-1">
+      {reactions.map(r => (
+        <div key={r.id} className="flex items-center gap-1.5 bg-black/60 text-white rounded-full px-3 py-1 animate-bounce">
+          <span className="text-xl leading-none">{r.emoji}</span>
+          <span className="text-[10px] font-medium">{r.name}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  const reactPicker = reactOpen && (
+    <div className={variant === 'modal'
+      ? 'flex items-center gap-1 bg-gray-50 rounded-full px-2 py-1.5'
+      : 'absolute bottom-full right-2 mb-1 z-50 flex items-center gap-1 bg-white border border-gray-200 rounded-full shadow-xl px-2 py-1.5'}
+    >
+      {CALL_REACTIONS.map(e => (
+        <button
+          key={e}
+          onClick={() => sendReaction(e)}
+          className="text-lg leading-none hover:scale-125 transition-transform p-0.5"
+        >
+          {e}
+        </button>
       ))}
     </div>
   )
@@ -396,7 +502,8 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
     const alone = participants.length <= 1
     return (
       <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+        <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+          {reactionOverlay}
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
             <p className="text-sm font-bold text-gray-800 truncate">📞 {roomName ?? 'Дзвінок'}</p>
             {onMinimize && (
@@ -442,6 +549,7 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
               </>
             )}
 
+            {reactPicker}
             <div className="flex items-center gap-3 mt-1">
               {status === 'live' && (
                 <>
@@ -462,6 +570,24 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
                     title={sharing ? 'Зупинити демонстрацію' : 'Демонстрація екрана'}
                   >
                     {sharing ? <MonitorOff size={17} /> : <Monitor size={17} />}
+                  </button>
+                  <button
+                    onClick={toggleCam}
+                    className={`p-3 rounded-full transition-colors border ${
+                      camOn ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+                    }`}
+                    title={camOn ? 'Вимкнути камеру' : 'Увімкнути камеру'}
+                  >
+                    {camOn ? <VideoOff size={17} /> : <Video size={17} />}
+                  </button>
+                  <button
+                    onClick={() => setReactOpen(v => !v)}
+                    className={`p-3 rounded-full transition-colors border ${
+                      reactOpen ? 'bg-amber-400 text-white border-amber-400' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+                    }`}
+                    title="Реакція"
+                  >
+                    <SmilePlus size={17} />
                   </button>
                   <button
                     onClick={toggleMute}
@@ -545,10 +671,30 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
             >
               {sharing ? <MonitorOff size={13} /> : <Monitor size={13} />}
             </button>
+            <button
+              onClick={toggleCam}
+              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
+                camOn ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+              }`}
+              title={camOn ? 'Вимкнути камеру' : 'Увімкнути камеру'}
+            >
+              {camOn ? <VideoOff size={13} /> : <Video size={13} />}
+            </button>
+            <button
+              onClick={() => setReactOpen(v => !v)}
+              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
+                reactOpen ? 'bg-amber-400 text-white border-amber-400' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+              }`}
+              title="Реакція"
+            >
+              <SmilePlus size={13} />
+            </button>
           </>
         )}
 
         {invitePanel}
+        {reactPicker}
+        {reactionOverlay}
 
         {status !== 'error' && (
           <button
@@ -576,7 +722,13 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
   )
 }
 
-function RemoteMedia({ stream, kind }: { stream: MediaStream; kind: 'audio' | 'video' }) {
+function RemoteMedia({ stream, kind, muted, mirrored, label }: {
+  stream: MediaStream
+  kind: 'audio' | 'video'
+  muted?: boolean
+  mirrored?: boolean
+  label?: string
+}) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
@@ -598,10 +750,17 @@ function RemoteMedia({ stream, kind }: { stream: MediaStream; kind: 'audio' | 'v
         ref={videoRef}
         autoPlay
         playsInline
+        muted={muted}
         onDoubleClick={goFullscreen}
         className="w-full max-h-[45vh] object-contain bg-black cursor-zoom-in"
+        style={mirrored ? { transform: 'scaleX(-1)' } : undefined}
         title="Подвійний клік — на весь екран"
       />
+      {label && (
+        <span className="absolute bottom-1.5 left-1.5 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+          {label}
+        </span>
+      )}
       <button
         onClick={goFullscreen}
         className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-lg opacity-0 group-hover/video:opacity-100 transition-opacity"

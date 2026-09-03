@@ -319,13 +319,23 @@ export default function TeamDashboardPage() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Left icon rail (desktop) */}
       <aside className="hidden md:flex w-[76px] bg-[#0f1117] flex-col items-center py-4 gap-1.5 flex-shrink-0 sticky top-0 h-screen">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold text-sm mb-3"
-          style={{ backgroundColor: member?.color ?? '#14b8a6' }}
-          title={member?.name}
+        <button
+          onClick={() => router.push('/team/profile')}
+          className="mb-3 hover:opacity-80 transition-opacity"
+          title="Мій профіль"
         >
-          {member?.name.charAt(0)}
-        </div>
+          {member?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={member.avatar_url} alt={member.name} className="w-10 h-10 rounded-xl object-cover" />
+          ) : (
+            <span
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-semibold text-sm"
+              style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+            >
+              {member?.name.charAt(0)}
+            </span>
+          )}
+        </button>
         {navItems.map(item => {
           const Icon = item.icon
           const active = item.key === tab
@@ -361,16 +371,27 @@ export default function TeamDashboardPage() {
 
       <div className="flex-1 min-w-0 flex flex-col">
       <header className="bg-[#0f1117] text-white px-6 py-4 flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-          style={{ backgroundColor: member?.color ?? '#14b8a6' }}
-        >
-          {member?.name.charAt(0)}
-        </div>
-        <div>
-          <p className="font-semibold text-sm">{member?.name}</p>
-          <p className="text-xs text-gray-400">{member?.role}</p>
-        </div>
+        <button onClick={() => router.push('/team/profile')} className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left" title="Мій профіль">
+          {member?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={member.avatar_url} alt={member.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <span
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+              style={{ backgroundColor: member?.color ?? '#14b8a6' }}
+            >
+              {member?.name.charAt(0)}
+            </span>
+          )}
+          <span>
+            <span className="font-semibold text-sm block">{member?.nickname || member?.name}</span>
+            <span className="text-xs text-gray-400 block">
+              {member?.status_emoji || member?.status_text
+                ? `${member?.status_emoji ?? ''} ${member?.status_text ?? ''}`.trim()
+                : member?.role}
+            </span>
+          </span>
+        </button>
         <div className="ml-auto flex items-center gap-3 min-w-0">
           {member && <ActiveTimerChip memberId={member.id} />}
           {member && <TeamNotificationBell memberId={member.id} />}

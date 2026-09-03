@@ -11,6 +11,10 @@ export interface TeamMember {
   can_create_projects?: boolean
   supabase_user_id?: string | null
   invited_at?: string | null
+  avatar_url?: string | null
+  nickname?: string | null
+  status_emoji?: string | null
+  status_text?: string | null
   created_at: string
 }
 

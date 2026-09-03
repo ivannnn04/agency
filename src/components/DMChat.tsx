@@ -18,6 +18,9 @@ export interface DMPeer {
   key: string   // 'admin' or 'team-<id>'
   name: string
   color: string
+  avatar_url?: string | null
+  status_emoji?: string | null
+  status_text?: string | null
 }
 
 interface Message {

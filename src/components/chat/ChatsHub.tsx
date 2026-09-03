@@ -36,14 +36,28 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
 
   const selfKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
 
-  // Everyone internal except me — for direct messages
+  // Everyone internal except me — for direct messages (profile columns may
+  // not be migrated yet, so fall back to the base select)
   useEffect(() => {
     ;(async () => {
-      const { data } = await supabase.from('team_members').select('id, name, color').order('name')
+      let { data } = await supabase
+        .from('team_members')
+        .select('id, name, color, nickname, avatar_url, status_emoji, status_text')
+        .order('name')
+      if (!data) {
+        ;({ data } = await supabase.from('team_members').select('id, name, color').order('name') as never)
+      }
+      const rows = (data ?? []) as { id: string; name: string; color: string; nickname?: string | null; avatar_url?: string | null; status_emoji?: string | null; status_text?: string | null }[]
       const list: DMPeer[] = [
         { key: 'admin', name: 'Ivan (адмін)', color: '#0ea5e9' },
-        ...((data ?? []) as { id: string; name: string; color: string }[])
-          .map(m => ({ key: `team-${m.id}`, name: m.name, color: m.color || '#14b8a6' })),
+        ...rows.map(m => ({
+          key: `team-${m.id}`,
+          name: m.nickname || m.name,
+          color: m.color || '#14b8a6',
+          avatar_url: m.avatar_url,
+          status_emoji: m.status_emoji,
+          status_text: m.status_text,
+        })),
       ]
       setPeople(list.filter(p => p.key !== selfKey))
     })()
@@ -160,13 +174,23 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
                   active ? 'bg-gray-200/70 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 } ${count > 0 ? 'font-semibold text-gray-900' : ''}`}
               >
-                <span
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
-                  style={{ backgroundColor: p.color }}
-                >
-                  {p.name.charAt(0)}
-                </span>
+                {p.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.avatar_url} alt={p.name} className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                ) : (
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                    style={{ backgroundColor: p.color }}
+                  >
+                    {p.name.charAt(0)}
+                  </span>
+                )}
                 <span className="truncate min-w-0">{p.name}</span>
+                {(p.status_emoji || p.status_text) && (
+                  <span className="text-[10px] text-gray-400 truncate flex-shrink" title={p.status_text ?? ''}>
+                    {p.status_emoji} {p.status_text}
+                  </span>
+                )}
                 {count > 0 && (
                   <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                     {count > 99 ? '99+' : count}

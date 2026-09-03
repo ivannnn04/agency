@@ -26,7 +26,24 @@ function addDays(day: string, n: number): string {
   return isoDay(d)
 }
 
-const WEEKDAY = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+function shiftMonth(ym: string, n: number): string {
+  const d = new Date(ym + '-15T12:00:00')
+  d.setMonth(d.getMonth() + n)
+  return isoDay(d).slice(0, 7)
+}
+
+// 42 cells max, Monday-first; null = padding outside the month
+function monthCells(ym: string): (string | null)[] {
+  const first = new Date(ym + '-01T12:00:00')
+  const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  const lead = (first.getDay() + 6) % 7 // Monday = 0
+  const cells: (string | null)[] = Array(lead).fill(null)
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push(`${ym}-${String(d).padStart(2, '0')}`)
+  }
+  while (cells.length % 7 !== 0) cells.push(null)
+  return cells
+}
 
 export default function DailyPage() {
   const today = isoDay(new Date())
@@ -36,9 +53,6 @@ export default function DailyPage() {
   const [checks, setChecks] = useState<Record<string, Set<string>>>({})
   const [newHabit, setNewHabit] = useState('')
   const [addingHabit, setAddingHabit] = useState(false)
-  // Expanded mini-calendar: which habit + which month (first day of month)
-  const [expandedHabit, setExpandedHabit] = useState<string | null>(null)
-  const [calMonth, setCalMonth] = useState(() => today.slice(0, 7)) // YYYY-MM
 
   const [day, setDay] = useState(today)
   const [todos, setTodos] = useState<Todo[]>([])
@@ -209,27 +223,6 @@ export default function DailyPage() {
     }, 800)
   }
 
-  // ── Habit mini-calendar helpers ───────────────────────────────────────────
-
-  function shiftMonth(ym: string, n: number): string {
-    const d = new Date(ym + '-15T12:00:00')
-    d.setMonth(d.getMonth() + n)
-    return isoDay(d).slice(0, 7)
-  }
-
-  // 42 cells, Monday-first; null = padding outside the month
-  function monthCells(ym: string): (string | null)[] {
-    const first = new Date(ym + '-01T12:00:00')
-    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
-    const lead = (first.getDay() + 6) % 7 // Monday = 0
-    const cells: (string | null)[] = Array(lead).fill(null)
-    for (let d = 1; d <= daysInMonth; d++) {
-      cells.push(`${ym}-${String(d).padStart(2, '0')}`)
-    }
-    while (cells.length % 7 !== 0) cells.push(null)
-    return cells
-  }
-
   const doneCount = todos.filter(t => t.done).length
   const dayLabel = day === today
     ? 'Сьогодні'
@@ -285,137 +278,18 @@ export default function DailyPage() {
           {habits.length === 0 && !addingHabit ? (
             <p className="text-xs text-gray-300 py-4">Додай першу звичку — і трекай щодня 💪</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left font-normal"></th>
-                    {weekDays.map(d => (
-                      <th key={d} className="pb-2 px-1 text-center w-12">
-                        <p className={`text-[10px] font-semibold uppercase ${d === today ? 'text-teal-600' : 'text-gray-400'}`}>
-                          {WEEKDAY[new Date(d + 'T12:00:00').getDay()]}
-                        </p>
-                        <p className={`text-[10px] ${d === today ? 'text-teal-600 font-bold' : 'text-gray-300'}`}>
-                          {Number(d.slice(8))}
-                        </p>
-                      </th>
-                    ))}
-                    <th className="w-14"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {habits.map(h => {
-                    const s = streak(h.id)
-                    const isOpen = expandedHabit === h.id
-                    return (
-                      <React.Fragment key={h.id}>
-                      <tr className="group">
-                        <td className="py-1.5 pr-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-1.5 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: h.color }} />
-                            <span className="text-sm text-gray-800 truncate">{h.name}</span>
-                            <button
-                              onClick={() => {
-                                setExpandedHabit(isOpen ? null : h.id)
-                                setCalMonth(today.slice(0, 7))
-                              }}
-                              className={`transition-all flex-shrink-0 ${
-                                isOpen ? 'text-teal-500' : 'opacity-0 group-hover:opacity-100 text-gray-300 hover:text-teal-500'
-                              }`}
-                              title="Календар звички"
-                            >
-                              <CalendarDays size={12} />
-                            </button>
-                            <button
-                              onClick={() => deleteHabit(h.id)}
-                              className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all flex-shrink-0"
-                              title="Видалити звичку"
-                            >
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        </td>
-                        {weekDays.map(d => {
-                          const on = checks[h.id]?.has(d)
-                          return (
-                            <td key={d} className="py-1.5 px-1 text-center">
-                              <button
-                                onClick={() => toggleCheck(h.id, d)}
-                                className="w-7 h-7 rounded-lg border-2 inline-flex items-center justify-center transition-all"
-                                style={on
-                                  ? { backgroundColor: h.color, borderColor: h.color }
-                                  : { borderColor: '#e5e7eb', backgroundColor: 'transparent' }}
-                                title={d}
-                              >
-                                {on && <Check size={14} className="text-white" strokeWidth={3} />}
-                              </button>
-                            </td>
-                          )
-                        })}
-                        <td className="py-1.5 pl-2">
-                          {s >= 2 && (
-                            <span className="flex items-center gap-0.5 text-[11px] font-semibold text-orange-500" title="Днів поспіль">
-                              <Flame size={11} /> {s}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-
-                      {/* Expanded mini month calendar for this habit */}
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={9} className="pb-3">
-                            <div className="mt-1 bg-gray-50 rounded-xl p-3 inline-block">
-                              <div className="flex items-center justify-between mb-2 gap-4">
-                                <button onClick={() => setCalMonth(shiftMonth(calMonth, -1))} className="text-gray-300 hover:text-gray-600 p-0.5 rounded">
-                                  <ChevronLeft size={13} />
-                                </button>
-                                <p className="text-xs font-semibold text-gray-700 capitalize">
-                                  {new Date(calMonth + '-15T12:00:00').toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })}
-                                </p>
-                                <button
-                                  onClick={() => setCalMonth(shiftMonth(calMonth, 1))}
-                                  disabled={calMonth >= today.slice(0, 7)}
-                                  className="text-gray-300 hover:text-gray-600 disabled:opacity-30 p-0.5 rounded"
-                                >
-                                  <ChevronRight size={13} />
-                                </button>
-                              </div>
-                              <div className="grid grid-cols-7 gap-1 mb-1">
-                                {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(w => (
-                                  <span key={w} className="w-7 text-center text-[9px] text-gray-400 uppercase font-semibold">{w}</span>
-                                ))}
-                              </div>
-                              <div className="grid grid-cols-7 gap-1">
-                                {monthCells(calMonth).map((d, i) => {
-                                  if (!d) return <span key={i} className="w-7 h-7" />
-                                  const on = checks[h.id]?.has(d)
-                                  const future = d > today
-                                  return (
-                                    <button
-                                      key={d}
-                                      onClick={() => !future && toggleCheck(h.id, d)}
-                                      disabled={future}
-                                      className={`w-7 h-7 rounded-lg text-[10px] font-medium inline-flex items-center justify-center transition-all ${
-                                        future ? 'text-gray-200 cursor-default' : on ? 'text-white' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'
-                                      } ${d === today && !on ? 'ring-1 ring-teal-400' : ''}`}
-                                      style={on ? { backgroundColor: h.color } : undefined}
-                                      title={d}
-                                    >
-                                      {Number(d.slice(8))}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      </React.Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
+              {habits.map(h => (
+                <HabitCard
+                  key={h.id}
+                  habit={h}
+                  checks={checks[h.id] ?? new Set()}
+                  today={today}
+                  streak={streak(h.id)}
+                  onToggle={d => toggleCheck(h.id, d)}
+                  onDelete={() => deleteHabit(h.id)}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -556,6 +430,90 @@ export default function DailyPage() {
           />
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Habit card: full month calendar, one row per week ─────────────────────────
+
+function HabitCard({ habit, checks, today, streak, onToggle, onDelete }: {
+  habit: Habit
+  checks: Set<string>
+  today: string
+  streak: number
+  onToggle: (day: string) => void
+  onDelete: () => void
+}) {
+  const [month, setMonth] = useState(() => today.slice(0, 7))
+  const monthDone = [...checks].filter(d => d.startsWith(month)).length
+
+  return (
+    <div className="border border-gray-100 rounded-2xl p-4 group/habit">
+      <div className="flex items-center gap-2 mb-3 min-w-0">
+        <span className="w-1.5 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: habit.color }} />
+        <span className="text-sm font-semibold text-gray-800 truncate">{habit.name}</span>
+        {streak >= 2 && (
+          <span className="flex items-center gap-0.5 text-[11px] font-semibold text-orange-500 flex-shrink-0" title="Днів поспіль">
+            <Flame size={11} /> {streak}
+          </span>
+        )}
+        <button
+          onClick={onDelete}
+          className="opacity-0 group-hover/habit:opacity-100 text-gray-300 hover:text-red-400 transition-all flex-shrink-0 ml-auto"
+          title="Видалити звичку"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => setMonth(shiftMonth(month, -1))} className="text-gray-300 hover:text-gray-600 p-0.5 rounded">
+          <ChevronLeft size={13} />
+        </button>
+        <p className="text-xs font-semibold text-gray-600 capitalize">
+          {new Date(month + '-15T12:00:00').toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })}
+        </p>
+        <button
+          onClick={() => setMonth(shiftMonth(month, 1))}
+          disabled={month >= today.slice(0, 7)}
+          className="text-gray-300 hover:text-gray-600 disabled:opacity-30 p-0.5 rounded"
+        >
+          <ChevronRight size={13} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {['п', 'в', 'с', 'ч', 'п', 'с', 'н'].map((w, i) => (
+          <span key={i} className="text-center text-[9px] text-gray-400 uppercase font-semibold">{w}</span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {monthCells(month).map((d, i) => {
+          if (!d) return <span key={i} className="aspect-square" />
+          const on = checks.has(d)
+          const future = d > today
+          return (
+            <button
+              key={d}
+              onClick={() => !future && onToggle(d)}
+              disabled={future}
+              className={`aspect-square rounded-lg text-[10px] font-medium inline-flex items-center justify-center transition-all ${
+                future
+                  ? 'text-gray-200 cursor-default'
+                  : on
+                    ? 'text-white'
+                    : 'text-gray-500 hover:bg-gray-200 bg-gray-50 border border-gray-200'
+              } ${d === today && !on ? 'ring-1 ring-teal-400' : ''}`}
+              style={on ? { backgroundColor: habit.color } : undefined}
+              title={d}
+            >
+              {Number(d.slice(8))}
+            </button>
+          )
+        })}
+      </div>
+
+      <p className="text-[10px] text-gray-400 mt-2">{monthDone} днів цього місяця</p>
     </div>
   )
 }

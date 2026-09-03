@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin, CornerUpLeft } from 'lucide-react'
+import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin, CornerUpLeft, Phone } from 'lucide-react'
+import VoiceRoom from '@/components/chat/VoiceRoom'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -61,6 +62,7 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
   const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [inVoice, setInVoice] = useState(false)
 
   // Replying makes no sense across channels
   useEffect(() => { setReplyTo(null) }, [channel])
@@ -330,9 +332,20 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
             <p className="text-sm font-semibold text-gray-800 truncate">{projectName ?? 'Проєкт'}</p>
             <span className="text-[10px] text-gray-400 flex-shrink-0">чат проєкту</span>
           </div>
-          {!embedded && (
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded flex-shrink-0"><X size={16} /></button>
-          )}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {!inVoice && (
+              <button
+                onClick={() => setInVoice(true)}
+                className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
+                title="Голосовий канал (тільки команда)"
+              >
+                <Phone size={14} />
+              </button>
+            )}
+            {!embedded && (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
           <button
@@ -360,6 +373,19 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
           </button>
         </div>
       </div>
+
+      {/* Live voice room — internal only, spans both text channels */}
+      {inVoice && (
+        <VoiceRoom
+          roomKey={`project-${projectId}`}
+          self={{
+            key: sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`,
+            name: sender.name,
+            color: sender.type === 'admin' ? '#0ea5e9' : '#14b8a6',
+          }}
+          onLeave={() => setInVoice(false)}
+        />
+      )}
 
       {channel === 'client' && (
         <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex-shrink-0">

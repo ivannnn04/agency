@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus, Trash2, Check, ChevronLeft, ChevronRight, Flame, NotebookPen } from 'lucide-react'
+import { Plus, Trash2, Check, ChevronLeft, ChevronRight, Flame, NotebookPen, CalendarDays } from 'lucide-react'
 
 // «Мій день» — the admin's personal daily page: habit tracker
 // (done / not done per day), a to-do list for the day, and a free-form
@@ -32,17 +32,23 @@ export default function DailyPage() {
   const today = isoDay(new Date())
 
   const [habits, setHabits] = useState<Habit[]>([])
-  // habit_id -> set of days checked (within the visible window)
+  // habit_id -> set of all checked days
   const [checks, setChecks] = useState<Record<string, Set<string>>>({})
   const [newHabit, setNewHabit] = useState('')
   const [addingHabit, setAddingHabit] = useState(false)
+  // Expanded mini-calendar: which habit + which month (first day of month)
+  const [expandedHabit, setExpandedHabit] = useState<string | null>(null)
+  const [calMonth, setCalMonth] = useState(() => today.slice(0, 7)) // YYYY-MM
 
   const [day, setDay] = useState(today)
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState('')
 
+  // Daily journal: one note per day, stored in personal_notes with id = YYYY-MM-DD
+  const [noteDay, setNoteDay] = useState(today)
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(true)
+  const [recentNotes, setRecentNotes] = useState<string[]>([])
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [dbError, setDbError] = useState('')
@@ -58,11 +64,10 @@ export default function DailyPage() {
       .order('created_at')
     if (error) { setDbError('Запусти міграцію daily_migration.sql'); return }
     setHabits((hs ?? []) as Habit[])
+    // All history — the per-habit mini calendar can browse any month
     const { data: cs } = await supabase
       .from('habit_checks')
       .select('habit_id, day')
-      .gte('day', weekDays[0])
-      .lte('day', today)
     const map: Record<string, Set<string>> = {}
     for (const c of (cs ?? []) as { habit_id: string; day: string }[]) {
       if (!map[c.habit_id]) map[c.habit_id] = new Set()
@@ -81,15 +86,40 @@ export default function DailyPage() {
     setTodos((data ?? []) as Todo[])
   }, [])
 
+  const loadRecentNotes = useCallback(async () => {
+    const { data } = await supabase
+      .from('personal_notes')
+      .select('id, content')
+      .like('id', '20%')
+      .order('id', { ascending: false })
+      .limit(30)
+    setRecentNotes(
+      ((data ?? []) as { id: string; content: string | null }[])
+        .filter(r => (r.content ?? '').trim() !== '')
+        .map(r => r.id)
+    )
+  }, [])
+
   useEffect(() => {
     loadHabits()
-    ;(async () => {
-      const { data } = await supabase.from('personal_notes').select('content').eq('id', 'main').single()
-      if (data) setNotes(data.content ?? '')
-    })()
-  }, [loadHabits])
+    loadRecentNotes()
+  }, [loadHabits, loadRecentNotes])
 
   useEffect(() => { loadTodos(day) }, [day, loadTodos])
+
+  // Load the journal entry for the selected day
+  useEffect(() => {
+    ;(async () => {
+      if (notesTimer.current) clearTimeout(notesTimer.current)
+      const { data } = await supabase
+        .from('personal_notes')
+        .select('content')
+        .eq('id', noteDay)
+        .maybeSingle()
+      setNotes(data?.content ?? '')
+      setNotesSaved(true)
+    })()
+  }, [noteDay])
 
   // ── Habits ────────────────────────────────────────────────────────────────
 
@@ -168,13 +198,36 @@ export default function DailyPage() {
   function onNotesChange(v: string) {
     setNotes(v)
     setNotesSaved(false)
+    const forDay = noteDay
     if (notesTimer.current) clearTimeout(notesTimer.current)
     notesTimer.current = setTimeout(async () => {
       await supabase
         .from('personal_notes')
-        .upsert({ id: 'main', content: v, updated_at: new Date().toISOString() })
+        .upsert({ id: forDay, content: v, updated_at: new Date().toISOString() })
       setNotesSaved(true)
+      loadRecentNotes()
     }, 800)
+  }
+
+  // ── Habit mini-calendar helpers ───────────────────────────────────────────
+
+  function shiftMonth(ym: string, n: number): string {
+    const d = new Date(ym + '-15T12:00:00')
+    d.setMonth(d.getMonth() + n)
+    return isoDay(d).slice(0, 7)
+  }
+
+  // 42 cells, Monday-first; null = padding outside the month
+  function monthCells(ym: string): (string | null)[] {
+    const first = new Date(ym + '-01T12:00:00')
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+    const lead = (first.getDay() + 6) % 7 // Monday = 0
+    const cells: (string | null)[] = Array(lead).fill(null)
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push(`${ym}-${String(d).padStart(2, '0')}`)
+    }
+    while (cells.length % 7 !== 0) cells.push(null)
+    return cells
   }
 
   const doneCount = todos.filter(t => t.done).length
@@ -253,12 +306,26 @@ export default function DailyPage() {
                 <tbody>
                   {habits.map(h => {
                     const s = streak(h.id)
+                    const isOpen = expandedHabit === h.id
                     return (
-                      <tr key={h.id} className="group">
+                      <React.Fragment key={h.id}>
+                      <tr className="group">
                         <td className="py-1.5 pr-3">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="w-1.5 h-5 rounded-full flex-shrink-0" style={{ backgroundColor: h.color }} />
                             <span className="text-sm text-gray-800 truncate">{h.name}</span>
+                            <button
+                              onClick={() => {
+                                setExpandedHabit(isOpen ? null : h.id)
+                                setCalMonth(today.slice(0, 7))
+                              }}
+                              className={`transition-all flex-shrink-0 ${
+                                isOpen ? 'text-teal-500' : 'opacity-0 group-hover:opacity-100 text-gray-300 hover:text-teal-500'
+                              }`}
+                              title="Календар звички"
+                            >
+                              <CalendarDays size={12} />
+                            </button>
                             <button
                               onClick={() => deleteHabit(h.id)}
                               className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all flex-shrink-0"
@@ -293,6 +360,58 @@ export default function DailyPage() {
                           )}
                         </td>
                       </tr>
+
+                      {/* Expanded mini month calendar for this habit */}
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={9} className="pb-3">
+                            <div className="mt-1 bg-gray-50 rounded-xl p-3 inline-block">
+                              <div className="flex items-center justify-between mb-2 gap-4">
+                                <button onClick={() => setCalMonth(shiftMonth(calMonth, -1))} className="text-gray-300 hover:text-gray-600 p-0.5 rounded">
+                                  <ChevronLeft size={13} />
+                                </button>
+                                <p className="text-xs font-semibold text-gray-700 capitalize">
+                                  {new Date(calMonth + '-15T12:00:00').toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })}
+                                </p>
+                                <button
+                                  onClick={() => setCalMonth(shiftMonth(calMonth, 1))}
+                                  disabled={calMonth >= today.slice(0, 7)}
+                                  className="text-gray-300 hover:text-gray-600 disabled:opacity-30 p-0.5 rounded"
+                                >
+                                  <ChevronRight size={13} />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-7 gap-1 mb-1">
+                                {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(w => (
+                                  <span key={w} className="w-7 text-center text-[9px] text-gray-400 uppercase font-semibold">{w}</span>
+                                ))}
+                              </div>
+                              <div className="grid grid-cols-7 gap-1">
+                                {monthCells(calMonth).map((d, i) => {
+                                  if (!d) return <span key={i} className="w-7 h-7" />
+                                  const on = checks[h.id]?.has(d)
+                                  const future = d > today
+                                  return (
+                                    <button
+                                      key={d}
+                                      onClick={() => !future && toggleCheck(h.id, d)}
+                                      disabled={future}
+                                      className={`w-7 h-7 rounded-lg text-[10px] font-medium inline-flex items-center justify-center transition-all ${
+                                        future ? 'text-gray-200 cursor-default' : on ? 'text-white' : 'text-gray-500 hover:bg-gray-200 bg-white border border-gray-200'
+                                      } ${d === today && !on ? 'ring-1 ring-teal-400' : ''}`}
+                                      style={on ? { backgroundColor: h.color } : undefined}
+                                      title={d}
+                                    >
+                                      {Number(d.slice(8))}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     )
                   })}
                 </tbody>
@@ -376,20 +495,62 @@ export default function DailyPage() {
           </div>
         </div>
 
-        {/* ── Notes ── */}
+        {/* ── Daily journal ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <NotebookPen size={14} className="text-amber-500" /> Нотатки
             </h2>
-            <span className={`text-[10px] ${notesSaved ? 'text-gray-300' : 'text-amber-500'}`}>
-              {notesSaved ? 'збережено' : 'зберігаю...'}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className={`text-[10px] mr-2 ${notesSaved ? 'text-gray-300' : 'text-amber-500'}`}>
+                {notesSaved ? 'збережено' : 'зберігаю...'}
+              </span>
+              <button onClick={() => setNoteDay(addDays(noteDay, -1))} className="text-gray-300 hover:text-gray-600 p-1 rounded transition-colors">
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                onClick={() => setNoteDay(today)}
+                className={`text-xs font-medium px-2 py-1 rounded-lg transition-colors ${
+                  noteDay === today ? 'text-teal-600 bg-teal-50' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {noteDay === today
+                  ? 'Сьогодні'
+                  : new Date(noteDay + 'T12:00:00').toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' })}
+              </button>
+              <button
+                onClick={() => setNoteDay(addDays(noteDay, 1))}
+                disabled={noteDay >= today}
+                className="text-gray-300 hover:text-gray-600 disabled:opacity-30 p-1 rounded transition-colors"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
+
+          {/* Days that already have an entry — flip straight to them */}
+          {recentNotes.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {recentNotes.slice(0, 10).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setNoteDay(d)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    d === noteDay
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-600'
+                  }`}
+                >
+                  {d === today ? 'сьогодні' : new Date(d + 'T12:00:00').toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
+                </button>
+              ))}
+            </div>
+          )}
+
           <textarea
             value={notes}
             onChange={e => onNotesChange(e.target.value)}
-            placeholder="Думки, ідеї, все що завгодно..."
+            placeholder={noteDay === today ? 'Думки, ідеї, все що завгодно...' : 'Цього дня записів не було'}
             rows={12}
             className="flex-1 w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-400 resize-y leading-relaxed bg-white"
           />

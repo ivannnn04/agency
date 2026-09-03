@@ -291,14 +291,17 @@ export default function TeamDashboardPage() {
     tasksByProject[key].tasks.push(t)
   }
 
-  const chatsUnread = projects.some(p => unread[p.id]?.team)
+  // Exact unread total: team+client channels of my projects + my general chats
+  const chatsUnreadCount =
+    projects.reduce((s, p) => s + (unread[p.id]?.teamCount ?? 0) + (unread[p.id]?.clientCount ?? 0), 0) +
+    visibleGeneralChats.reduce((s, c) => s + (unread[`chat:${c.id}`]?.teamCount ?? 0), 0)
 
   // ClickUp-style navigation: icon rail on the left (desktop),
   // bottom tab bar on mobile.
-  const navItems: { key: 'projects' | 'tasks' | 'chats' | 'workload' | 'reports'; label: string; icon: typeof FolderKanban; dot?: boolean }[] = [
+  const navItems: { key: 'projects' | 'tasks' | 'chats' | 'workload' | 'reports'; label: string; icon: typeof FolderKanban; count?: number }[] = [
     { key: 'projects', label: 'Проєкти', icon: FolderKanban },
     { key: 'tasks',    label: 'Задачі',  icon: CheckSquare },
-    { key: 'chats',    label: 'Чати',    icon: MessageSquare, dot: chatsUnread },
+    { key: 'chats',    label: 'Чати',    icon: MessageSquare, count: chatsUnreadCount },
     // Workload planning is for empowered members only
     ...(member?.can_create_projects
       ? [{ key: 'workload' as const, label: 'Люди', icon: Gauge }]
@@ -335,7 +338,11 @@ export default function TeamDashboardPage() {
             >
               <Icon size={18} />
               <span className="text-[9px] font-medium">{item.label}</span>
-              {item.dot && <span className="absolute top-1.5 right-3 w-2 h-2 rounded-full bg-teal-400 animate-pulse" />}
+              {(item.count ?? 0) > 0 && (
+                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                  {(item.count ?? 0) > 99 ? '99+' : item.count}
+                </span>
+              )}
             </button>
           )
         })}
@@ -585,7 +592,11 @@ export default function TeamDashboardPage() {
             >
               <Icon size={18} />
               <span className="text-[10px] font-medium">{item.label}</span>
-              {item.dot && <span className="absolute top-1.5 right-[28%] w-2 h-2 rounded-full bg-teal-400 animate-pulse" />}
+              {(item.count ?? 0) > 0 && (
+                <span className="absolute top-0.5 right-[24%] text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                  {(item.count ?? 0) > 99 ? '99+' : item.count}
+                </span>
+              )}
             </button>
           )
         })}

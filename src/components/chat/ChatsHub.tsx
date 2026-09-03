@@ -59,19 +59,27 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
           )}
           {projects.map(p => {
             const active = selected?.kind === 'project' && selected.id === p.id
-            const hasUnread = unread[p.id]?.team || unread[p.id]?.client
+            const u = unread[p.id]
+            const count = (u?.teamCount ?? 0) + (u?.clientCount ?? 0)
             return (
               <button
                 key={p.id}
                 onClick={() => openProject(p)}
                 className={`w-full flex items-center gap-2 px-4 py-1.5 text-sm text-left transition-colors ${
                   active ? 'bg-gray-200/70 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`}
+                } ${count > 0 ? 'font-semibold text-gray-900' : ''}`}
               >
                 <Hash size={13} className="flex-shrink-0" style={{ color: p.color }} />
                 <span className="truncate min-w-0">{p.name}</span>
-                {hasUnread && (
-                  <span className="ml-auto w-2 h-2 rounded-full bg-teal-500 animate-pulse flex-shrink-0" title="Нове повідомлення" />
+                {count > 0 && (
+                  <span
+                    className={`ml-auto flex-shrink-0 text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
+                      u?.clientNew ? 'bg-amber-500' : 'bg-teal-500'
+                    }`}
+                    title={u?.clientNew ? 'Клієнт написав' : 'Нові повідомлення'}
+                  >
+                    {count > 99 ? '99+' : count}
+                  </span>
                 )}
               </button>
             )
@@ -94,16 +102,22 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
           )}
           {generalChats.map(c => {
             const active = selected?.kind === 'general' && selected.id === c.id
+            const count = unread[`chat:${c.id}`]?.teamCount ?? 0
             return (
               <button
                 key={c.id}
                 onClick={() => openGeneral(c)}
                 className={`w-full flex items-center gap-2 px-4 py-1.5 text-sm text-left transition-colors ${
                   active ? 'bg-gray-200/70 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`}
+                } ${count > 0 ? 'font-semibold text-gray-900' : ''}`}
               >
                 <Hash size={13} className="text-teal-500 flex-shrink-0" />
                 <span className="truncate min-w-0">{c.name}</span>
+                {count > 0 && (
+                  <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
               </button>
             )
           })}

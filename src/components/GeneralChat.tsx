@@ -9,6 +9,7 @@ import {
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
+import { markRead } from '@/lib/chatUnread'
 
 // General team chat drawer — chats that live outside any project.
 // Visible to the admin and the whole team; clients never see these.
@@ -164,6 +165,11 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
+
+  // Viewing the chat marks it read (clears the unread counters elsewhere)
+  useEffect(() => {
+    markRead(`chat:${chat.id}`, 'team')
+  }, [chat.id, messages.length])
 
   const mentionNames = people.map(p => p.name)
 

@@ -519,9 +519,15 @@ export default function Sidebar() {
               >
                 <MessageSquare size={13} className="flex-shrink-0" />
                 <span>Чати</span>
-                {Object.values(chatUnread).some(u => u.team || u.client) && (
-                  <span className="ml-auto flex-shrink-0 w-2 h-2 rounded-full bg-teal-400 animate-pulse" title="Нові повідомлення" />
-                )}
+                {(() => {
+                  const total = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
+                  if (total === 0) return null
+                  return (
+                    <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center" title="Нові повідомлення">
+                      {total > 99 ? '99+' : total}
+                    </span>
+                  )
+                })()}
               </button>
 
               {/* Per-member task queues with estimates */}
@@ -558,19 +564,20 @@ export default function Sidebar() {
                   >
                     <Circle size={8} fill={p.color ?? '#14b8a6'} color={p.color ?? '#14b8a6'} className="flex-shrink-0" />
                     <span className="truncate">{p.name}</span>
-                    {u?.clientNew ? (
-                      <span
-                        className="ml-auto flex-shrink-0 text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-bold uppercase animate-pulse"
-                        title="Клієнт написав у чат"
-                      >
-                        клієнт
-                      </span>
-                    ) : (u?.team || u?.client) ? (
-                      <span
-                        className="ml-auto flex-shrink-0 w-2 h-2 rounded-full bg-teal-400 animate-pulse"
-                        title="Нове повідомлення в чаті"
-                      />
-                    ) : null}
+                    {(() => {
+                      const count = (u?.teamCount ?? 0) + (u?.clientCount ?? 0)
+                      if (count === 0) return null
+                      return (
+                        <span
+                          className={`ml-auto flex-shrink-0 text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
+                            u?.clientNew ? 'bg-amber-500 animate-pulse' : 'bg-teal-500'
+                          }`}
+                          title={u?.clientNew ? 'Клієнт написав у чат' : 'Нові повідомлення в чаті'}
+                        >
+                          {count > 99 ? '99+' : count}
+                        </span>
+                      )
+                    })()}
                   </button>
                 )
               })}
@@ -594,7 +601,9 @@ export default function Sidebar() {
                   + Створити чат з командою
                 </button>
               )}
-              {generalChats.map(c => (
+              {generalChats.map(c => {
+                const gc = chatUnread[`chat:${c.id}`]?.teamCount ?? 0
+                return (
                 <button
                   key={c.id}
                   onClick={() => setOpenChat(c)}
@@ -604,8 +613,14 @@ export default function Sidebar() {
                 >
                   <Hash size={12} className="flex-shrink-0 text-teal-400" />
                   <span className="truncate">{c.name}</span>
+                  {gc > 0 && (
+                    <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                      {gc > 99 ? '99+' : gc}
+                    </span>
+                  )}
                 </button>
-              ))}
+                )
+              })}
             </nav>
           </div>
         )}

@@ -10,6 +10,8 @@ export interface ChannelUnread {
   team: boolean      // unread in the team channel
   client: boolean    // unread in the client channel (anyone)
   clientNew: boolean // unread message written BY the client — "клієнт пише"
+  teamCount: number   // exact unread count, team channel
+  clientCount: number // exact unread count, client channel
 }
 
 const readKey = (projectId: string, channel: string) => `chatRead:${projectId}:${channel}`
@@ -54,7 +56,8 @@ export function playChatPing() {
 
 interface MsgRow {
   id: string
-  project_id: string
+  project_id: string | null
+  chat_id?: string | null
   channel: 'team' | 'client'
   sender_type: 'admin' | 'team' | 'client' | 'bot'
   team_member_id: string | null
@@ -78,16 +81,26 @@ export function useChatUnread(opts: {
   const firstLoadRef = useRef(true)
 
   const poll = useCallback(async () => {
+    // chat_id may not exist before the general_chats migration — fall back
     let q = supabase
       .from('project_messages')
-      .select('id, project_id, channel, sender_type, team_member_id, created_at')
+      .select('id, project_id, chat_id, channel, sender_type, team_member_id, created_at')
       .order('created_at', { ascending: false })
       .limit(300)
     if (projectId) q = q.eq('project_id', projectId)
-    const { data } = await q
-    if (!data) return
-
-    const rows = data as MsgRow[]
+    const res = await q
+    let rows: MsgRow[] | null = res.data as MsgRow[] | null
+    if (!rows) {
+      let q2 = supabase
+        .from('project_messages')
+        .select('id, project_id, channel, sender_type, team_member_id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(300)
+      if (projectId) q2 = q2.eq('project_id', projectId)
+      const res2 = await q2
+      rows = res2.data as MsgRow[] | null
+    }
+    if (!rows) return
     // Bot messages are sent on the admin's approval, so they're "own" for the admin
     const isOwn = (m: MsgRow) =>
       self === 'admin'
@@ -100,19 +113,23 @@ export function useChatUnread(opts: {
 
     for (const m of rows) {
       if (isOwn(m)) continue
+      // Key: project chats by project id, general chats by "chat:<id>"
+      const key = m.project_id ?? (m.chat_id ? `chat:${m.chat_id}` : null)
+      if (!key) continue
       if (!newestForeign || m.created_at > newestForeign) newestForeign = m.created_at
 
-      let lastRead = getLastRead(m.project_id, m.channel)
+      let lastRead = getLastRead(key, m.channel)
       if (!lastRead) {
         // First run in this browser: treat history as read, count only future messages
-        localStorage.setItem(readKey(m.project_id, m.channel), nowIso)
+        localStorage.setItem(readKey(key, m.channel), nowIso)
         lastRead = nowIso
       }
       if (m.created_at > lastRead) {
-        const u = map[m.project_id] ?? (map[m.project_id] = { team: false, client: false, clientNew: false })
-        if (m.channel === 'team') u.team = true
+        const u = map[key] ?? (map[key] = { team: false, client: false, clientNew: false, teamCount: 0, clientCount: 0 })
+        if (m.channel === 'team') { u.team = true; u.teamCount++ }
         else {
           u.client = true
+          u.clientCount++
           if (m.sender_type === 'client') u.clientNew = true
         }
       }

@@ -211,13 +211,21 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
 
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-            style={{ backgroundColor: peer.color }}
-          >
-            {peer.name.charAt(0)}
-          </span>
+          {peer.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={peer.avatar_url} alt={peer.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <span
+              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+              style={{ backgroundColor: peer.color }}
+            >
+              {peer.name.charAt(0)}
+            </span>
+          )}
           <p className="text-sm font-semibold text-gray-800 truncate">{peer.name}</p>
+          {(peer.status_emoji || peer.status_text) && (
+            <span className="text-[10px] text-gray-400 truncate">{peer.status_emoji} {peer.status_text}</span>
+          )}
           <span className="text-[10px] text-gray-400 flex-shrink-0">особисті</span>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -274,7 +282,20 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
                   <Pin size={9} /> закріплено
                 </p>
               )}
-              <div className={`flex items-center gap-0.5 ${mine ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center gap-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                {!mine && (
+                  peer.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={peer.avatar_url} alt={peer.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0 self-end" />
+                  ) : (
+                    <span
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 self-end"
+                      style={{ backgroundColor: peer.color }}
+                    >
+                      {peer.name.charAt(0)}
+                    </span>
+                  )
+                )}
                 <div className={`min-w-0 rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                   mine ? 'bg-gray-900 text-white rounded-br-md' : 'bg-gray-100 text-gray-800 rounded-bl-md'
                 }`}>

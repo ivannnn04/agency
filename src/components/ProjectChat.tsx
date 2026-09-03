@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin } from 'lucide-react'
+import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -25,6 +25,7 @@ interface Message {
   file_url: string | null
   file_name: string | null
   pinned?: boolean | null
+  reply_to_message_id?: string | null
   created_at: string
 }
 
@@ -59,6 +60,10 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+
+  // Replying makes no sense across channels
+  useEffect(() => { setReplyTo(null) }, [channel])
 
   // Pin/unpin a message; the pinned strip sits under the header
   async function togglePin(m: Message) {
@@ -167,23 +172,30 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
   }, [channelMessages.length, channel])
 
   async function insertMessage(content: string, fileUrl?: string, fileName?: string) {
-    const { data, error: err } = await supabase
+    const base = {
+      project_id: projectId,
+      channel,
+      sender_type: sender.type,
+      sender_name: sender.name,
+      team_member_id: sender.teamMemberId ?? null,
+      content: content.slice(0, 4000),
+      file_url: fileUrl ?? null,
+      file_name: fileName ?? null,
+    }
+    // reply_to column may not be migrated yet — retry without it
+    let { data, error: err } = await supabase
       .from('project_messages')
-      .insert({
-        project_id: projectId,
-        channel,
-        sender_type: sender.type,
-        sender_name: sender.name,
-        team_member_id: sender.teamMemberId ?? null,
-        content: content.slice(0, 4000),
-        file_url: fileUrl ?? null,
-        file_name: fileName ?? null,
-      })
+      .insert({ ...base, reply_to_message_id: replyTo?.id ?? null })
       .select()
       .single()
+    if (err && err.message.includes('reply_to_message_id')) {
+      if (replyTo) setError('Відповіді не збережуться — запусти міграцію chat_replies_migration.sql')
+      ;({ data, error: err } = await supabase.from('project_messages').insert(base).select().single())
+    }
     if (!err && data) {
       setMessages(prev => [...prev, data as Message])
       setInput('')
+      setReplyTo(null)
     }
   }
 
@@ -503,12 +515,34 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
                         ? 'bg-violet-50 text-gray-800 border border-violet-100 rounded-bl-md'
                         : 'bg-gray-100 text-gray-800 rounded-bl-md'
                 }`}>
+                  {m.reply_to_message_id && (() => {
+                    const orig = messages.find(x => x.id === m.reply_to_message_id)
+                    if (!orig) return null
+                    return (
+                      <button
+                        onClick={() => scrollToMessage(orig.id)}
+                        className={`block w-full text-left mb-1.5 rounded-lg px-2 py-1 text-[11px] border-l-2 ${
+                          mine ? 'bg-white/10 border-white/40 text-gray-300' : 'bg-black/5 border-gray-300 text-gray-500'
+                        }`}
+                      >
+                        <span className="font-semibold block">{orig.sender_name}</span>
+                        <span className="block truncate">{orig.content || orig.file_name || 'файл'}</span>
+                      </button>
+                    )
+                  })()}
                   <MessageBody content={m.content} names={mentionNames} mine={mine} />
                   {m.file_url && (
                     <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
                   )}
                 </div>
                 <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
+                <button
+                  onClick={() => setReplyTo(m)}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 text-gray-300 hover:text-teal-500"
+                  title="Відповісти"
+                >
+                  <CornerUpLeft size={12} />
+                </button>
                 <button
                   onClick={() => togglePin(m)}
                   className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 ${
@@ -536,6 +570,20 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
 
       {error && (
         <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
+      )}
+
+      {/* Replying-to preview */}
+      {replyTo && (
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+          <CornerUpLeft size={13} className="text-teal-500 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold text-gray-600">{replyTo.sender_name}</p>
+            <p className="text-[11px] text-gray-400 truncate">{replyTo.content || replyTo.file_name || 'файл'}</p>
+          </div>
+          <button onClick={() => setReplyTo(null)} className="text-gray-300 hover:text-gray-600 p-1 rounded flex-shrink-0">
+            <X size={13} />
+          </button>
+        </div>
       )}
 
       {/* Composer with mentions + attachments */}

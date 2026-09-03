@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Hash, Trash2, Users, Pin } from 'lucide-react'
+import { MessageSquare, X, Hash, Trash2, Users, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -26,6 +26,7 @@ interface Message {
   file_url: string | null
   file_name: string | null
   pinned?: boolean | null
+  reply_to_message_id?: string | null
   created_at: string
 }
 
@@ -47,6 +48,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
 
   async function togglePin(m: Message) {
     const next = !m.pinned
@@ -113,24 +115,26 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   }
 
   const load = useCallback(async () => {
-    // pinned column may not be migrated yet — fall back to the base select
-    const withPins = await supabase
-      .from('project_messages')
-      .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, pinned, created_at')
-      .eq('chat_id', chat.id)
-      .order('created_at', { ascending: true })
-      .limit(500)
-    let rows: Message[] | null = withPins.data as Message[] | null
-    let err = withPins.error
-    if (err && err.message.includes('pinned')) {
-      const plain = await supabase
+    // pinned / reply_to columns may not be migrated yet — drop them one by one
+    const BASE_COLS = 'id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at'
+    const attempts = [
+      `${BASE_COLS}, pinned, reply_to_message_id`,
+      `${BASE_COLS}, pinned`,
+      BASE_COLS,
+    ]
+    let rows: Message[] | null = null
+    let err: { message: string } | null = null
+    for (const cols of attempts) {
+      const res = await supabase
         .from('project_messages')
-        .select('id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at')
+        .select(cols)
         .eq('chat_id', chat.id)
         .order('created_at', { ascending: true })
         .limit(500)
-      rows = plain.data as Message[] | null
-      err = plain.error
+      rows = res.data as Message[] | null
+      err = res.error
+      if (!err) break
+      if (!err.message.includes('pinned') && !err.message.includes('reply_to_message_id')) break
     }
     if (err) { setError('Запусти міграцію general_chats_migration.sql'); return }
     setMessages(rows ?? [])
@@ -167,24 +171,30 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   }
 
   async function insertMessage(content: string, fileUrl?: string, fileName?: string) {
-    const { data, error: err } = await supabase
+    const base = {
+      chat_id: chat.id,
+      project_id: null,
+      channel: 'team',
+      sender_type: sender.type,
+      sender_name: sender.name,
+      team_member_id: sender.teamMemberId ?? null,
+      content: content.slice(0, 4000),
+      file_url: fileUrl ?? null,
+      file_name: fileName ?? null,
+    }
+    let { data, error: err } = await supabase
       .from('project_messages')
-      .insert({
-        chat_id: chat.id,
-        project_id: null,
-        channel: 'team',
-        sender_type: sender.type,
-        sender_name: sender.name,
-        team_member_id: sender.teamMemberId ?? null,
-        content: content.slice(0, 4000),
-        file_url: fileUrl ?? null,
-        file_name: fileName ?? null,
-      })
+      .insert({ ...base, reply_to_message_id: replyTo?.id ?? null })
       .select()
       .single()
+    if (err && err.message.includes('reply_to_message_id')) {
+      if (replyTo) setError('Відповіді не збережуться — запусти міграцію chat_replies_migration.sql')
+      ;({ data, error: err } = await supabase.from('project_messages').insert(base).select().single())
+    }
     if (!err && data) {
       setMessages(prev => [...prev, data as Message])
       setInput('')
+      setReplyTo(null)
     }
   }
 
@@ -392,12 +402,34 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
                 <div className={`min-w-0 rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${
                   mine ? 'bg-gray-900 text-white rounded-br-md' : 'bg-gray-100 text-gray-800 rounded-bl-md'
                 }`}>
+                  {m.reply_to_message_id && (() => {
+                    const orig = messages.find(x => x.id === m.reply_to_message_id)
+                    if (!orig) return null
+                    return (
+                      <button
+                        onClick={() => scrollToMessage(orig.id)}
+                        className={`block w-full text-left mb-1.5 rounded-lg px-2 py-1 text-[11px] border-l-2 ${
+                          mine ? 'bg-white/10 border-white/40 text-gray-300' : 'bg-black/5 border-gray-300 text-gray-500'
+                        }`}
+                      >
+                        <span className="font-semibold block">{orig.sender_name}</span>
+                        <span className="block truncate">{orig.content || orig.file_name || 'файл'}</span>
+                      </button>
+                    )
+                  })()}
                   <MessageBody content={m.content} names={mentionNames} mine={mine} />
                   {m.file_url && (
                     <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
                   )}
                 </div>
                 <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
+                <button
+                  onClick={() => setReplyTo(m)}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 text-gray-300 hover:text-teal-500"
+                  title="Відповісти"
+                >
+                  <CornerUpLeft size={12} />
+                </button>
                 <button
                   onClick={() => togglePin(m)}
                   className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 ${
@@ -425,6 +457,20 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
 
       {error && (
         <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
+      )}
+
+      {/* Replying-to preview */}
+      {replyTo && (
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+          <CornerUpLeft size={13} className="text-teal-500 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold text-gray-600">{replyTo.sender_name}</p>
+            <p className="text-[11px] text-gray-400 truncate">{replyTo.content || replyTo.file_name || 'файл'}</p>
+          </div>
+          <button onClick={() => setReplyTo(null)} className="text-gray-300 hover:text-gray-600 p-1 rounded flex-shrink-0">
+            <X size={13} />
+          </button>
+        </div>
       )}
 
       <MentionComposer

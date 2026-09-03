@@ -296,22 +296,17 @@ function escapeRe(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// Message text with @mentions of known people highlighted.
-export function MessageBody({ content, names, mine }: {
-  content: string
-  names: string[]
-  mine: boolean
-}) {
-  if (!content) return null
+// Text fragment with @mentions of known people highlighted.
+function MentionText({ text, names, mine }: { text: string; names: string[]; mine: boolean }) {
   const sorted = [...names].filter(Boolean).sort((a, b) => b.length - a.length)
-  if (sorted.length === 0) return <>{content}</>
+  if (sorted.length === 0 || !text) return <>{text}</>
 
   const re = new RegExp(`@(${sorted.map(escapeRe).join('|')})`, 'gi')
   const parts: React.ReactNode[] = []
   let last = 0
   let m: RegExpExecArray | null
-  while ((m = re.exec(content)) !== null) {
-    if (m.index > last) parts.push(content.slice(last, m.index))
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
     parts.push(
       <span key={m.index} className={`font-semibold ${mine ? 'text-teal-200' : 'text-teal-600'}`}>
         {m[0]}
@@ -319,8 +314,39 @@ export function MessageBody({ content, names, mine }: {
     )
     last = m.index + m[0].length
   }
-  if (last < content.length) parts.push(content.slice(last))
+  if (last < text.length) parts.push(text.slice(last))
   return <>{parts}</>
+}
+
+// Message text: URLs become clickable links, @mentions get highlighted.
+export function MessageBody({ content, names, mine }: {
+  content: string
+  names: string[]
+  mine: boolean
+}) {
+  if (!content) return null
+  // split with a capturing group keeps the URLs in the array
+  const segments = content.split(/(https?:\/\/[^\s]+)/g)
+  return (
+    <>
+      {segments.map((seg, i) =>
+        /^https?:\/\//.test(seg) ? (
+          <a
+            key={i}
+            href={seg}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            className={`underline break-all ${mine ? 'text-teal-200 hover:text-white' : 'text-teal-600 hover:text-teal-700'}`}
+          >
+            {seg}
+          </a>
+        ) : (
+          <MentionText key={i} text={seg} names={names} mine={mine} />
+        )
+      )}
+    </>
+  )
 }
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i

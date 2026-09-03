@@ -84,6 +84,17 @@ export function MentionComposer({
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
+  // Auto-grow the textarea while typing, capped at ~4× the two-row default;
+  // beyond that it scrolls inside.
+  const MAX_TA_HEIGHT = 224
+  useEffect(() => {
+    const ta = taRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = Math.min(ta.scrollHeight, MAX_TA_HEIGHT) + 'px'
+    ta.style.overflowY = ta.scrollHeight > MAX_TA_HEIGHT ? 'auto' : 'hidden'
+  }, [value])
+
   const match = value.match(MENTION_QUERY_RE)
   const query = match?.[2] ?? null
   const suggestions = query !== null

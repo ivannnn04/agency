@@ -48,6 +48,56 @@ export function ChatResizeHandle({ onMouseDown }: { onMouseDown: (e: React.Mouse
   )
 }
 
+// Drag-and-drop wrapper: drop files anywhere over the children to upload.
+// Renders its own container, so it can be used as a component's root.
+export function DropZone({ onFiles, children, className, style }: {
+  onFiles: (files: File[]) => void
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+}) {
+  const [over, setOver] = useState(false)
+  const depth = useRef(0)
+
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
+
+  return (
+    <div
+      className={className}
+      style={style}
+      onDragEnter={e => {
+        if (!hasFiles(e)) return
+        e.preventDefault()
+        depth.current++
+        setOver(true)
+      }}
+      onDragOver={e => { if (hasFiles(e)) e.preventDefault() }}
+      onDragLeave={e => {
+        if (!hasFiles(e)) return
+        depth.current--
+        if (depth.current <= 0) { depth.current = 0; setOver(false) }
+      }}
+      onDrop={e => {
+        if (!hasFiles(e)) return
+        e.preventDefault()
+        depth.current = 0
+        setOver(false)
+        const files = Array.from(e.dataTransfer.files)
+        if (files.length > 0) onFiles(files)
+      }}
+    >
+      {children}
+      {over && (
+        <div className="absolute inset-0 z-[60] bg-teal-500/10 border-2 border-dashed border-teal-400 rounded-xl flex items-center justify-center pointer-events-none">
+          <p className="bg-white/95 text-teal-600 text-sm font-semibold px-4 py-2 rounded-xl shadow-lg">
+            Відпусти, щоб додати 📎
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export interface ChatPerson {
   name: string
   type: 'admin' | 'team' | 'client'

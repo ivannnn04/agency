@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Phone, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -201,9 +201,10 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
   }
 
   return (
-    <div
+    <DropZone
+      onFiles={async fs => { for (const f of fs) await sendFile(f) }}
       className={embedded
-        ? 'h-full w-full min-w-0 bg-white flex flex-col'
+        ? 'relative h-full w-full min-w-0 bg-white flex flex-col'
         : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
       style={embedded ? undefined : { width }}
     >
@@ -380,6 +381,6 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
         accent="dark"
         onVoice={sendFile}
       />
-    </div>
+    </DropZone>
   )
 }

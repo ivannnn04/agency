@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { NotebookPen, X, Paperclip, Loader2, Send, Trash2 } from 'lucide-react'
 import {
   Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle,
+  useChatWidth, ChatResizeHandle, DropZone,
 } from '@/components/chat/shared'
 
 // Shared per-project notepad drawer. Admin, team and client all see the same
@@ -191,7 +191,8 @@ export default function ProjectNotepad({ projectId, viewer, portalToken, lang = 
   }
 
   return (
-    <div
+    <DropZone
+      onFiles={fs => { if (fs[0]) pickFile(fs[0]) }}
       className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
       style={{ width }}
     >
@@ -295,6 +296,6 @@ export default function ProjectNotepad({ projectId, viewer, portalToken, lang = 
           )
         })}
       </div>
-    </div>
+    </DropZone>
   )
 }

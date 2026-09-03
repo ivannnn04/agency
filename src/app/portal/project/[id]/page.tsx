@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -622,7 +622,8 @@ function PortalChat({ projectId, token, people, onClose }: {
   }
 
   return (
-    <div
+    <DropZone
+      onFiles={async fs => { for (const f of fs) await sendFile(f) }}
       className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
       style={{ width }}
     >
@@ -699,7 +700,7 @@ function PortalChat({ projectId, token, people, onClose }: {
       />
 
       {bookingOpen && <BookMeetingModal onClose={() => setBookingOpen(false)} />}
-    </div>
+    </DropZone>
   )
 }
 

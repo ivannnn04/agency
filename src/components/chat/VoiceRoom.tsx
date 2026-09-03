@@ -385,7 +385,7 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
 
   // ── Meet-style reactions ────────────────────────────────────────────────────
 
-  const CALL_REACTIONS = ['👍', '❤️', '😂', '😮', '🎉', '👏']
+  const CALL_REACTIONS = ['👍', '👎', '🖕', '💩', '❤️', '😂', '😮', '🎉', '👏']
   const [reactOpen, setReactOpen] = useState(false)
 
   function sendReaction(emoji: string) {

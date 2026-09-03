@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 
@@ -23,6 +23,7 @@ function currencySymbol(currency: string) {
 }
 
 const financeNav = [
+  { label: 'Мій день',  href: '/daily',       icon: Sun },
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },

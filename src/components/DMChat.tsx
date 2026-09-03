@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Phone, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -143,7 +143,7 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
     setSending(false)
   }
 
-  async function sendFile(f: File) {
+  async function sendFile(f: File, withText = true) {
     setError('')
     if (fileTooBig(f)) { setError(`Файл завеликий — максимум ${MAX_FILE_MB} МБ`); return }
     setUploading(true)
@@ -155,8 +155,15 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
       return
     }
     const { data: pub } = supabase.storage.from('chat-files').getPublicUrl(path)
-    await insertMessage(input.trim(), pub.publicUrl, f.name)
+    await insertMessage(withText ? input.trim() : '', pub.publicUrl, f.name)
     setUploading(false)
+  }
+
+
+  // Batch send (drop / multi-select): text goes with the first file only,
+  // so a pack of photos collapses into a gallery
+  async function sendFiles(fs: File[]) {
+    for (let i = 0; i < fs.length; i++) await sendFile(fs[i], i === 0)
   }
 
   const myReactorKey = sender.type === 'admin' ? 'admin' : `team:${sender.teamMemberId}`
@@ -202,7 +209,7 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
 
   return (
     <DropZone
-      onFiles={async fs => { for (const f of fs) await sendFile(f) }}
+      onFiles={sendFiles}
       className={embedded
         ? 'relative h-full w-full min-w-0 bg-white flex flex-col'
         : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
@@ -270,7 +277,21 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
             Напиши перше повідомлення 👋
           </p>
         )}
-        {messages.map(m => {
+        {groupMessages(messages).map(item => {
+          if (Array.isArray(item)) {
+            const first = item[0]
+            const gm = isMine(first)
+            return (
+              <GalleryBubble
+                key={first.id}
+                images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
+                mine={gm}
+                senderName={!gm ? first.sender_name : undefined}
+                timestamp={item[item.length - 1].created_at}
+              />
+            )
+          }
+          const m = item
           const mine = isMine(m)
           return (
             <div
@@ -375,6 +396,7 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
         onChange={setInput}
         onSend={send}
         onPickFile={sendFile}
+        onPickFiles={sendFiles}
         people={[]}
         placeholder={`Повідомлення для ${peer.name}...`}
         uploading={uploading}

@@ -118,12 +118,14 @@ const TYPE_BADGE: Record<ChatPerson['type'], string> = {
 
 // Composer with @-mention autocomplete and a file attach button.
 export function MentionComposer({
-  value, onChange, onSend, onPickFile, people, placeholder, uploading, accent = 'dark', onBookMeeting, onVoice,
+  value, onChange, onSend, onPickFile, onPickFiles, people, placeholder, uploading, accent = 'dark', onBookMeeting, onVoice,
 }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
   onPickFile: (f: File) => void
+  // Preferred for multi-select: gets the whole batch (falls back to onPickFile per file)
+  onPickFiles?: (files: File[]) => void
   people: ChatPerson[]
   placeholder: string
   uploading: boolean
@@ -257,10 +259,14 @@ export function MentionComposer({
       <input
         ref={fileRef}
         type="file"
+        multiple
         className="hidden"
         onChange={e => {
-          const f = e.target.files?.[0]
-          if (f) onPickFile(f)
+          const files = Array.from(e.target.files ?? [])
+          if (files.length > 0) {
+            if (onPickFiles) onPickFiles(files)
+            else files.forEach(onPickFile)
+          }
           e.target.value = ''
         }}
       />
@@ -400,6 +406,84 @@ export function MessageBody({ content, names, mine }: {
 }
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i
+
+// A message that is just a picture (no text) — candidate for gallery grouping
+export function isImageMessage(m: { content: string; file_url: string | null; file_name: string | null }): boolean {
+  if (!m.file_url) return false
+  if ((m.content ?? '').trim() !== '') return false
+  return IMAGE_RE.test(m.file_name ?? '') || IMAGE_RE.test(m.file_url)
+}
+
+// Collapse consecutive image-only messages from the same sender (within a
+// few minutes) into one gallery. Returns single messages or arrays of them.
+export function groupMessages<T extends {
+  id: string
+  sender_type: string
+  team_member_id?: string | null
+  sender_name: string
+  content: string
+  file_url: string | null
+  file_name: string | null
+  created_at: string
+}>(msgs: T[]): (T | T[])[] {
+  const out: (T | T[])[] = []
+  let buf: T[] = []
+  const flush = () => {
+    if (buf.length >= 2) out.push(buf)
+    else for (const b of buf) out.push(b)
+    buf = []
+  }
+  const sameSender = (a: T, b: T) =>
+    a.sender_type === b.sender_type &&
+    (a.team_member_id ?? null) === (b.team_member_id ?? null) &&
+    a.sender_name === b.sender_name
+  for (const m of msgs) {
+    if (isImageMessage(m)) {
+      const prev = buf[buf.length - 1]
+      if (prev && sameSender(prev, m) &&
+        new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 3 * 60 * 1000) {
+        buf.push(m)
+      } else {
+        flush()
+        buf = [m]
+      }
+    } else {
+      flush()
+      out.push(m)
+    }
+  }
+  flush()
+  return out
+}
+
+// Photo gallery bubble for a group of image messages
+export function GalleryBubble({ images, mine, senderName, timestamp }: {
+  images: { url: string; name: string }[]
+  mine: boolean
+  senderName?: string
+  timestamp: string
+}) {
+  const cols = images.length >= 5 ? 3 : 2
+  return (
+    <div className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
+      {senderName && <p className="text-[10px] text-gray-400 mb-0.5 px-1">{senderName}</p>}
+      <div
+        className="grid gap-1 rounded-2xl overflow-hidden"
+        style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, width: cols === 3 ? 300 : 260, maxWidth: '100%' }}
+      >
+        {images.map((im, i) => (
+          <a key={i} href={im.url} target="_blank" rel="noreferrer" className="block aspect-square bg-gray-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={im.url} alt={im.name} className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+          </a>
+        ))}
+      </div>
+      <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
+        {new Date(timestamp).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+      </p>
+    </div>
+  )
+}
 
 // File attachment inside a message bubble: inline preview for images, chip otherwise.
 export function Attachment({ url, name, mine }: {

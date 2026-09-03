@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -598,13 +598,13 @@ function PortalChat({ projectId, token, people, onClose }: {
     })
   }
 
-  async function sendFile(f: File) {
+  async function sendFile(f: File, withText = true) {
     setError('')
     if (fileTooBig(f)) { setError(`File is too big — ${MAX_FILE_MB} MB max`); return }
     setUploading(true)
     const form = new FormData()
     form.append('file', f)
-    form.append('content', input.trim())
+    form.append('content', withText ? input.trim() : '')
     const res = await fetch(`/api/portal/project/${projectId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -621,9 +621,13 @@ function PortalChat({ projectId, token, people, onClose }: {
     }
   }
 
+  async function sendFiles(fs: File[]) {
+    for (let i = 0; i < fs.length; i++) await sendFile(fs[i], i === 0)
+  }
+
   return (
     <DropZone
-      onFiles={async fs => { for (const f of fs) await sendFile(f) }}
+      onFiles={sendFiles}
       className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
       style={{ width }}
     >
@@ -640,7 +644,21 @@ function PortalChat({ projectId, token, people, onClose }: {
         {messages.length === 0 && (
           <p className="text-xs text-gray-300 text-center mt-8">Write the first message — the team will see it right away</p>
         )}
-        {messages.map(m => {
+        {groupMessages(messages).map(item => {
+          if (Array.isArray(item)) {
+            const first = item[0]
+            const gm = first.sender_type === 'client'
+            return (
+              <GalleryBubble
+                key={first.id}
+                images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
+                mine={gm}
+                senderName={!gm ? first.sender_name : undefined}
+                timestamp={item[item.length - 1].created_at}
+              />
+            )
+          }
+          const m = item
           const mine = m.sender_type === 'client'
           return (
             <div key={m.id} className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}>
@@ -692,6 +710,7 @@ function PortalChat({ projectId, token, people, onClose }: {
         onChange={setInput}
         onSend={send}
         onPickFile={sendFile}
+        onPickFiles={sendFiles}
         people={people.map(name => ({ name, type: 'team' as const }))}
         placeholder="Message... (@ to mention)"
         uploading={uploading}

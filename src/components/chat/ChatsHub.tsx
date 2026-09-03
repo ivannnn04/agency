@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Hash, MessageSquare, Plus } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import ProjectChat, { ChatSender } from '@/components/ProjectChat'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
+import DMChat, { DMPeer, dmKeyFor } from '@/components/DMChat'
 import { ChannelUnread } from '@/lib/chatUnread'
 
 // Discord-style chat hub: channel list on the left, the open chat on the
@@ -26,9 +28,26 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
   onGeneralDeleted?: (id: string) => void
   heightOffset?: number
 }) {
-  const [selected, setSelected] = useState<{ kind: 'project' | 'general'; id: string } | null>(null)
+  const [selected, setSelected] = useState<{ kind: 'project' | 'general' | 'dm'; id: string } | null>(null)
   const [drawerProject, setDrawerProject] = useState<HubProject | null>(null)
   const [drawerGeneral, setDrawerGeneral] = useState<GeneralChatInfo | null>(null)
+  const [drawerDM, setDrawerDM] = useState<DMPeer | null>(null)
+  const [people, setPeople] = useState<DMPeer[]>([])
+
+  const selfKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
+
+  // Everyone internal except me — for direct messages
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await supabase.from('team_members').select('id, name, color').order('name')
+      const list: DMPeer[] = [
+        { key: 'admin', name: 'Ivan (адмін)', color: '#0ea5e9' },
+        ...((data ?? []) as { id: string; name: string; color: string }[])
+          .map(m => ({ key: `team-${m.id}`, name: m.name, color: m.color || '#14b8a6' })),
+      ]
+      setPeople(list.filter(p => p.key !== selfKey))
+    })()
+  }, [selfKey])
 
   const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768
 
@@ -42,8 +61,14 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
     else setSelected({ kind: 'general', id: c.id })
   }
 
+  function openDM(p: DMPeer) {
+    if (isMobile()) setDrawerDM(p)
+    else setSelected({ kind: 'dm', id: p.key })
+  }
+
   const selProject = selected?.kind === 'project' ? projects.find(p => p.id === selected.id) : undefined
   const selGeneral = selected?.kind === 'general' ? generalChats.find(c => c.id === selected.id) : undefined
+  const selDM = selected?.kind === 'dm' ? people.find(p => p.key === selected.id) : undefined
 
   return (
     <>
@@ -121,6 +146,35 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
               </button>
             )
           })}
+
+          {/* Direct messages */}
+          <p className="px-4 mt-4 mb-1 text-[10px] font-bold text-gray-400 uppercase tracking-wide">Особисті</p>
+          {people.map(p => {
+            const active = selected?.kind === 'dm' && selected.id === p.key
+            const count = unread[`dm:${dmKeyFor(selfKey, p.key)}`]?.teamCount ?? 0
+            return (
+              <button
+                key={p.key}
+                onClick={() => openDM(p)}
+                className={`w-full flex items-center gap-2 px-4 py-1.5 text-sm text-left transition-colors ${
+                  active ? 'bg-gray-200/70 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                } ${count > 0 ? 'font-semibold text-gray-900' : ''}`}
+              >
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                  style={{ backgroundColor: p.color }}
+                >
+                  {p.name.charAt(0)}
+                </span>
+                <span className="truncate min-w-0">{p.name}</span>
+                {count > 0 && (
+                  <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Open chat (desktop pane) */}
@@ -142,6 +196,14 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
               embedded
               onClose={() => setSelected(null)}
               onDeleted={() => { onGeneralDeleted?.(selGeneral.id); setSelected(null) }}
+            />
+          ) : selDM ? (
+            <DMChat
+              key={selDM.key}
+              peer={selDM}
+              sender={sender}
+              embedded
+              onClose={() => setSelected(null)}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-300">
@@ -167,6 +229,13 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
           sender={sender}
           onClose={() => setDrawerGeneral(null)}
           onDeleted={() => { onGeneralDeleted?.(drawerGeneral.id); setDrawerGeneral(null) }}
+        />
+      )}
+      {drawerDM && (
+        <DMChat
+          peer={drawerDM}
+          sender={sender}
+          onClose={() => setDrawerDM(null)}
         />
       )}
     </>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Mic, MicOff, PhoneOff, Loader2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Live voice room for internal chats (Discord-style): WebRTC mesh audio
@@ -33,8 +33,9 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
 }
 
-export default function VoiceRoom({ roomKey, self, onLeave }: {
+export default function VoiceRoom({ roomKey, roomName, self, onLeave }: {
   roomKey: string
+  roomName?: string
   self: VoicePeerInfo
   onLeave: () => void
 }) {
@@ -216,8 +217,46 @@ export default function VoiceRoom({ roomKey, self, onLeave }: {
     setMuted(next)
   }
 
+  // ── Invite others: ring their personal call-<key> channel ──────────────────
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteList, setInviteList] = useState<VoicePeerInfo[]>([])
+  const [inviteSel, setInviteSel] = useState<Set<string>>(new Set())
+  const [inviteSent, setInviteSent] = useState(false)
+
+  useEffect(() => {
+    if (!inviteOpen) return
+    ;(async () => {
+      const { data } = await supabase.from('team_members').select('id, name, color').order('name')
+      const list: VoicePeerInfo[] = [
+        { key: 'admin', name: 'Ivan (адмін)', color: '#0ea5e9' },
+        ...((data ?? []) as { id: string; name: string; color: string }[])
+          .map(m => ({ key: `team-${m.id}`, name: m.name, color: m.color || '#14b8a6' })),
+      ]
+      setInviteList(list.filter(p => p.key !== self.key))
+    })()
+  }, [inviteOpen, self.key])
+
+  async function callSelected() {
+    const keys = [...inviteSel].filter(k => !participants.some(p => p.key === k))
+    for (const k of keys) {
+      const ch = supabase.channel(`call-${k}`)
+      await new Promise<void>(resolve => {
+        ch.subscribe(s => { if (s === 'SUBSCRIBED') resolve() })
+      })
+      await ch.send({
+        type: 'broadcast',
+        event: 'ring',
+        payload: { roomKey, roomName: roomName ?? 'Голосовий', from: self.name },
+      })
+      setTimeout(() => supabase.removeChannel(ch), 1500)
+    }
+    setInviteSel(new Set())
+    setInviteSent(true)
+    setTimeout(() => { setInviteSent(false); setInviteOpen(false) }, 1500)
+  }
+
   return (
-    <div className="px-4 py-2.5 border-b border-teal-100 bg-teal-50/70 flex items-center gap-3 flex-shrink-0">
+    <div className="relative px-4 py-2.5 border-b border-teal-100 bg-teal-50/70 flex items-center gap-3 flex-shrink-0">
       {status === 'connecting' && <Loader2 size={14} className="text-teal-500 animate-spin flex-shrink-0" />}
       {status === 'live' && <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse flex-shrink-0" />}
 
@@ -246,6 +285,69 @@ export default function VoiceRoom({ roomKey, self, onLeave }: {
           </>
         )}
       </div>
+
+      {status === 'live' && (
+        <button
+          onClick={() => setInviteOpen(v => !v)}
+          className={`p-1.5 rounded-lg transition-colors flex-shrink-0 border ${
+            inviteOpen ? 'bg-teal-500 text-white border-teal-500' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200'
+          }`}
+          title="Запросити в голосовий"
+        >
+          <UserPlus size={13} />
+        </button>
+      )}
+
+      {/* Invite picker */}
+      {inviteOpen && (
+        <div className="absolute top-full right-2 mt-1 z-50 w-60 bg-white border border-gray-200 rounded-xl shadow-xl p-2">
+          {inviteSent ? (
+            <p className="flex items-center gap-1.5 text-xs text-teal-600 font-medium px-2 py-2">
+              <Check size={13} /> Виклик надіслано
+            </p>
+          ) : (
+            <>
+              <p className="text-[10px] text-gray-400 font-semibold uppercase px-2 pt-1 pb-1.5">Кого запросити</p>
+              <div className="max-h-44 overflow-y-auto flex flex-col">
+                {inviteList
+                  .filter(p => !participants.some(x => x.key === p.key))
+                  .map(p => (
+                    <label key={p.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={inviteSel.has(p.key)}
+                        onChange={() => setInviteSel(prev => {
+                          const next = new Set(prev)
+                          if (next.has(p.key)) next.delete(p.key)
+                          else next.add(p.key)
+                          return next
+                        })}
+                        className="accent-teal-500"
+                      />
+                      <span
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
+                        style={{ backgroundColor: p.color }}
+                      >
+                        {p.name.charAt(0)}
+                      </span>
+                      {p.name}
+                    </label>
+                  ))}
+                {inviteList.filter(p => !participants.some(x => x.key === p.key)).length === 0 && (
+                  <p className="text-[11px] text-gray-300 px-2 py-2">Всі вже тут 🎉</p>
+                )}
+              </div>
+              <button
+                onClick={callSelected}
+                disabled={inviteSel.size === 0}
+                className="w-full mt-1.5 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white text-xs font-medium py-1.5 rounded-lg transition-colors"
+              >
+                Подзвонити
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {status !== 'error' && (
         <button

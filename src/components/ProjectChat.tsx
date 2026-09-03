@@ -378,6 +378,7 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
       {inVoice && (
         <VoiceRoom
           roomKey={`project-${projectId}`}
+          roomName={projectName ?? 'Проєкт'}
           self={{
             key: sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`,
             name: sender.name,

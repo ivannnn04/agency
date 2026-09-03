@@ -8,6 +8,7 @@ import AddTransactionModal from '@/components/modals/AddTransactionModal'
 import { Settings, Plus, Minus, ArrowLeftRight, Menu, X } from 'lucide-react'
 import { TransactionType } from '@/types'
 import NotificationBell from '@/components/NotificationBell'
+import CallListener from '@/components/chat/CallListener'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -26,6 +27,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Incoming voice-call invites (admin) */}
+      <CallListener selfKey="admin" selfName="Ivan" selfColor="#0ea5e9" />
       {/* Desktop sidebar */}
       <div className="hidden md:flex h-full">
         <Sidebar key={refreshKey} />

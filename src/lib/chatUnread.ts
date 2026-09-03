@@ -58,6 +58,7 @@ interface MsgRow {
   id: string
   project_id: string | null
   chat_id?: string | null
+  dm_key?: string | null
   channel: 'team' | 'client'
   sender_type: 'admin' | 'team' | 'client' | 'bot'
   team_member_id: string | null
@@ -84,7 +85,7 @@ export function useChatUnread(opts: {
     // chat_id may not exist before the general_chats migration — fall back
     let q = supabase
       .from('project_messages')
-      .select('id, project_id, chat_id, channel, sender_type, team_member_id, created_at')
+      .select('id, project_id, chat_id, dm_key, channel, sender_type, team_member_id, created_at')
       .order('created_at', { ascending: false })
       .limit(300)
     if (projectId) q = q.eq('project_id', projectId)
@@ -111,10 +112,16 @@ export function useChatUnread(opts: {
     const map: Record<string, ChannelUnread> = {}
     let newestForeign: string | null = null
 
+    const selfKey = self === 'admin' ? 'admin' : `team-${memberId}`
+
     for (const m of rows) {
       if (isOwn(m)) continue
-      // Key: project chats by project id, general chats by "chat:<id>"
-      const key = m.project_id ?? (m.chat_id ? `chat:${m.chat_id}` : null)
+      // Direct messages: only count conversations that involve ME
+      if (m.dm_key && !m.dm_key.split('|').includes(selfKey)) continue
+      // Key: projects by id, general chats "chat:<id>", DMs "dm:<pair>"
+      const key = m.project_id
+        ?? (m.chat_id ? `chat:${m.chat_id}` : null)
+        ?? (m.dm_key ? `dm:${m.dm_key}` : null)
       if (!key) continue
       if (!newestForeign || m.created_at > newestForeign) newestForeign = m.created_at
 

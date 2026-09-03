@@ -17,6 +17,7 @@ import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 import MoveTaskProject from '@/components/MoveTaskProject'
+import CallListener from '@/components/chat/CallListener'
 
 interface Project {
   id: string
@@ -712,6 +713,11 @@ export default function TeamBoardPage() {
           />
         )}
       </div>
+
+      {/* Incoming voice-call invites */}
+      {member && (
+        <CallListener selfKey={`team-${member.id}`} selfName={member.name} selfColor={member.color || '#14b8a6'} />
+      )}
 
       {/* Project chat drawer */}
       {chatOpen && member && (

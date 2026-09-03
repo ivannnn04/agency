@@ -2,21 +2,22 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MessageSquare, X, Hash, Trash2, Users, Pin, CornerUpLeft, Phone } from 'lucide-react'
-import VoiceRoom from '@/components/chat/VoiceRoom'
+import { MessageSquare, X, Phone, Pin, CornerUpLeft } from 'lucide-react'
 import {
-  MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
+  MentionComposer, MessageBody, Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
+import VoiceRoom from '@/components/chat/VoiceRoom'
 
-// General team chat drawer — chats that live outside any project.
-// Visible to the admin and the whole team; clients never see these.
+// Direct messages between two internal users (admin + team). Never shown
+// to clients. Rows live in project_messages with dm_key = sorted pair.
 
-export interface GeneralChatInfo {
-  id: string
+export interface DMPeer {
+  key: string   // 'admin' or 'team-<id>'
   name: string
+  color: string
 }
 
 interface Message {
@@ -32,129 +33,60 @@ interface Message {
   created_at: string
 }
 
-// embedded renders the chat in-flow (Discord-style hub pane) instead of a drawer.
-export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded }: {
-  chat: GeneralChatInfo
+export function dmKeyFor(a: string, b: string): string {
+  return [a, b].sort().join('|')
+}
+
+export default function DMChat({ peer, sender, onClose, embedded }: {
+  peer: DMPeer
   sender: ChatSender
   onClose: () => void
-  onDeleted?: () => void
   embedded?: boolean
 }) {
+  const selfKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
+  const dmKey = dmKeyFor(selfKey, peer.key)
+
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
-  const [people, setPeople] = useState<ChatPerson[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [inVoice, setInVoice] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
-  const [replyTo, setReplyTo] = useState<Message | null>(null)
-  const [inVoice, setInVoice] = useState(false)
 
-  async function togglePin(m: Message) {
-    const next = !m.pinned
-    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, pinned: next } : x))
-    const { error: err } = await supabase
-      .from('project_messages')
-      .update({ pinned: next })
-      .eq('id', m.id)
-    if (err) setError('Закріплення не збереглося — запусти міграцію chat_pins_migration.sql')
-  }
-
-  function scrollToMessage(id: string) {
-    msgRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
-
-  // Admin-only membership management: no rows = the whole team sees the chat
-  const [manageOpen, setManageOpen] = useState(false)
-  const [allMembers, setAllMembers] = useState<{ id: string; name: string; color: string }[]>([])
-  const [chatMemberIds, setChatMemberIds] = useState<Set<string>>(new Set())
-  const [membersSupported, setMembersSupported] = useState(true)
-
-  // Everyone internal can be mentioned: admin + all team members
-  useEffect(() => {
-    ;(async () => {
-      const { data: mems } = await supabase.from('team_members').select('id, name, color').order('name')
-      const rows = (mems ?? []) as { id: string; name: string; color: string }[]
-      setAllMembers(rows)
-      setPeople([
-        { name: 'Ivan', type: 'admin' },
-        ...rows.map(m => ({ name: m.name, type: 'team' as const })),
-      ])
-    })()
-  }, [])
-
-  useEffect(() => {
-    if (sender.type !== 'admin') return
-    ;(async () => {
-      const { data, error: err } = await supabase
-        .from('general_chat_members')
-        .select('team_member_id')
-        .eq('chat_id', chat.id)
-      if (err) { setMembersSupported(false); return }
-      setChatMemberIds(new Set((data ?? []).map((r: { team_member_id: string }) => r.team_member_id)))
-    })()
-  }, [chat.id, sender.type])
-
-  async function toggleChatMember(teamMemberId: string) {
-    const next = new Set(chatMemberIds)
-    if (next.has(teamMemberId)) {
-      next.delete(teamMemberId)
-      setChatMemberIds(next)
-      await supabase
-        .from('general_chat_members')
-        .delete()
-        .eq('chat_id', chat.id)
-        .eq('team_member_id', teamMemberId)
-    } else {
-      next.add(teamMemberId)
-      setChatMemberIds(next)
-      await supabase
-        .from('general_chat_members')
-        .insert({ chat_id: chat.id, team_member_id: teamMemberId })
-    }
-  }
+  const mentionNames = [sender.name, peer.name]
 
   const load = useCallback(async () => {
-    // pinned / reply_to columns may not be migrated yet — drop them one by one
-    const BASE_COLS = 'id, sender_type, sender_name, team_member_id, content, file_url, file_name, created_at'
-    const attempts = [
-      `${BASE_COLS}, pinned, reply_to_message_id`,
-      `${BASE_COLS}, pinned`,
-      BASE_COLS,
-    ]
-    let rows: Message[] | null = null
-    let err: { message: string } | null = null
-    for (const cols of attempts) {
-      const res = await supabase
-        .from('project_messages')
-        .select(cols)
-        .eq('chat_id', chat.id)
-        .order('created_at', { ascending: true })
-        .limit(500)
-      rows = res.data as Message[] | null
-      err = res.error
-      if (!err) break
-      if (!err.message.includes('pinned') && !err.message.includes('reply_to_message_id')) break
-    }
-    if (err) { setError('Запусти міграцію general_chats_migration.sql'); return }
-    setMessages(rows ?? [])
+    const { data, error: err } = await supabase
+      .from('project_messages')
+      .select('*')
+      .eq('dm_key', dmKey)
+      .order('created_at', { ascending: true })
+      .limit(500)
+    if (err) { setError('Запусти міграцію direct_messages_migration.sql'); return }
+    const rows = (data ?? []) as Message[]
+    setMessages(rows)
 
-    const { data: rx } = await supabase
-      .from('message_reactions')
-      .select('message_id, emoji, reactor_key, reactor_name')
-      .eq('chat_id', chat.id)
-    if (rx) {
-      const map: Record<string, Reaction[]> = {}
-      for (const r of rx as Reaction[]) {
-        if (!map[r.message_id]) map[r.message_id] = []
-        map[r.message_id].push(r)
+    const ids = rows.map(m => m.id)
+    if (ids.length > 0) {
+      const { data: rx } = await supabase
+        .from('message_reactions')
+        .select('message_id, emoji, reactor_key, reactor_name')
+        .in('message_id', ids)
+      if (rx) {
+        const map: Record<string, Reaction[]> = {}
+        for (const r of rx as Reaction[]) {
+          if (!map[r.message_id]) map[r.message_id] = []
+          map[r.message_id].push(r)
+        }
+        setReactions(map)
       }
-      setReactions(map)
     }
-  }, [chat.id])
+  }, [dmKey])
 
   useEffect(() => {
     load()
@@ -166,12 +98,10 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
-  // Viewing the chat marks it read (clears the unread counters elsewhere)
+  // Viewing marks the DM read
   useEffect(() => {
-    markRead(`chat:${chat.id}`, 'team')
-  }, [chat.id, messages.length])
-
-  const mentionNames = people.map(p => p.name)
+    markRead(`dm:${dmKey}`, 'team')
+  }, [dmKey, messages.length])
 
   function isMine(m: Message) {
     if (sender.type === 'admin') return m.sender_type === 'admin'
@@ -179,27 +109,24 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   }
 
   async function insertMessage(content: string, fileUrl?: string, fileName?: string) {
-    const base = {
-      chat_id: chat.id,
-      project_id: null,
-      channel: 'team',
-      sender_type: sender.type,
-      sender_name: sender.name,
-      team_member_id: sender.teamMemberId ?? null,
-      content: content.slice(0, 4000),
-      file_url: fileUrl ?? null,
-      file_name: fileName ?? null,
-    }
-    let { data, error: err } = await supabase
+    const { data, error: err } = await supabase
       .from('project_messages')
-      .insert({ ...base, reply_to_message_id: replyTo?.id ?? null })
+      .insert({
+        dm_key: dmKey,
+        project_id: null,
+        channel: 'team',
+        sender_type: sender.type,
+        sender_name: sender.name,
+        team_member_id: sender.teamMemberId ?? null,
+        content: content.slice(0, 4000),
+        file_url: fileUrl ?? null,
+        file_name: fileName ?? null,
+        reply_to_message_id: replyTo?.id ?? null,
+      })
       .select()
       .single()
-    if (err && err.message.includes('reply_to_message_id')) {
-      if (replyTo) setError('Відповіді не збережуться — запусти міграцію chat_replies_migration.sql')
-      ;({ data, error: err } = await supabase.from('project_messages').insert(base).select().single())
-    }
-    if (!err && data) {
+    if (err) { setError('Запусти міграцію direct_messages_migration.sql'); return }
+    if (data) {
       setMessages(prev => [...prev, data as Message])
       setInput('')
       setReplyTo(null)
@@ -218,7 +145,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
     setError('')
     if (fileTooBig(f)) { setError(`Файл завеликий — максимум ${MAX_FILE_MB} МБ`); return }
     setUploading(true)
-    const path = safeStoragePath(`chat-${chat.id}`, f.name)
+    const path = safeStoragePath(`dm-${dmKey.replace(/[^a-zA-Z0-9-]/g, '_')}`, f.name)
     const { error: upErr } = await supabase.storage.from('chat-files').upload(path, f)
     if (upErr) {
       setUploading(false)
@@ -254,8 +181,6 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
       }))
       await supabase.from('message_reactions').insert({
         message_id: messageId,
-        chat_id: chat.id,
-        project_id: null,
         emoji,
         reactor_key: myReactorKey,
         reactor_name: sender.name,
@@ -263,11 +188,14 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
     }
   }
 
-  async function deleteChat() {
-    if (!window.confirm(`Видалити чат «${chat.name}» разом з усіма повідомленнями?`)) return
-    await supabase.from('general_chats').delete().eq('id', chat.id)
-    onDeleted?.()
-    onClose()
+  async function togglePin(m: Message) {
+    const next = !m.pinned
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, pinned: next } : x))
+    await supabase.from('project_messages').update({ pinned: next }).eq('id', m.id)
+  }
+
+  function scrollToMessage(id: string) {
+    msgRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   return (
@@ -281,37 +209,24 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
 
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <Hash size={15} className="text-teal-500 flex-shrink-0" />
-          <p className="text-sm font-semibold text-gray-800 truncate">{chat.name}</p>
-          <span className="text-[10px] text-gray-400 flex-shrink-0">загальний чат</span>
+          <span
+            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+            style={{ backgroundColor: peer.color }}
+          >
+            {peer.name.charAt(0)}
+          </span>
+          <p className="text-sm font-semibold text-gray-800 truncate">{peer.name}</p>
+          <span className="text-[10px] text-gray-400 flex-shrink-0">особисті</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           {!inVoice && (
             <button
               onClick={() => setInVoice(true)}
               className="text-gray-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-colors"
-              title="Голосовий канал"
+              title="Подзвонити"
             >
               <Phone size={14} />
             </button>
-          )}
-          {sender.type === 'admin' && (
-            <>
-              <button
-                onClick={() => setManageOpen(v => !v)}
-                className={`p-1 rounded transition-colors ${manageOpen ? 'text-teal-500' : 'text-gray-300 hover:text-teal-500'}`}
-                title="Учасники чату"
-              >
-                <Users size={14} />
-              </button>
-              <button
-                onClick={deleteChat}
-                className="text-gray-300 hover:text-red-400 p-1 rounded transition-colors"
-                title="Видалити чат"
-              >
-                <Trash2 size={14} />
-              </button>
-            </>
           )}
           {!embedded && (
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={16} /></button>
@@ -319,58 +234,12 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         </div>
       </div>
 
-      {/* Admin: pick who sees this chat. No one selected = the whole team sees it. */}
-      {manageOpen && sender.type === 'admin' && (
-        <div className="border-b border-gray-100 px-4 py-3 flex-shrink-0 bg-gray-50">
-          {!membersSupported ? (
-            <p className="text-[11px] text-red-500">Запусти міграцію general_chat_members_migration.sql</p>
-          ) : (
-            <>
-              <p className="text-[11px] text-gray-400 mb-2">
-                {chatMemberIds.size === 0
-                  ? 'Нікого не обрано — чат бачить вся команда'
-                  : 'Чат бачать тільки обрані учасники (і адмін)'}
-              </p>
-              <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
-                {allMembers.map(m => {
-                  const on = chatMemberIds.has(m.id)
-                  return (
-                    <label
-                      key={m.id}
-                      className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-white rounded-lg px-2 py-1.5 transition-colors"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggleChatMember(m.id)}
-                        className="accent-teal-500"
-                      />
-                      <span
-                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
-                        style={{ backgroundColor: m.color || '#14b8a6' }}
-                      >
-                        {m.name.charAt(0)}
-                      </span>
-                      {m.name}
-                    </label>
-                  )
-                })}
-                {allMembers.length === 0 && (
-                  <p className="text-[11px] text-gray-300">Немає учасників команди</p>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Live voice room */}
       {inVoice && (
         <VoiceRoom
-          roomKey={`chat-${chat.id}`}
-          roomName={chat.name}
+          roomKey={`dm-${dmKey}`}
+          roomName={peer.name}
           self={{
-            key: sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`,
+            key: selfKey,
             name: sender.name,
             color: sender.type === 'admin' ? '#0ea5e9' : '#14b8a6',
           }}
@@ -378,7 +247,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         />
       )}
 
-      {/* Pinned messages strip */}
+      {/* Pinned strip */}
       {messages.some(m => m.pinned) && (
         <div className="border-b border-amber-100 bg-amber-50/70 flex-shrink-0 max-h-28 overflow-y-auto">
           {messages.filter(m => m.pinned).map(m => (
@@ -387,15 +256,10 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
               <button
                 onClick={() => scrollToMessage(m.id)}
                 className="flex-1 min-w-0 text-left text-[11px] text-gray-700 truncate hover:text-gray-900"
-                title="Показати повідомлення"
               >
                 <span className="font-semibold">{m.sender_name}:</span> {m.content || m.file_name || 'файл'}
               </button>
-              <button
-                onClick={() => togglePin(m)}
-                className="text-gray-300 hover:text-red-400 flex-shrink-0 p-0.5"
-                title="Відкріпити"
-              >
+              <button onClick={() => togglePin(m)} className="text-gray-300 hover:text-red-400 flex-shrink-0 p-0.5" title="Відкріпити">
                 <X size={11} />
               </button>
             </div>
@@ -407,7 +271,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         {messages.length === 0 && !error && (
           <p className="text-xs text-gray-300 text-center mt-8 flex flex-col items-center gap-2">
             <MessageSquare size={22} className="opacity-40" />
-            Ще немає повідомлень
+            Напиши перше повідомлення 👋
           </p>
         )}
         {messages.map(m => {
@@ -421,12 +285,6 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
               {m.pinned && (
                 <p className={`flex items-center gap-1 text-[9px] text-amber-500 mb-0.5 px-1 ${mine ? 'justify-end' : ''}`}>
                   <Pin size={9} /> закріплено
-                </p>
-              )}
-              {!mine && (
-                <p className="text-[10px] text-gray-400 mb-0.5 px-1">
-                  {m.sender_name}
-                  {m.sender_type === 'admin' && ' · адмін'}
                 </p>
               )}
               <div className={`flex items-center gap-0.5 ${mine ? 'flex-row-reverse' : ''}`}>
@@ -490,7 +348,6 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
       )}
 
-      {/* Replying-to preview */}
       {replyTo && (
         <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-100 bg-gray-50 flex-shrink-0">
           <CornerUpLeft size={13} className="text-teal-500 flex-shrink-0" />
@@ -509,8 +366,8 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         onChange={setInput}
         onSend={send}
         onPickFile={sendFile}
-        people={people}
-        placeholder="Повідомлення... (@ — згадати)"
+        people={[]}
+        placeholder={`Повідомлення для ${peer.name}...`}
         uploading={uploading}
         accent="dark"
         onVoice={sendFile}

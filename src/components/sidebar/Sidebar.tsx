@@ -213,8 +213,10 @@ export default function Sidebar() {
     if (!ratesLoading) fetchPlanned()
   }, [ratesLoading])
 
-  // Icon rail sections: Фінанси / Мій день / Проєкти
+  // Icon rail sections: Фінанси / Мій день / Проєкти / Чати
   const onDaily = pathname.startsWith('/daily')
+  const onChats = pathname.startsWith('/chats')
+  const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
@@ -228,8 +230,14 @@ export default function Sidebar() {
     },
     {
       key: 'projects', label: 'Проєкти', icon: FolderKanban,
-      active: section === 'projects',
+      active: section === 'projects' && !onChats,
       go: () => { setSection('projects'); router.push('/board') },
+    },
+    {
+      key: 'chats', label: 'Чати', icon: MessageSquare,
+      active: onChats,
+      go: () => router.push('/chats'),
+      count: unreadTotal,
     },
   ]
 
@@ -243,28 +251,34 @@ export default function Sidebar() {
         </div>
         {railItems.map(item => {
           const Icon = item.icon
+          const count = ('count' in item ? item.count : 0) ?? 0
           return (
             <button
               key={item.key}
               onClick={item.go}
-              className={`w-14 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-colors ${
+              className={`relative w-14 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-colors ${
                 item.active ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'
               }`}
             >
               <Icon size={18} />
               <span className="text-[9px] font-medium">{item.label}</span>
+              {count > 0 && (
+                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                  {count > 99 ? '99+' : count}
+                </span>
+              )}
             </button>
           )
         })}
-        {onDaily && (
+        {(onDaily || onChats) && (
           <div className="mt-auto">
             <ThemeToggle variant="sidebar" />
           </div>
         )}
       </div>
 
-      {/* On «Мій день» only the icon rail stays — no section panel */}
-      {!onDaily && (
+      {/* On «Мій день» and «Чати» only the icon rail stays — no section panel */}
+      {!onDaily && !onChats && (
       <aside
         className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
@@ -508,26 +522,6 @@ export default function Sidebar() {
               >
                 <Users size={13} className="flex-shrink-0" />
                 <span>Команда</span>
-              </button>
-
-              {/* Discord-style hub with every project + general chat */}
-              <button
-                onClick={() => router.push('/chats')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-2 text-left ${
-                  pathname.startsWith('/chats') ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <MessageSquare size={13} className="flex-shrink-0" />
-                <span>Чати</span>
-                {(() => {
-                  const total = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
-                  if (total === 0) return null
-                  return (
-                    <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center" title="Нові повідомлення">
-                      {total > 99 ? '99+' : total}
-                    </span>
-                  )
-                })()}
               </button>
 
               {/* Per-member task queues with estimates */}

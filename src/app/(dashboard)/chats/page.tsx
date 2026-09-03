@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useChatUnread } from '@/lib/chatUnread'
 import ChatsHub, { HubProject } from '@/components/chat/ChatsHub'
 import { GeneralChatInfo } from '@/components/GeneralChat'
+import { getAdminProfile } from '@/lib/adminProfile'
 
 // Admin chat hub: every project's chat + every general chat in one
 // Discord-style view. Same message tables as the boards, so always in sync.
@@ -12,7 +13,10 @@ export default function AdminChatsPage() {
   const [projects, setProjects] = useState<HubProject[]>([])
   const [generalChats, setGeneralChats] = useState<GeneralChatInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [adminName, setAdminName] = useState('Ivan')
   const unread = useChatUnread({ self: 'admin' })
+
+  useEffect(() => { getAdminProfile().then(p => setAdminName(p.name)) }, [])
 
   useEffect(() => { load() }, [])
 
@@ -51,7 +55,7 @@ export default function AdminChatsPage() {
         <ChatsHub
           projects={projects}
           generalChats={generalChats}
-          sender={{ type: 'admin', name: 'Ivan' }}
+          sender={{ type: 'admin', name: adminName }}
           unread={unread}
           onCreateGeneral={createGeneralChat}
           onGeneralDeleted={id => setGeneralChats(prev => prev.filter(c => c.id !== id))}

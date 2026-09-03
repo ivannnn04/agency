@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Hash, Trash2, Users, Pin, CornerUpLeft, Phone } from 'lucide-react'
 import { startCall } from '@/lib/callBus'
+import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -78,8 +79,9 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
       const { data: mems } = await supabase.from('team_members').select('id, name, color').order('name')
       const rows = (mems ?? []) as { id: string; name: string; color: string }[]
       setAllMembers(rows)
+      const admin = await getAdminProfile()
       setPeople([
-        { name: 'Ivan', type: 'admin' },
+        { name: admin.name, type: 'admin' },
         ...rows.map(m => ({ name: m.name, type: 'team' as const })),
       ])
     })()

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin, CornerUpLeft, Phone } from 'lucide-react'
 import { startCall } from '@/lib/callBus'
+import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips,
@@ -96,7 +97,8 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
         .map(r => (r as unknown as { clients: { name: string | null; email: string } | null }).clients)
         .filter((c): c is { name: string | null; email: string } => !!c)
         .map(c => ({ name: c.name || c.email, type: 'client' as const }))
-      setPeople([{ name: 'Ivan', type: 'admin' }, ...team, ...clients])
+      const admin = await getAdminProfile()
+      setPeople([{ name: admin.name, type: 'admin' }, ...team, ...clients])
     })()
   }, [projectId])
 

@@ -18,6 +18,7 @@ import ProjectInvoices from '@/components/ProjectInvoices'
 import ProjectReport from '@/components/ProjectReport'
 import { useChatUnread } from '@/lib/chatUnread'
 import { suggestEstimate } from '@/lib/preEstimate'
+import { getAdminProfile } from '@/lib/adminProfile'
 import MoveTaskProject from '@/components/MoveTaskProject'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
@@ -126,6 +127,8 @@ export default function BoardPage() {
   const [reportOpen, setReportOpen] = useState(false)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
+  const [adminName, setAdminName] = useState('Ivan')
+  useEffect(() => { getAdminProfile().then(p => setAdminName(p.name)) }, [])
   const clientRef = useRef<HTMLDivElement>(null)
   const menuRef    = useRef<HTMLDivElement>(null)
   const memberRef  = useRef<HTMLDivElement>(null)
@@ -872,7 +875,7 @@ create policy "team_members_all" on team_members for all using (true) with check
         <ProjectChat
           projectId={id}
           projectName={project?.name}
-          sender={{ type: 'admin', name: 'Ivan' }}
+          sender={{ type: 'admin', name: adminName }}
           onClose={() => setChatOpen(false)}
         />
       )}
@@ -881,7 +884,7 @@ create policy "team_members_all" on team_members for all using (true) with check
       {notepadOpen && (
         <ProjectNotepad
           projectId={id}
-          viewer={{ type: 'admin', name: 'Ivan' }}
+          viewer={{ type: 'admin', name: adminName }}
           onClose={() => setNotepadOpen(false)}
         />
       )}

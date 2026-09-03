@@ -9,6 +9,7 @@ import { Settings, Plus, Minus, ArrowLeftRight, Menu, X } from 'lucide-react'
 import { TransactionType } from '@/types'
 import NotificationBell from '@/components/NotificationBell'
 import CallListener from '@/components/chat/CallListener'
+import { getAdminProfile } from '@/lib/adminProfile'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -16,6 +17,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [modalType, setModalType] = useState<TransactionType>('income')
   const [refreshKey, setRefreshKey] = useState(0)
   const [navOpen, setNavOpen] = useState(false)
+  const [adminName, setAdminName] = useState('Ivan')
+  useEffect(() => { getAdminProfile().then(p => setAdminName(p.name)) }, [])
 
   // Navigating from the mobile drawer closes it
   useEffect(() => { setNavOpen(false) }, [pathname])
@@ -28,7 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Incoming voice-call invites (admin) */}
-      <CallListener selfKey="admin" selfName="Ivan" selfColor="#0ea5e9" />
+      <CallListener selfKey="admin" selfName={adminName} selfColor="#0ea5e9" />
       {/* Desktop sidebar */}
       <div className="hidden md:flex h-full">
         <Sidebar key={refreshKey} />

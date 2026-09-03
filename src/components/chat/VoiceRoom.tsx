@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2, Maximize2, Video, VideoOff, SmilePlus } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { getAdminProfile } from '@/lib/adminProfile'
 
 // Live voice room (Discord-style): WebRTC mesh audio + screen share between
 // participants, Supabase Realtime as signaling (presence = who's here,
@@ -290,8 +291,9 @@ export default function VoiceRoom({ roomKey, roomName, self, onLeave, onMinimize
     if (!inviteOpen) return
     ;(async () => {
       const { data } = await supabase.from('team_members').select('id, name, color').order('name')
+      const admin = await getAdminProfile()
       const list: VoicePeerInfo[] = [
-        { key: 'admin', name: 'Ivan (адмін)', color: '#0ea5e9' },
+        { key: 'admin', name: `${admin.name} (адмін)`, color: '#0ea5e9' },
         ...((data ?? []) as { id: string; name: string; color: string }[])
           .map(m => ({ key: `team-${m.id}`, name: m.name, color: m.color || '#14b8a6' })),
       ]

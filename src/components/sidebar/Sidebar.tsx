@@ -12,6 +12,7 @@ import {
   DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
+import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
 
 import AddAccountModal from '@/components/modals/AddAccountModal'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -64,6 +65,8 @@ export default function Sidebar() {
   const { rates, loading: ratesLoading, toEUR, fmtEUR } = useRates()
   // Chat notifications for the whole admin app: sidebar dots + Slack-style ping
   const chatUnread = useChatUnread({ self: 'admin', sound: true })
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null)
+  useEffect(() => { getAdminProfile().then(setAdminProfile) }, [])
 
   const totalUSD = accounts.reduce((s, a) => s + toEUR(a.balance, a.currency), 0)
 
@@ -216,11 +219,14 @@ export default function Sidebar() {
   // Icon rail sections: Фінанси / Мій день / Проєкти / Чати
   const onDaily = pathname.startsWith('/daily')
   const onChats = pathname.startsWith('/chats')
+  const onProfile = pathname.startsWith('/profile')
+  // Pages with their own full-width layout show only the icon rail
+  const railOnly = onDaily || onChats || onProfile
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
-      active: section === 'finance' && !onDaily,
+      active: section === 'finance' && !onDaily && !onProfile,
       go: () => { setSection('finance'); router.push('/') },
     },
     {
@@ -246,9 +252,20 @@ export default function Sidebar() {
     <div className="flex h-full flex-shrink-0">
       {/* Icon rail */}
       <div className="w-[68px] bg-[#0b0d12] border-r border-white/5 flex flex-col items-center py-4 gap-1.5 flex-shrink-0">
-        <div className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center mb-2">
-          <span className="text-white font-bold text-sm">G</span>
-        </div>
+        <button
+          onClick={() => router.push('/profile')}
+          className="mb-2 hover:opacity-80 transition-opacity"
+          title="Мій профіль"
+        >
+          {adminProfile?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={adminProfile.avatar_url} alt={adminProfile.name} className="w-9 h-9 rounded-xl object-cover" />
+          ) : (
+            <span className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center">
+              <span className="text-white font-bold text-sm">G</span>
+            </span>
+          )}
+        </button>
         {railItems.map(item => {
           const Icon = item.icon
           const count = ('count' in item ? item.count : 0) ?? 0
@@ -270,15 +287,15 @@ export default function Sidebar() {
             </button>
           )
         })}
-        {(onDaily || onChats) && (
+        {railOnly && (
           <div className="mt-auto">
             <ThemeToggle variant="sidebar" />
           </div>
         )}
       </div>
 
-      {/* On «Мій день» and «Чати» only the icon rail stays — no section panel */}
-      {!onDaily && !onChats && (
+      {/* Full-width pages keep only the icon rail — no section panel */}
+      {!railOnly && (
       <aside
         className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
@@ -625,7 +642,7 @@ export default function Sidebar() {
       {openChat && (
         <GeneralChat
           chat={openChat}
-          sender={{ type: 'admin', name: 'Ivan' }}
+          sender={{ type: 'admin', name: adminProfile?.name ?? 'Ivan' }}
           onClose={() => setOpenChat(null)}
           onDeleted={() => { setGeneralChats(prev => prev.filter(c => c.id !== openChat.id)) }}
         />

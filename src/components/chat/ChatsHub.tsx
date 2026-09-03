@@ -7,6 +7,7 @@ import ProjectChat, { ChatSender } from '@/components/ProjectChat'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import DMChat, { DMPeer, dmKeyFor } from '@/components/DMChat'
 import { ChannelUnread } from '@/lib/chatUnread'
+import { getAdminProfile } from '@/lib/adminProfile'
 
 // Discord-style chat hub: channel list on the left, the open chat on the
 // right. Used on the team dashboard («Чати» tab) and the admin /chats page.
@@ -48,8 +49,16 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
         ;({ data } = await supabase.from('team_members').select('id, name, color').order('name') as never)
       }
       const rows = (data ?? []) as { id: string; name: string; color: string; nickname?: string | null; avatar_url?: string | null; status_emoji?: string | null; status_text?: string | null }[]
+      const admin = await getAdminProfile()
       const list: DMPeer[] = [
-        { key: 'admin', name: 'Ivan (адмін)', color: '#0ea5e9' },
+        {
+          key: 'admin',
+          name: `${admin.name} (адмін)`,
+          color: '#0ea5e9',
+          avatar_url: admin.avatar_url,
+          status_emoji: admin.status_emoji,
+          status_text: admin.status_text,
+        },
         ...rows.map(m => ({
           key: `team-${m.id}`,
           name: m.nickname || m.name,

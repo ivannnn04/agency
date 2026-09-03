@@ -28,6 +28,22 @@ export function markRead(projectId: string, channel: string) {
 
 // Slack-style two-tone ping via Web Audio (no asset files needed).
 let audioCtx: AudioContext | null = null
+
+// Browsers keep audio locked until the first user gesture. Priming the
+// context on the first click/keypress lets later pings actually sound.
+let audioPrimed = false
+function primeAudio() {
+  try {
+    audioCtx = audioCtx ?? new AudioContext()
+    if (audioCtx.state === 'suspended') audioCtx.resume()
+    audioPrimed = true
+  } catch { /* unavailable */ }
+}
+if (typeof window !== 'undefined' && !audioPrimed) {
+  window.addEventListener('pointerdown', primeAudio, { once: true })
+  window.addEventListener('keydown', primeAudio, { once: true })
+}
+
 export function playChatPing() {
   try {
     audioCtx = audioCtx ?? new AudioContext()

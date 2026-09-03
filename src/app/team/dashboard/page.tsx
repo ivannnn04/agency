@@ -59,7 +59,7 @@ export default function TeamDashboardPage() {
   const [activeEntry, setActiveEntry] = useState<{ entryId: string; taskId: string; startedAt: string } | null>(null)
 
   // Unread dots for the Чати tab (keyed by project_id, team channel)
-  const unread = useChatUnread({ self: 'team', memberId: member?.id ?? null })
+  const unread = useChatUnread({ self: 'team', memberId: member?.id ?? null, sound: true })
 
   useEffect(() => { loadData() }, [])
 

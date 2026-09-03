@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Paperclip, Loader2, CalendarDays, SmilePlus } from 'lucide-react'
+import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X } from 'lucide-react'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -68,7 +68,7 @@ const TYPE_BADGE: Record<ChatPerson['type'], string> = {
 
 // Composer with @-mention autocomplete and a file attach button.
 export function MentionComposer({
-  value, onChange, onSend, onPickFile, people, placeholder, uploading, accent = 'dark', onBookMeeting,
+  value, onChange, onSend, onPickFile, people, placeholder, uploading, accent = 'dark', onBookMeeting, onVoice,
 }: {
   value: string
   onChange: (v: string) => void
@@ -79,10 +79,65 @@ export function MentionComposer({
   uploading: boolean
   accent?: 'dark' | 'teal'
   onBookMeeting?: () => void
+  // When set, a mic button records a voice message and hands the audio file
+  // here (internal chats only — the client portal never passes this).
+  onVoice?: (f: File) => void
 }) {
   const [activeIdx, setActiveIdx] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+
+  // ── Voice recording ──
+  const [recording, setRecording] = useState(false)
+  const [recSec, setRecSec] = useState(0)
+  const recRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const discardRef = useRef(false)
+
+  useEffect(() => {
+    if (!recording) return
+    const iv = setInterval(() => setRecSec(s => s + 1), 1000)
+    return () => clearInterval(iv)
+  }, [recording])
+
+  async function startRecording() {
+    if (!onVoice || recording) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : ''
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      chunksRef.current = []
+      discardRef.current = false
+      rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        if (!discardRef.current && chunksRef.current.length > 0 && onVoice) {
+          const type = rec.mimeType || 'audio/webm'
+          const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'
+          onVoice(new File(chunksRef.current, `voice-${Date.now()}.${ext}`, { type }))
+        }
+        setRecording(false)
+        setRecSec(0)
+      }
+      rec.start()
+      recRef.current = rec
+      setRecSec(0)
+      setRecording(true)
+    } catch {
+      // mic permission denied / unavailable — silently do nothing
+    }
+  }
+
+  function finishRecording(discard: boolean) {
+    discardRef.current = discard
+    recRef.current?.stop()
+  }
 
   // Auto-grow the textarea while typing, capped at ~4× the two-row default;
   // beyond that it scrolls inside.
@@ -179,22 +234,60 @@ export function MentionComposer({
         </button>
       </div>
 
-      <textarea
-        ref={taRef}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        rows={2}
-        placeholder={placeholder}
-        className={`flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusClass} resize-none`}
-      />
-      <button
-        onClick={onSend}
-        disabled={uploading || !value.trim()}
-        className={`${btnClass} disabled:opacity-40 text-white rounded-xl p-2.5 transition-colors flex-shrink-0`}
-      >
-        <Send size={15} />
-      </button>
+      {recording ? (
+        <>
+          <div className="flex-1 flex items-center gap-3 border border-red-200 bg-red-50 rounded-xl px-4 py-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+            <span className="text-sm font-mono text-red-600">
+              {Math.floor(recSec / 60)}:{String(recSec % 60).padStart(2, '0')}
+            </span>
+            <span className="text-xs text-red-400 truncate">Запис голосового...</span>
+          </div>
+          <button
+            onClick={() => finishRecording(true)}
+            className="text-gray-400 hover:text-red-500 p-2.5 rounded-xl hover:bg-gray-50 transition-colors flex-shrink-0"
+            title="Скасувати запис"
+          >
+            <X size={16} />
+          </button>
+          <button
+            onClick={() => finishRecording(false)}
+            className={`${btnClass} text-white rounded-xl p-2.5 transition-colors flex-shrink-0`}
+            title="Надіслати голосове"
+          >
+            <Send size={15} />
+          </button>
+        </>
+      ) : (
+        <>
+          <textarea
+            ref={taRef}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={2}
+            placeholder={placeholder}
+            className={`flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusClass} resize-none`}
+          />
+          {onVoice && !value.trim() && (
+            <button
+              onClick={startRecording}
+              disabled={uploading}
+              className="text-gray-400 hover:text-red-500 disabled:opacity-40 p-2.5 rounded-xl hover:bg-red-50 transition-colors flex-shrink-0"
+              title="Записати голосове"
+            >
+              <Mic size={16} />
+            </button>
+          )}
+          <button
+            onClick={onSend}
+            disabled={uploading || !value.trim()}
+            className={`${btnClass} disabled:opacity-40 text-white rounded-xl p-2.5 transition-colors flex-shrink-0`}
+          >
+            <Send size={15} />
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -238,6 +331,20 @@ export function Attachment({ url, name, mine }: {
   name: string
   mine: boolean
 }) {
+  // Voice messages / audio files render as an inline player
+  const AUDIO_RE = /\.(webm|ogg|mp3|m4a|wav)(\?|$)/i
+  if (/^voice-/.test(name) || AUDIO_RE.test(name) || AUDIO_RE.test(url)) {
+    return (
+      <audio
+        controls
+        preload="metadata"
+        src={url}
+        className="mt-1.5 h-10 max-w-full"
+        style={{ width: 240 }}
+      />
+    )
+  }
+
   const isImage = IMAGE_RE.test(name) || IMAGE_RE.test(url)
   if (isImage) {
     return (

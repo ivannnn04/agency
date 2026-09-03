@@ -548,6 +548,7 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
         placeholder={channel === 'team' ? 'Повідомлення команді... (@ — згадати)' : 'Повідомлення клієнту... (@ — згадати)'}
         uploading={uploading}
         accent="dark"
+        onVoice={channel === 'team' ? sendFile : undefined}
       />
     </div>
   )

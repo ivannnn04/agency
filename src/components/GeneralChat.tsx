@@ -436,6 +436,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         placeholder="Повідомлення... (@ — згадати)"
         uploading={uploading}
         accent="dark"
+        onVoice={sendFile}
       />
     </div>
   )

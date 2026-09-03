@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2 } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Loader2, UserPlus, Check, Monitor, MonitorOff, Minimize2, Maximize2 } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Live voice room (Discord-style): WebRTC mesh audio + screen share between
@@ -584,5 +584,31 @@ function RemoteMedia({ stream, kind }: { stream: MediaStream; kind: 'audio' | 'v
     if (kind === 'video' && videoRef.current) videoRef.current.srcObject = stream
   }, [stream, kind])
   if (kind === 'audio') return <audio ref={audioRef} autoPlay className="hidden" />
-  return <video ref={videoRef} autoPlay playsInline className="w-full max-h-[45vh] object-contain bg-black" />
+
+  function goFullscreen() {
+    const el = videoRef.current
+    if (!el) return
+    if (document.fullscreenElement) document.exitFullscreen()
+    else el.requestFullscreen?.()
+  }
+
+  return (
+    <div className="relative group/video">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        onDoubleClick={goFullscreen}
+        className="w-full max-h-[45vh] object-contain bg-black cursor-zoom-in"
+        title="Подвійний клік — на весь екран"
+      />
+      <button
+        onClick={goFullscreen}
+        className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-lg opacity-0 group-hover/video:opacity-100 transition-opacity"
+        title="На весь екран"
+      >
+        <Maximize2 size={14} />
+      </button>
+    </div>
+  )
 }

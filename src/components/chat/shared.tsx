@@ -105,6 +105,22 @@ export interface ChatPerson {
 
 const MENTION_QUERY_RE = /(^|\s)@([\p{L}\w-]*)$/u
 
+// Composer emoji palette (grouped, most-used first)
+const COMPOSER_EMOJIS = [
+  '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '🥲', '😊', '🙂', '😉', '😍', '🥰', '😘', '😗',
+  '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🫡', '😐', '😑', '😶', '😏', '😒', '🙄', '😬',
+  '😮‍💨', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🥵', '🥶', '🥴', '😵',
+  '🤯', '🤠', '🥳', '🥸', '😎', '🤓', '🧐', '😕', '😟', '🙁', '😮', '😯', '😲', '😳', '🥺', '😦',
+  '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '😈', '💀',
+  '💩', '🤡', '👻', '👽', '🤖', '😺', '🙈', '🙉', '🙊', '💋', '💌', '💘', '💝', '💖', '💗', '💓',
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '❤️‍🔥', '💯', '💢', '💥', '💫', '💦', '💨',
+  '👍', '👎', '👊', '✊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✌️', '🤞', '🤟', '🤘',
+  '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚', '🖐', '🖖', '👋', '🤙', '💪', '🖕',
+  '✍️', '🦾', '🫶', '👀', '👁', '🧠', '🔥', '⭐', '🌟', '✨', '⚡', '☀️', '🌈', '🎉', '🎊', '🎁',
+  '🏆', '🥇', '🚀', '✈️', '🏝', '☕', '🍕', '🍔', '🍺', '🥂', '🍾', '💰', '💸', '💎', '⏰', '📌',
+  '📎', '💡', '🔔', '✅', '❌', '❗', '❓', '⚠️', '🚫', '💤', '🆗', '🆒', '🔝',
+]
+
 const TYPE_LABEL: Record<ChatPerson['type'], string> = {
   admin: 'admin',
   team: 'team',
@@ -136,8 +152,23 @@ export function MentionComposer({
   onVoice?: (f: File) => void
 }) {
   const [activeIdx, setActiveIdx] = useState(0)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+
+  function insertEmoji(e: string) {
+    const ta = taRef.current
+    if (ta && typeof ta.selectionStart === 'number') {
+      const pos = ta.selectionStart
+      onChange(value.slice(0, pos) + e + value.slice(ta.selectionEnd))
+      requestAnimationFrame(() => {
+        ta.focus()
+        ta.selectionStart = ta.selectionEnd = pos + e.length
+      })
+    } else {
+      onChange(value + e)
+    }
+  }
 
   // ── Voice recording ──
   const [recording, setRecording] = useState(false)
@@ -290,6 +321,22 @@ export function MentionComposer({
         </button>
       </div>
 
+      {/* Emoji palette */}
+      {emojiOpen && (
+        <div className="absolute bottom-full right-3 mb-1 z-50 w-72 max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl p-2 grid grid-cols-8 gap-0.5">
+          {COMPOSER_EMOJIS.map(e => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => insertEmoji(e)}
+              className="text-lg leading-none p-1 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+
       {recording ? (
         <>
           <div className="flex-1 flex items-center gap-3 border border-red-200 bg-red-50 rounded-xl px-4 py-3">
@@ -325,6 +372,15 @@ export function MentionComposer({
             placeholder={placeholder}
             className={`flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusClass} resize-none`}
           />
+          <button
+            onClick={() => setEmojiOpen(v => !v)}
+            className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
+              emojiOpen ? 'text-amber-500 bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
+            }`}
+            title="Смайлики"
+          >
+            <SmilePlus size={16} />
+          </button>
           {onVoice && !value.trim() && (
             <button
               onClick={startRecording}

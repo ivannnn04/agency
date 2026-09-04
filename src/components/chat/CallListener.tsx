@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { Phone, PhoneOff, Maximize2 } from 'lucide-react'
 import VoiceRoom from '@/components/chat/VoiceRoom'
 import type { CallRequest } from '@/lib/callBus'
+import { startPresence } from '@/lib/presence'
 
 // Global call host, mounted once per layout (admin layout / team layout).
 // Because it lives in the layout, an active call keeps running while the
@@ -33,6 +34,9 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
   const activeRoomRef = useRef<string | null>(null)
 
   useEffect(() => { activeRoomRef.current = activeCall?.roomKey ?? null }, [activeCall])
+
+  // Announce this user as online (Discord-style presence in chats)
+  useEffect(() => { startPresence(selfKey, selfName) }, [selfKey, selfName])
 
   function stopRinging() {
     ringStopRef.current?.()

@@ -8,6 +8,8 @@ import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import DMChat, { DMPeer, dmKeyFor } from '@/components/DMChat'
 import { ChannelUnread } from '@/lib/chatUnread'
 import { getAdminProfile } from '@/lib/adminProfile'
+import MembersPanel from '@/components/chat/MembersPanel'
+import { useOnlineUsers } from '@/lib/presence'
 
 // Discord-style chat hub: channel list on the left, the open chat on the
 // right. Used on the team dashboard («Чати» tab) and the admin /chats page.
@@ -36,6 +38,7 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
   const [people, setPeople] = useState<DMPeer[]>([])
 
   const selfKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
+  const online = useOnlineUsers()
 
   // Everyone internal except me — for direct messages (profile columns may
   // not be migrated yet, so fall back to the base select)
@@ -183,17 +186,25 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
                   active ? 'bg-gray-200/70 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 } ${count > 0 ? 'font-semibold text-gray-900' : ''}`}
               >
-                {p.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.avatar_url} alt={p.name} className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
-                ) : (
+                <span className="relative flex-shrink-0">
+                  {p.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.avatar_url} alt={p.name} className="w-5 h-5 rounded-full object-cover block" />
+                  ) : (
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold"
+                      style={{ backgroundColor: p.color }}
+                    >
+                      {p.name.charAt(0)}
+                    </span>
+                  )}
                   <span
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0"
-                    style={{ backgroundColor: p.color }}
-                  >
-                    {p.name.charAt(0)}
-                  </span>
-                )}
+                    className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-gray-50 ${
+                      online[p.key] ? 'bg-green-500' : 'bg-gray-300'
+                    }`}
+                    title={online[p.key] ? 'онлайн' : 'офлайн'}
+                  />
+                </span>
                 <span className="truncate min-w-0">{p.name}</span>
                 {(p.status_emoji || p.status_text) && (
                   <span className="text-[10px] text-gray-400 truncate flex-shrink" title={p.status_text ?? ''}>
@@ -245,6 +256,9 @@ export default function ChatsHub({ projects, generalChats, sender, unread, onCre
             </div>
           )}
         </div>
+
+        {/* Discord-style members column: who's here, online / offline */}
+        <MembersPanel selection={selected ? { ...selected, dmPeerKey: selfKey } : null} />
       </div>
 
       {/* Mobile: full-screen drawers */}

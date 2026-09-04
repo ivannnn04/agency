@@ -17,6 +17,7 @@ import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 import MoveTaskProject from '@/components/MoveTaskProject'
+import EditableDescription from '@/components/EditableDescription'
 
 interface Project {
   id: string
@@ -1062,17 +1063,19 @@ function TaskPanel({
           </div>
         </div>
 
-        {/* Description */}
+        {/* Description — links are clickable, click elsewhere to edit */}
         <div className="px-5 pb-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Опис</p>
-          <textarea
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            onBlur={saveDesc}
-            rows={5}
-            placeholder="Додайте опис..."
-            className="w-full text-sm text-gray-700 bg-gray-50 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-200 placeholder-gray-300"
-          />
+          <div className="bg-gray-50 rounded-xl p-3">
+            <EditableDescription
+              value={task.description ?? ''}
+              placeholder="Додайте опис..."
+              onSave={d => {
+                const t = d.trim()
+                if (t !== (task.description ?? '')) onUpdate({ description: t || null })
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>

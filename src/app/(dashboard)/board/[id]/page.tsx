@@ -20,6 +20,7 @@ import { useChatUnread } from '@/lib/chatUnread'
 import { suggestEstimate } from '@/lib/preEstimate'
 import { getAdminProfile } from '@/lib/adminProfile'
 import MoveTaskProject from '@/components/MoveTaskProject'
+import EditableDescription from '@/components/EditableDescription'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -1405,15 +1406,15 @@ function TaskDetailPanel({
 
         <div className="border-t border-gray-100 mx-6" />
 
-        {/* Description */}
+        {/* Description — links are clickable, click elsewhere to edit */}
         <div className="px-6 py-4">
-          <textarea
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            onBlur={saveDesc}
-            rows={5}
+          <EditableDescription
+            value={task.description ?? ''}
             placeholder="Add description..."
-            className="w-full text-sm text-gray-700 resize-none focus:outline-none placeholder-gray-300 leading-relaxed"
+            onSave={d => {
+              const t = d.trim()
+              if (t !== (task.description ?? '')) onUpdate({ description: t || null })
+            }}
           />
         </div>
 

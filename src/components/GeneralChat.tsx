@@ -7,7 +7,7 @@ import { startCall } from '@/lib/callBus'
 import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -52,6 +52,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
   const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   async function togglePin(m: Message) {
     const next = !m.pinned
@@ -61,6 +62,21 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
       .update({ pinned: next })
       .eq('id', m.id)
     if (err) setError('Закріплення не збереглося — запусти міграцію chat_pins_migration.sql')
+  }
+
+  async function saveEdit(m: Message, text: string) {
+    const t = text.trim()
+    setEditingId(null)
+    if (!t || t === m.content) return
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, content: t } : x))
+    await supabase.from('project_messages').update({ content: t.slice(0, 4000) }).eq('id', m.id)
+  }
+
+  async function deleteMessage(m: Message) {
+    if (!window.confirm('Видалити повідомлення?')) return
+    setMessages(prev => prev.filter(x => x.id !== m.id))
+    await supabase.from('message_reactions').delete().eq('message_id', m.id)
+    await supabase.from('project_messages').delete().eq('id', m.id)
   }
 
   function scrollToMessage(id: string) {
@@ -423,8 +439,20 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
             <div
               key={m.id}
               ref={el => { msgRefs.current[m.id] = el }}
-              className={`max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}
+              className={`relative max-w-[85%] group ${mine ? 'self-end' : 'self-start'}`}
             >
+              <MessageActions
+                mine={mine}
+                pinned={!!m.pinned}
+                canEdit={mine}
+                canDelete={mine || sender.type === 'admin'}
+                onReact={emoji => toggleReaction(m.id, emoji)}
+                onReply={() => setReplyTo(m)}
+                onTogglePin={() => togglePin(m)}
+                onEdit={() => setEditingId(m.id)}
+                onDelete={() => deleteMessage(m)}
+                copyText={m.content}
+              />
               {m.pinned && (
                 <p className={`flex items-center gap-1 text-[9px] text-amber-500 mb-0.5 px-1 ${mine ? 'justify-end' : ''}`}>
                   <Pin size={9} /> закріплено
@@ -455,28 +483,15 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
                       </button>
                     )
                   })()}
-                  <MessageBody content={m.content} names={mentionNames} mine={mine} />
+                  {editingId === m.id ? (
+                    <MessageEditBox initial={m.content} onSave={t => saveEdit(m, t)} onCancel={() => setEditingId(null)} />
+                  ) : (
+                    <MessageBody content={m.content} names={mentionNames} mine={mine} />
+                  )}
                   {m.file_url && (
                     <Attachment url={m.file_url} name={m.file_name ?? 'file'} mine={mine} />
                   )}
                 </div>
-                <ReactionPicker mine={mine} onPick={emoji => toggleReaction(m.id, emoji)} />
-                <button
-                  onClick={() => setReplyTo(m)}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 text-gray-300 hover:text-teal-500"
-                  title="Відповісти"
-                >
-                  <CornerUpLeft size={12} />
-                </button>
-                <button
-                  onClick={() => togglePin(m)}
-                  className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all flex-shrink-0 ${
-                    m.pinned ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-amber-500'
-                  }`}
-                  title={m.pinned ? 'Відкріпити' : 'Закріпити'}
-                >
-                  <Pin size={12} />
-                </button>
               </div>
               <ReactionChips
                 reactions={reactions[m.id] ?? []}

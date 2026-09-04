@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X } from 'lucide-react'
+import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X, CornerUpLeft, Pin, MoreHorizontal, Pencil, Copy, Trash2, Check } from 'lucide-react'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -605,6 +605,129 @@ export interface Reaction {
   emoji: string
   reactor_key: string
   reactor_name: string | null
+}
+
+// Discord-style hover toolbar on a message: quick react / reply / pin and
+// a ⋯ menu with edit, copy, pin and delete.
+export function MessageActions({ mine, pinned, canEdit, canDelete, onReact, onReply, onTogglePin, onEdit, onDelete, copyText }: {
+  mine: boolean
+  pinned: boolean
+  canEdit: boolean
+  canDelete: boolean
+  onReact: (emoji: string) => void
+  onReply: () => void
+  onTogglePin: () => void
+  onEdit: () => void
+  onDelete: () => void
+  copyText: string
+}) {
+  const [reactOpen, setReactOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const btn = 'p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors'
+
+  return (
+    <div
+      className={`absolute -top-4 ${mine ? 'left-1' : 'right-1'} z-20 opacity-0 group-hover:opacity-100 transition-opacity`}
+      onMouseLeave={() => { setReactOpen(false); setMenuOpen(false) }}
+    >
+      <div className="relative flex items-center bg-white border border-gray-200 rounded-xl shadow-md px-0.5 py-0.5">
+        <button className={btn} onClick={() => { setReactOpen(v => !v); setMenuOpen(false) }} title="Реакція">
+          <SmilePlus size={14} />
+        </button>
+        <button className={btn} onClick={onReply} title="Відповісти">
+          <CornerUpLeft size={14} />
+        </button>
+        <button
+          className={`p-1.5 rounded-lg transition-colors ${pinned ? 'text-amber-500 hover:text-amber-600' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100'}`}
+          onClick={onTogglePin}
+          title={pinned ? 'Відкріпити' : 'Закріпити'}
+        >
+          <Pin size={14} />
+        </button>
+        <button className={btn} onClick={() => { setMenuOpen(v => !v); setReactOpen(false) }} title="Ще">
+          <MoreHorizontal size={14} />
+        </button>
+
+        {reactOpen && (
+          <div className={`absolute top-full ${mine ? 'left-0' : 'right-0'} mt-1 z-30 w-56 bg-white border border-gray-200 rounded-xl shadow-xl p-2 grid grid-cols-6 gap-0.5`}>
+            {REACTION_EMOJIS.map(e => (
+              <button
+                key={e}
+                onClick={() => { onReact(e); setReactOpen(false) }}
+                className="text-lg leading-none p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {menuOpen && (
+          <div className={`absolute top-full ${mine ? 'left-0' : 'right-0'} mt-1 z-30 w-48 bg-white border border-gray-200 rounded-xl shadow-xl py-1`}>
+            {canEdit && (
+              <button
+                onClick={() => { setMenuOpen(false); onEdit() }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Pencil size={13} /> Редагувати
+              </button>
+            )}
+            <button
+              onClick={() => { navigator.clipboard.writeText(copyText); setMenuOpen(false) }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+            >
+              <Copy size={13} /> Копіювати текст
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); onTogglePin() }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+            >
+              <Pin size={13} /> {pinned ? 'Відкріпити' : 'Закріпити'}
+            </button>
+            {canDelete && (
+              <button
+                onClick={() => { setMenuOpen(false); onDelete() }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 text-left"
+              >
+                <Trash2 size={13} /> Видалити
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Inline editor shown in place of a bubble's text while editing
+export function MessageEditBox({ initial, onSave, onCancel }: {
+  initial: string
+  onSave: (text: string) => void
+  onCancel: () => void
+}) {
+  const [text, setText] = useState(initial)
+  return (
+    <div className="flex flex-col gap-1.5 min-w-[220px]">
+      <textarea
+        autoFocus
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSave(text) }
+          if (e.key === 'Escape') onCancel()
+        }}
+        rows={2}
+        className="w-full text-sm border border-teal-300 rounded-lg px-2 py-1.5 bg-white text-gray-800 focus:outline-none resize-y"
+      />
+      <div className="flex items-center gap-1.5">
+        <button onClick={() => onSave(text)} className="flex items-center gap-1 text-[11px] font-medium bg-teal-500 hover:bg-teal-600 text-white px-2 py-1 rounded-lg">
+          <Check size={11} /> Зберегти
+        </button>
+        <button onClick={onCancel} className="text-[11px] text-gray-500 hover:text-gray-700 px-2 py-1">Скасувати</button>
+      </div>
+    </div>
+  )
 }
 
 export const REACTION_EMOJIS = [

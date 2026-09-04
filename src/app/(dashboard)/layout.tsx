@@ -20,6 +20,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [adminName, setAdminName] = useState('Ivan')
   useEffect(() => { getAdminProfile().then(p => setAdminName(p.name)) }, [])
 
+  // Finance quick-action buttons make no sense on the recording page
+  const hideFinanceActions = pathname.startsWith('/record')
+
   // Navigating from the mobile drawer closes it
   useEffect(() => { setNavOpen(false) }, [pathname])
 
@@ -67,6 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <Menu size={18} />
             </button>
+            {!hideFinanceActions && (<>
             <button
               onClick={() => openModal('income')}
               className="flex items-center gap-1.5 bg-teal-500 hover:bg-teal-600 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -85,6 +89,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <ArrowLeftRight size={14} /> <span className="hidden sm:inline">Переказ</span>
             </button>
+            </>)}
           </div>
 
           <div className="flex items-center gap-3 flex-shrink-0">

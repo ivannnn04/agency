@@ -267,8 +267,8 @@ export default function Sidebar() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={adminProfile.avatar_url} alt={adminProfile.name} className="w-9 h-9 rounded-xl object-cover" />
           ) : (
-            <span className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-sm">G</span>
+            <span className="w-9 h-9 bg-[#041911] border border-white/10 rounded-xl flex items-center justify-center">
+              <span className="text-white font-extrabold text-base leading-none">g</span>
             </span>
           )}
         </button>
@@ -317,7 +317,7 @@ export default function Sidebar() {
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-white font-semibold text-sm leading-tight">Gudrix</p>
+              <p className="text-white font-extrabold text-base tracking-tight lowercase leading-tight">gudrix</p>
               <p className="text-gray-500 text-xs">Cowork Space</p>
             </div>
             <ThemeToggle variant="sidebar" />

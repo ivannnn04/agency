@@ -112,10 +112,10 @@ export default function PublicRecordingPage() {
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
       <header className="px-6 py-4 flex items-center gap-2.5">
-        <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
-          <span className="text-white font-bold text-sm">G</span>
+        <div className="w-8 h-8 bg-[#041911] rounded-lg flex items-center justify-center border border-white/10">
+          <span className="text-white font-extrabold text-base leading-none">g</span>
         </div>
-        <p className="text-white font-semibold text-sm">Gudrix</p>
+        <p className="text-white font-extrabold text-lg tracking-tight lowercase">gudrix</p>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-4 pb-10">

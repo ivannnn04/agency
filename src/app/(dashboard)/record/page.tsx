@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Clapperboard, Square, Loader2, Copy, Check, Trash2, ExternalLink, Mic, MicOff, CloudUpload } from 'lucide-react'
+import { Clapperboard, Square, Loader2, Copy, Check, Trash2, ExternalLink, Mic, MicOff, CloudUpload, Camera, CameraOff } from 'lucide-react'
 
 // Loom-style screen recording with UNLIMITED length: while recording, the
 // stream is cut into ~40MB parts that upload in the background (each part
@@ -32,6 +32,8 @@ export default function RecordPage() {
 
   const [recording, setRecording] = useState(false)
   const [withMic, setWithMic] = useState(true)
+  const [withCam, setWithCam] = useState(false)
+  const [camPreview, setCamPreview] = useState<MediaStream | null>(null)
   const [recSec, setRecSec] = useState(0)
   const [uploadedParts, setUploadedParts] = useState(0)
   const [uploadingPart, setUploadingPart] = useState(false)
@@ -54,6 +56,9 @@ export default function RecordPage() {
   const streamsRef = useRef<MediaStream[]>([])
   const startedAtRef = useRef(0)
   const stoppedRef = useRef<(() => void) | null>(null)
+  // Canvas compositor (screen + camera bubble); worker timer keeps drawing
+  // even when the tab is in the background (rAF/setInterval get throttled)
+  const compositorRef = useRef<{ worker: Worker; url: string; videos: HTMLVideoElement[] } | null>(null)
 
   useEffect(() => { load() }, [])
 
@@ -124,8 +129,67 @@ export default function RecordPage() {
         } catch { /* mic denied — record without it */ }
       }
 
+      // Front camera → composite it as a round bubble onto the screen video
+      let videoTracks: MediaStreamTrack[] = display.getVideoTracks()
+      if (withCam) {
+        try {
+          const cam = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          })
+          streamsRef.current.push(cam)
+          setCamPreview(cam)
+
+          const screenVideo = document.createElement('video')
+          screenVideo.srcObject = new MediaStream(display.getVideoTracks())
+          screenVideo.muted = true
+          const camVideo = document.createElement('video')
+          camVideo.srcObject = new MediaStream(cam.getVideoTracks())
+          camVideo.muted = true
+          await Promise.all([screenVideo.play(), camVideo.play()])
+
+          const s = display.getVideoTracks()[0].getSettings()
+          const canvas = document.createElement('canvas')
+          canvas.width = s.width || 1920
+          canvas.height = s.height || 1080
+          const ctx = canvas.getContext('2d')!
+
+          const draw = () => {
+            ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height)
+            const d = Math.round(Math.min(canvas.width, canvas.height) * 0.24)
+            const m = Math.round(d * 0.15)
+            const cx = m + d / 2
+            const cy = canvas.height - m - d / 2
+            const vw = camVideo.videoWidth || 1280
+            const vh = camVideo.videoHeight || 720
+            const side = Math.min(vw, vh)
+            ctx.save()
+            ctx.beginPath()
+            ctx.arc(cx, cy, d / 2, 0, Math.PI * 2)
+            ctx.closePath()
+            ctx.clip()
+            ctx.drawImage(camVideo, (vw - side) / 2, (vh - side) / 2, side, side, cx - d / 2, cy - d / 2, d, d)
+            ctx.restore()
+            ctx.beginPath()
+            ctx.arc(cx, cy, d / 2, 0, Math.PI * 2)
+            ctx.lineWidth = Math.max(4, Math.round(d * 0.03))
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+            ctx.stroke()
+          }
+          draw()
+          const workerUrl = URL.createObjectURL(new Blob(
+            ['setInterval(function(){postMessage(0)},33)'],
+            { type: 'application/javascript' },
+          ))
+          const worker = new Worker(workerUrl)
+          worker.onmessage = draw
+          compositorRef.current = { worker, url: workerUrl, videos: [screenVideo, camVideo] }
+
+          videoTracks = canvas.captureStream(30).getVideoTracks()
+        } catch { /* camera denied — record screen only */ }
+      }
+
       const combined = new MediaStream([
-        ...display.getVideoTracks(),
+        ...videoTracks,
         ...(hasAudio ? dest.stream.getAudioTracks() : []),
       ])
 
@@ -161,6 +225,14 @@ export default function RecordPage() {
         streamsRef.current.forEach(s => s.getTracks().forEach(t => t.stop()))
         streamsRef.current = []
         audioCtx.close()
+        if (compositorRef.current) {
+          compositorRef.current.worker.terminate()
+          URL.revokeObjectURL(compositorRef.current.url)
+          compositorRef.current.videos.forEach(v => { v.pause(); v.srcObject = null })
+          compositorRef.current = null
+        }
+        combined.getVideoTracks().forEach(t => t.stop())
+        setCamPreview(null)
         flushPart(true) // upload the tail
         const blob = new Blob(allChunksRef.current, { type: mimeRef.current })
         setPreviewUrl(URL.createObjectURL(blob))
@@ -319,6 +391,15 @@ export default function RecordPage() {
             >
               <Square size={13} fill="currentColor" /> Зупинити
             </button>
+            {camPreview && (
+              <video
+                ref={el => { if (el && el.srcObject !== camPreview) el.srcObject = camPreview }}
+                autoPlay
+                muted
+                playsInline
+                className="fixed bottom-6 right-6 z-50 w-32 h-32 rounded-full object-cover -scale-x-100 border-4 border-white shadow-2xl bg-black"
+              />
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 flex-wrap">
@@ -337,8 +418,18 @@ export default function RecordPage() {
             >
               {withMic ? <Mic size={14} /> : <MicOff size={14} />} {withMic ? 'З мікрофоном' : 'Без мікрофона'}
             </button>
+            <button
+              onClick={() => setWithCam(v => !v)}
+              className={`flex items-center gap-1.5 px-3.5 py-3 rounded-xl text-sm font-medium border transition-colors ${
+                withCam ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-gray-50 text-gray-400 border-gray-200'
+              }`}
+              title="Фронтальна камера кружечком поверх запису"
+            >
+              {withCam ? <Camera size={14} /> : <CameraOff size={14} />} {withCam ? 'З камерою' : 'Без камери'}
+            </button>
             <p className="text-[11px] text-gray-400 w-full">
               Обереш вкладку/вікно/екран у діалозі браузера. Кнопка «Stop sharing» теж завершує запис.
+              {withCam && ' Камера буде видима кружечком у лівому нижньому куті відео.'}
             </p>
           </div>
         )}

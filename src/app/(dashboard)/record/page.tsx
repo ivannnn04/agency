@@ -155,9 +155,9 @@ export default function RecordPage() {
 
           const draw = () => {
             ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height)
-            const d = Math.round(Math.min(canvas.width, canvas.height) * 0.24)
-            const m = Math.round(d * 0.15)
-            const cx = m + d / 2
+            const d = Math.round(Math.min(canvas.width, canvas.height) * 0.32)
+            const m = Math.round(d * 0.12)
+            const cx = canvas.width - m - d / 2
             const cy = canvas.height - m - d / 2
             const vw = camVideo.videoWidth || 1280
             const vh = camVideo.videoHeight || 720
@@ -379,6 +379,16 @@ export default function RecordPage() {
           <div className="flex items-center gap-4 flex-wrap">
             <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
             <p className="text-sm font-mono text-red-600">{fmtDur(recSec)}</p>
+            {camPreview && (
+              <video
+                ref={el => { if (el && el.srcObject !== camPreview) el.srcObject = camPreview }}
+                autoPlay
+                muted
+                playsInline
+                className="w-12 h-12 rounded-full object-cover -scale-x-100 border-2 border-teal-400 bg-black flex-shrink-0"
+                title="Камера пишеться кружечком у відео"
+              />
+            )}
             <p className="text-sm text-gray-500 flex-1">Йде запис екрана...</p>
             {(uploadedParts > 0 || uploadingPart) && (
               <span className="flex items-center gap-1.5 text-[11px] text-teal-600 bg-teal-50 px-2 py-1 rounded-lg">
@@ -391,15 +401,6 @@ export default function RecordPage() {
             >
               <Square size={13} fill="currentColor" /> Зупинити
             </button>
-            {camPreview && (
-              <video
-                ref={el => { if (el && el.srcObject !== camPreview) el.srcObject = camPreview }}
-                autoPlay
-                muted
-                playsInline
-                className="fixed bottom-6 right-6 z-50 w-32 h-32 rounded-full object-cover -scale-x-100 border-4 border-white shadow-2xl bg-black"
-              />
-            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 flex-wrap">
@@ -429,7 +430,7 @@ export default function RecordPage() {
             </button>
             <p className="text-[11px] text-gray-400 w-full">
               Обереш вкладку/вікно/екран у діалозі браузера. Кнопка «Stop sharing» теж завершує запис.
-              {withCam && ' Камера буде видима кружечком у лівому нижньому куті відео.'}
+              {withCam && ' Камера буде видима кружечком у правому нижньому куті відео.'}
             </p>
           </div>
         )}

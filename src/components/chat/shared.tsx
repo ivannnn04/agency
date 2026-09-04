@@ -88,10 +88,23 @@ export function DropZone({ onFiles, children, className, style }: {
     >
       {children}
       {over && (
-        <div className="absolute inset-0 z-[60] bg-teal-500/10 border-2 border-dashed border-teal-400 rounded-xl flex items-center justify-center pointer-events-none">
-          <p className="bg-white/95 text-teal-600 text-sm font-semibold px-4 py-2 rounded-xl shadow-lg">
-            Відпусти, щоб додати 📎
-          </p>
+        <div className="absolute inset-0 z-[60] bg-black/40 flex items-center justify-center pointer-events-none p-6">
+          <div
+            className="w-full max-w-sm rounded-2xl p-1.5 shadow-2xl"
+            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+          >
+            <div className="border-2 border-dashed border-white/60 rounded-xl px-6 py-8 flex flex-col items-center gap-3 text-center">
+              <div className="flex -space-x-4">
+                <span className="w-14 h-14 bg-white/25 rounded-xl rotate-[-10deg] flex items-center justify-center text-2xl shadow-lg">📄</span>
+                <span className="w-14 h-14 bg-white/35 rounded-xl flex items-center justify-center text-2xl shadow-lg z-10">🖼️</span>
+                <span className="w-14 h-14 bg-white/25 rounded-xl rotate-[10deg] flex items-center justify-center text-2xl shadow-lg">📎</span>
+              </div>
+              <p className="text-white text-xl font-extrabold mt-1">Кидай сюди!</p>
+              <p className="text-white/80 text-sm leading-snug">
+                Файли й фото полетять у чат.<br />Кілька фото зберуться в галерею.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

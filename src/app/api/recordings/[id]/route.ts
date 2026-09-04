@@ -9,7 +9,7 @@ export async function GET(
   const { id } = await params
   const { data, error } = await supabaseAdmin
     .from('screen_recordings')
-    .select('id, title, file_url, duration_seconds, created_at')
+    .select('id, title, file_url, file_urls, mime_type, duration_seconds, created_at')
     .eq('id', id)
     .maybeSingle()
   if (error || !data) return NextResponse.json({ error: 'not found' }, { status: 404 })

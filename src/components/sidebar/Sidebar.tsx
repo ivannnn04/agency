@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun, Clapperboard,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun, Clapperboard, UserRound,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -258,6 +258,10 @@ export default function Sidebar() {
     <div className="flex h-full flex-shrink-0">
       {/* Icon rail */}
       <div className="w-[68px] bg-[#0b0d12] border-r border-white/5 flex flex-col items-center py-4 gap-1.5 flex-shrink-0">
+        {/* Full wordmark — always visible even on rail-only pages */}
+        <div className="w-14 py-2.5 bg-[#041911] border border-white/10 rounded-xl flex items-center justify-center mb-1">
+          <span className="text-white font-extrabold text-[13px] tracking-tight leading-none lowercase">gudrix</span>
+        </div>
         <button
           onClick={() => router.push('/profile')}
           className="mb-2 hover:opacity-80 transition-opacity"
@@ -267,8 +271,8 @@ export default function Sidebar() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={adminProfile.avatar_url} alt={adminProfile.name} className="w-9 h-9 rounded-xl object-cover" />
           ) : (
-            <span className="w-9 h-9 bg-[#041911] border border-white/10 rounded-xl flex items-center justify-center">
-              <span className="text-white font-extrabold text-base leading-none">g</span>
+            <span className="w-9 h-9 bg-white/5 border border-white/10 rounded-full flex items-center justify-center">
+              <UserRound size={16} className="text-gray-400" />
             </span>
           )}
         </button>

@@ -32,7 +32,8 @@ export const config = {
   // - /team/* (designer area — its own Supabase auth)
   // - /portal/* (client portal — its own Supabase auth)
   // - /client/* (public read-only project link)
+  // - /r/* + /api/recordings/* (public screen-recording share links)
   // - /api/team/*, /api/portal/*, /api/clients/accept-invite, /api/cron/*
   //   (called by designers, clients and scheduled jobs — no admin cookie there)
-  matcher: ['/((?!login|team|portal|client|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/seed-olga|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!login|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/seed-olga|_next/static|_next/image|favicon.ico).*)'],
 }

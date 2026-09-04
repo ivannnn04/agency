@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { Account, Category, Project, Counterparty, Currency, TransactionType, Transaction } from '@/types'
+import { Account, Category, Project, Counterparty, Currency, TransactionType, Transaction, TeamMember } from '@/types'
 import { cn } from '@/lib/utils'
 import { adjustBalancesForTransaction } from '@/lib/transactionBalances'
 
@@ -22,6 +22,9 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
   const [categories, setCategories] = useState<Category[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  // Salary month to close as paid (YYYY-MM) when paying a team member
+  const [salaryMonth, setSalaryMonth] = useState('')
 
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('EUR')
@@ -66,16 +69,18 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
   }, [open, defaultType, transaction])
 
   async function fetchData() {
-    const [acc, cat, proj, cpart] = await Promise.all([
+    const [acc, cat, proj, cpart, mems] = await Promise.all([
       supabase.from('accounts').select('*').order('created_at'),
       supabase.from('categories').select('*').order('name'),
       supabase.from('projects').select('*').eq('status', 'active').order('name'),
       supabase.from('counterparties').select('*').order('name'),
+      supabase.from('team_members').select('*').order('name'),
     ])
     if (acc.data) setAccounts(acc.data)
     if (cat.data) setCategories(cat.data)
     if (proj.data) setProjects(proj.data)
     if (cpart.data) setCounterparties(cpart.data)
+    if (mems.data) setTeamMembers(mems.data)
     if (!isEdit && acc.data?.[0]) setAccountId(acc.data[0].id)
   }
 
@@ -86,7 +91,27 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
     setLoading(true)
 
     try {
-      let finalCounterpartyId = counterpartyId || null
+      let finalCounterpartyId: string | null = counterpartyId || null
+      let salaryMemberId: string | null = null
+
+      // Team member picked as counterparty: find-or-create a counterparties
+      // row with their name so the transaction links up normally
+      if (counterpartyId.startsWith('team:')) {
+        salaryMemberId = counterpartyId.slice(5)
+        const member = teamMembers.find(m => m.id === salaryMemberId)
+        const memberName = member?.name ?? 'Team member'
+        const existing = counterparties.find(c => c.name.toLowerCase() === memberName.toLowerCase())
+        if (existing) {
+          finalCounterpartyId = existing.id
+        } else {
+          const { data } = await supabase
+            .from('counterparties')
+            .insert({ name: memberName })
+            .select()
+            .single()
+          finalCounterpartyId = data?.id ?? null
+        }
+      }
 
       if (newCounterparty.trim()) {
         const { data } = await supabase
@@ -142,6 +167,38 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
         }, 1)
       }
 
+      // Salary paid to a team member for a specific month: mark all tracked
+      // hours of that month as paid — visible to the admin payroll page and
+      // in the member's own report
+      if (!isEdit && type === 'expense' && salaryMemberId && salaryMonth) {
+        const periodKey = `${salaryMonth}-01`
+        const monthStart = new Date(`${salaryMonth}-01T00:00:00`)
+        const monthEnd = new Date(monthStart)
+        monthEnd.setMonth(monthEnd.getMonth() + 1)
+        const { data: ents } = await supabase
+          .from('time_entries')
+          .select('duration_seconds')
+          .eq('team_member_id', salaryMemberId)
+          .not('ended_at', 'is', null)
+          .gte('started_at', monthStart.toISOString())
+          .lt('started_at', monthEnd.toISOString())
+        const totalSeconds = (ents ?? []).reduce((s, e) => s + (e.duration_seconds ?? 0), 0)
+        const member = teamMembers.find(m => m.id === salaryMemberId)
+        const amountUsd = member?.salary_type === 'monthly'
+          ? (member.monthly_salary_usd ?? 0)
+          : Math.round((totalSeconds / 3600) * (member?.hourly_rate_usd ?? 0) * 100) / 100
+        await supabase.from('salary_payments').upsert({
+          team_member_id: salaryMemberId,
+          period_month: periodKey,
+          total_seconds: totalSeconds,
+          amount_usd: amountUsd,
+          status: 'paid',
+          confirmed_at: new Date().toISOString(),
+          paid_at: new Date().toISOString(),
+          account_id: accountId,
+        }, { onConflict: 'team_member_id,period_month' })
+      }
+
       onSuccess()
       onClose()
       resetForm()
@@ -162,6 +219,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
     setDate(new Date().toISOString().split('T')[0])
     setComment('')
     setIsPlanned(false)
+    setSalaryMonth('')
   }
 
   if (!open) return null
@@ -317,7 +375,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
             ))}
           </select>
 
-          {/* Counterparty (expense) */}
+          {/* Counterparty (expense) — the team is right in the list */}
           {type === 'expense' && (
             <div className="flex gap-2">
               <select
@@ -326,9 +384,20 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none bg-white"
               >
                 <option value="">Кому (контрагент)</option>
-                {counterparties.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                {teamMembers.length > 0 && (
+                  <optgroup label="Команда">
+                    {teamMembers.map(m => (
+                      <option key={`team:${m.id}`} value={`team:${m.id}`}>{m.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {counterparties.length > 0 && (
+                  <optgroup label="Контрагенти">
+                    {counterparties.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               <input
                 type="text"
@@ -337,6 +406,24 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
                 onChange={e => { setNewCounterparty(e.target.value); setCounterpartyId('') }}
                 className="w-28 border border-gray-200 rounded-xl px-3 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400 text-sm"
               />
+            </div>
+          )}
+
+          {/* Salary month: paying a team member closes that month as paid */}
+          {type === 'expense' && counterpartyId.startsWith('team:') && !isEdit && (
+            <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3 flex flex-col gap-2">
+              <label className="text-xs text-teal-700 font-medium">
+                Зарплата за місяць — усі затрекані години цього місяця стануть «оплачено»
+              </label>
+              <input
+                type="month"
+                value={salaryMonth}
+                onChange={e => setSalaryMonth(e.target.value)}
+                className="border border-teal-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none bg-white"
+              />
+              {!salaryMonth && (
+                <p className="text-[11px] text-teal-600">Не обереш місяць — буде просто витрата без закриття годин</p>
+              )}
             </div>
           )}
 

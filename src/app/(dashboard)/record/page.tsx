@@ -34,6 +34,8 @@ export default function RecordPage() {
   const [withMic, setWithMic] = useState(true)
   const [withCam, setWithCam] = useState(false)
   const [camPreview, setCamPreview] = useState<MediaStream | null>(null)
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([])
+  const [micId, setMicId] = useState('')
   const [recSec, setRecSec] = useState(0)
   const [uploadedParts, setUploadedParts] = useState(0)
   const [uploadingPart, setUploadingPart] = useState(false)
@@ -61,6 +63,22 @@ export default function RecordPage() {
   const compositorRef = useRef<{ worker: Worker; url: string; videos: HTMLVideoElement[] } | null>(null)
 
   useEffect(() => { load() }, [])
+
+  // List microphones so the user can pick e.g. a headset mic. Labels are
+  // only visible after mic permission, so ask for it once.
+  useEffect(() => {
+    if (!withMic) return
+    ;(async () => {
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true })
+        tmp.getTracks().forEach(t => t.stop())
+      } catch { /* denied — the list will be empty */ }
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices()
+        setMics(devs.filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default'))
+      } catch { /* not supported */ }
+    })()
+  }, [withMic])
 
   useEffect(() => {
     if (!recording) return
@@ -122,7 +140,14 @@ export default function RecordPage() {
       }
       if (withMic) {
         try {
-          const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } })
+          const mic = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              ...(micId ? { deviceId: { exact: micId } } : {}),
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          })
           streamsRef.current.push(mic)
           audioCtx.createMediaStreamSource(mic).connect(dest)
           hasAudio = true
@@ -155,7 +180,7 @@ export default function RecordPage() {
 
           const draw = () => {
             ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height)
-            const d = Math.round(Math.min(canvas.width, canvas.height) * 0.32)
+            const d = Math.round(Math.min(canvas.width, canvas.height) * 0.26)
             const m = Math.round(d * 0.12)
             const cx = canvas.width - m - d / 2
             const cy = canvas.height - m - d / 2
@@ -419,6 +444,19 @@ export default function RecordPage() {
             >
               {withMic ? <Mic size={14} /> : <MicOff size={14} />} {withMic ? 'З мікрофоном' : 'Без мікрофона'}
             </button>
+            {withMic && mics.length > 0 && (
+              <select
+                value={micId}
+                onChange={e => setMicId(e.target.value)}
+                className="max-w-[240px] px-3 py-3 rounded-xl text-sm font-medium border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                title="Звідки записувати звук"
+              >
+                <option value="">Мікрофон за замовчуванням</option>
+                {mics.map(m => (
+                  <option key={m.deviceId} value={m.deviceId}>{m.label || 'Мікрофон'}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => setWithCam(v => !v)}
               className={`flex items-center gap-1.5 px-3.5 py-3 rounded-xl text-sm font-medium border transition-colors ${

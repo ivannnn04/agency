@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_FILES = 5
+
+// Files are uploaded straight to storage from the browser (Vercel caps API
+// bodies at ~4.5MB), so the request only carries their public URLs. Accept
+// only URLs that point into our own bucket.
+function isOwnStorageUrl(u: unknown): u is string {
+  return typeof u === 'string' && u.includes('/storage/v1/object/public/chat-files/')
+}
 
 export async function POST(
   req: NextRequest,
@@ -17,16 +23,20 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const form = await req.formData()
-  const taskId = String(form.get('taskId') ?? '')
-  const content = String(form.get('content') ?? '').trim()
-  const files = form.getAll('files').filter((f): f is File => f instanceof File && f.size > 0)
+  const body = await req.json().catch(() => null)
+  const taskId = String(body?.taskId ?? '')
+  const content = String(body?.content ?? '').trim()
+  const rawFiles: unknown[] = Array.isArray(body?.files) ? body.files : []
+  const uploaded = rawFiles
+    .filter((f): f is { url: string; name: string } =>
+      !!f && typeof f === 'object' && isOwnStorageUrl((f as { url?: unknown }).url))
+    .map(f => ({ url: f.url, name: String(f.name ?? 'file').slice(0, 200) }))
 
   if (!taskId) return NextResponse.json({ error: 'taskId is required' }, { status: 400 })
-  if (!content && files.length === 0) {
+  if (!content && uploaded.length === 0) {
     return NextResponse.json({ error: 'Add a description or at least one file' }, { status: 400 })
   }
-  if (files.length > MAX_FILES) {
+  if (uploaded.length > MAX_FILES) {
     return NextResponse.json({ error: `Up to ${MAX_FILES} files per request` }, { status: 400 })
   }
 
@@ -46,23 +56,6 @@ export async function POST(
       { error: `Change request limit reached for this task (${limit}). Please contact the team in chat.` },
       { status: 400 },
     )
-  }
-
-  // Upload attachments
-  const uploaded: { url: string; name: string }[] = []
-  for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: `"${file.name}" is too big — 10 MB max` }, { status: 400 })
-    }
-    const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-80)
-    const path = `cr/${id}/${crypto.randomUUID()}-${safe}`
-    const buf = Buffer.from(await file.arrayBuffer())
-    const { error: upErr } = await supabaseAdmin.storage
-      .from('chat-files')
-      .upload(path, buf, { contentType: file.type || 'application/octet-stream' })
-    if (upErr) return NextResponse.json({ error: `Upload failed: ${upErr.message}` }, { status: 502 })
-    const { data: pub } = supabaseAdmin.storage.from('chat-files').getPublicUrl(path)
-    uploaded.push({ url: pub.publicUrl, name: file.name })
   }
 
   const senderName = client.name || client.email

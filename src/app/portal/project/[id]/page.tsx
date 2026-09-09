@@ -9,7 +9,7 @@ import {
   NotebookPen, Plus, ReceiptText,
 } from 'lucide-react'
 import {
-  MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB,
+  MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB, safeStoragePath,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
@@ -428,14 +428,26 @@ function ChangeRequestModal({ projectId, task, token, used, limit, onClose, onSu
     if ((!content.trim() && files.length === 0) || saving) return
     setSaving(true)
     setError('')
-    const form = new FormData()
-    form.append('taskId', task.id)
-    form.append('content', content.trim())
-    for (const f of files) form.append('files', f)
+    // Upload straight to storage from the browser — API routes on Vercel
+    // reject bodies over ~4.5MB, so files can't travel through them
+    const uploaded: { url: string; name: string }[] = []
+    for (const f of files) {
+      const path = `cr/${safeStoragePath(projectId, f.name)}`
+      const { error: upErr } = await supabase.storage.from('chat-files').upload(path, f, {
+        contentType: f.type || 'application/octet-stream',
+      })
+      if (upErr) {
+        setSaving(false)
+        setError(`Could not upload "${f.name}": ${upErr.message}`)
+        return
+      }
+      const { data: pub } = supabase.storage.from('chat-files').getPublicUrl(path)
+      uploaded.push({ url: pub.publicUrl, name: f.name })
+    }
     const res = await fetch(`/api/portal/project/${projectId}/change-requests`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ taskId: task.id, content: content.trim(), files: uploaded }),
     })
     setSaving(false)
     if (res.ok) {
@@ -602,13 +614,25 @@ function PortalChat({ projectId, token, people, onClose }: {
     setError('')
     if (fileTooBig(f)) { setError(`File is too big — ${MAX_FILE_MB} MB max`); return }
     setUploading(true)
-    const form = new FormData()
-    form.append('file', f)
-    form.append('content', withText ? input.trim() : '')
+    // Direct-to-storage upload — Vercel API routes cap bodies at ~4.5MB
+    const path = safeStoragePath(projectId, f.name)
+    const { error: upErr } = await supabase.storage.from('chat-files').upload(path, f, {
+      contentType: f.type || 'application/octet-stream',
+    })
+    if (upErr) {
+      setUploading(false)
+      setError(`Upload failed: ${upErr.message}`)
+      return
+    }
+    const { data: pub } = supabase.storage.from('chat-files').getPublicUrl(path)
     const res = await fetch(`/api/portal/project/${projectId}/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        content: withText ? input.trim() : '',
+        fileUrl: pub.publicUrl,
+        fileName: f.name,
+      }),
     })
     setUploading(false)
     if (res.ok) {

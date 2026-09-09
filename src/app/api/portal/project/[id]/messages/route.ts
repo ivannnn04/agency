@@ -85,8 +85,15 @@ export async function POST(
       fileName = file.name
     }
   } else {
-    const { content } = await req.json()
-    text = String(content ?? '').trim()
+    // Files are uploaded to storage straight from the browser (Vercel caps
+    // API bodies at ~4.5MB) — the message only carries the public URL
+    const body = await req.json()
+    text = String(body?.content ?? '').trim()
+    if (typeof body?.fileUrl === 'string'
+        && body.fileUrl.includes('/storage/v1/object/public/chat-files/')) {
+      fileUrl = body.fileUrl
+      fileName = String(body?.fileName ?? 'file').slice(0, 200)
+    }
   }
 
   if (!text && !fileUrl) {

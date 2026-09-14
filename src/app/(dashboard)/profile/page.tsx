@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getAdminProfile, clearAdminProfileCache } from '@/lib/adminProfile'
 import { Camera, Check, Loader2 } from 'lucide-react'
+import PushToggle from '@/components/PushToggle'
 
 const STATUS_EMOJIS = ['💬', '🎨', '💻', '🔥', '☕', '🏖', '🤒', '🎧', '🍕', '🚀', '🌙', '📵']
 
@@ -74,6 +75,8 @@ export default function AdminProfilePage() {
       {error && (
         <div className="bg-red-50 border border-red-100 text-red-600 text-sm rounded-2xl px-4 py-3 mb-4">{error}</div>
       )}
+
+      <div className="mb-4"><PushToggle userKey="admin" /></div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">
         <div className="flex items-center gap-4">

@@ -6,6 +6,7 @@ import { Phone, PhoneOff, Maximize2 } from 'lucide-react'
 import VoiceRoom from '@/components/chat/VoiceRoom'
 import type { CallRequest } from '@/lib/callBus'
 import { startPresence } from '@/lib/presence'
+import { refreshPush } from '@/lib/pushClient'
 
 // Global call host, mounted once per layout (admin layout / team layout).
 // Because it lives in the layout, an active call keeps running while the
@@ -37,6 +38,9 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
 
   // Announce this user as online (Discord-style presence in chats)
   useEffect(() => { startPresence(selfKey, selfName) }, [selfKey, selfName])
+  // Devices that already allowed notifications silently re-sync their
+  // push subscription on every app load
+  useEffect(() => { refreshPush(selfKey) }, [selfKey])
 
   function stopRinging() {
     ringStopRef.current?.()

@@ -19,21 +19,36 @@ export function pushSupported() {
 }
 
 async function subscribeAndStore(userKey: string) {
-  const reg = await navigator.serviceWorker.register('/sw.js')
-  await navigator.serviceWorker.ready
+  let reg: ServiceWorkerRegistration
+  try {
+    reg = await navigator.serviceWorker.register('/sw.js')
+    await navigator.serviceWorker.ready
+  } catch {
+    throw new Error('Не вдалося запустити service worker — онови сторінку (Cmd+Shift+R) і спробуй ще раз')
+  }
   const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-  if (!key) throw new Error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set')
-  const sub = await reg.pushManager.getSubscription()
-    ?? await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(key),
-    })
+  if (!key) {
+    throw new Error('У Vercel не додано NEXT_PUBLIC_VAPID_PUBLIC_KEY (або не було Redeploy після додавання)')
+  }
+  let sub: PushSubscription
+  try {
+    sub = await reg.pushManager.getSubscription()
+      ?? await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      })
+  } catch (e) {
+    throw new Error(`Браузер не дав створити підписку: ${(e as Error).message}`)
+  }
   const res = await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userKey, subscription: sub.toJSON() }),
   })
-  if (!res.ok) throw new Error('Не вдалося зберегти підписку')
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(`Не вдалося зберегти підписку: ${error}`)
+  }
 }
 
 // Explicit opt-in (button click) — may show the permission prompt

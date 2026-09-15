@@ -31,8 +31,8 @@ export default function PushToggle({ userKey }: { userKey: string }) {
         else if (res === 'denied') setMsg('Дозвіл на сповіщення заблоковано — увімкни його в налаштуваннях браузера для цього сайту')
         else setMsg('Цей браузер не підтримує пуш-сповіщення')
       }
-    } catch {
-      setMsg('Щось пішло не так — спробуй ще раз')
+    } catch (e) {
+      setMsg((e as Error).message || 'Щось пішло не так — спробуй ще раз')
     }
     setBusy(false)
   }

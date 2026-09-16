@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Users, UserRound, Bot, Check, Pencil, Trash2, Loader2, Hash, Pin, CornerUpLeft, Phone } from 'lucide-react'
 import { startCall } from '@/lib/callBus'
@@ -8,6 +8,7 @@ import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
+  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader,
 } from '@/components/chat/shared'
 import { getLastRead, markRead } from '@/lib/chatUnread'
 
@@ -64,6 +65,8 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
   const { width, startResize } = useChatWidth()
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [staged, setStaged] = useState<File[]>([])
+  const [readers, setReaders] = useState<ChatReader[]>([])
 
   // Replying makes no sense across channels
   useEffect(() => { setReplyTo(null) }, [channel])
@@ -185,6 +188,21 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
     if (channelHasUnread(channel)) markRead(projectId, channel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel, messages.length, projectId])
+
+  // Read receipts: publish "I've seen up to now" + poll who else has
+  const selfReadKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
+  const readChatKey = `${projectId}:${channel}`
+  useEffect(() => {
+    markChatSeen(readChatKey, selfReadKey, sender.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readChatKey, messages.length])
+  useEffect(() => {
+    let alive = true
+    const pull = async () => { const r = await fetchChatReaders(readChatKey); if (alive) setReaders(r) }
+    pull()
+    const iv = setInterval(pull, 7000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [readChatKey])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -342,7 +360,7 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
 
   return (
     <DropZone
-      onFiles={sendFiles}
+      onFiles={fs => setStaged(p => [...p, ...fs])}
       className={embedded
         ? 'relative h-full w-full min-w-0 bg-white flex flex-col'
         : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
@@ -516,18 +534,30 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
             Ще немає повідомлень
           </p>
         )}
-        {groupMessages(channelMessages).map(item => {
+        {(() => {
+          // "Seen by" goes under my newest message only — read marks are per chat
+          let lastOwnId: string | null = null
+          for (let i = channelMessages.length - 1; i >= 0; i--) {
+            if (isMine(channelMessages[i])) { lastOwnId = channelMessages[i].id; break }
+          }
+          const lastOwn = channelMessages.find(m => m.id === lastOwnId)
+          const seenNames = lastOwn ? readersOf(readers, selfReadKey, lastOwn.created_at) : []
+          return groupMessages(channelMessages).map(item => {
           if (Array.isArray(item)) {
             const first = item[0]
             const gm = isMine(first)
             return (
-              <GalleryBubble
-                key={first.id}
-                images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
-                mine={gm}
-                senderName={!gm ? first.sender_name : undefined}
-                timestamp={item[item.length - 1].created_at}
-              />
+              <Fragment key={first.id}>
+                <GalleryBubble
+                  images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
+                  mine={gm}
+                  senderName={!gm ? first.sender_name : undefined}
+                  timestamp={item[item.length - 1].created_at}
+                />
+                {gm && item.some(x => x.id === lastOwnId) && seenNames.length > 0 && (
+                  <div className="self-end px-1 -mt-1"><SeenBy names={seenNames} mine /></div>
+                )}
+              </Fragment>
             )
           }
           const m = item
@@ -611,9 +641,13 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </p>
+              {mine && m.id === lastOwnId && seenNames.length > 0 && (
+                <p className="text-right px-1"><SeenBy names={seenNames} mine /></p>
+              )}
             </div>
           )
-        })}
+        })
+        })()}
         <div ref={bottomRef} />
       </div>
 
@@ -639,9 +673,17 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
       <MentionComposer
         value={input}
         onChange={setInput}
-        onSend={send}
-        onPickFile={sendFile}
-        onPickFiles={sendFiles}
+        onSend={() => {
+          if (staged.length > 0) {
+            const fs = staged
+            setStaged([])
+            sendFiles(fs)
+          } else send()
+        }}
+        onPickFile={f => setStaged(p => [...p, f])}
+        onPickFiles={fs => setStaged(p => [...p, ...fs])}
+        staged={staged}
+        onUnstage={i => setStaged(p => p.filter((_, idx) => idx !== i))}
         people={mentionable}
         placeholder={channel === 'team' ? 'Повідомлення команді... (@ — згадати)' : 'Повідомлення клієнту... (@ — згадати)'}
         uploading={uploading}

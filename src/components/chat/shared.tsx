@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X, CornerUpLeft, Pin, MoreHorizontal, Pencil, Copy, Trash2, Check } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X, CornerUpLeft, Pin, MoreHorizontal, Pencil, Copy, Trash2, Check, Eye, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -147,7 +148,7 @@ const TYPE_BADGE: Record<ChatPerson['type'], string> = {
 
 // Composer with @-mention autocomplete and a file attach button.
 export function MentionComposer({
-  value, onChange, onSend, onPickFile, onPickFiles, people, placeholder, uploading, accent = 'dark', onBookMeeting, onVoice,
+  value, onChange, onSend, onPickFile, onPickFiles, people, placeholder, uploading, accent = 'dark', onBookMeeting, onVoice, staged, onUnstage,
 }: {
   value: string
   onChange: (v: string) => void
@@ -163,11 +164,23 @@ export function MentionComposer({
   // When set, a mic button records a voice message and hands the audio file
   // here (internal chats only — the client portal never passes this).
   onVoice?: (f: File) => void
+  // Files waiting to be sent (picked/dropped but not confirmed yet). The
+  // composer shows previews; Enter/send sends them together with the text.
+  staged?: File[]
+  onUnstage?: (index: number) => void
 }) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+
+  const hasStaged = (staged?.length ?? 0) > 0
+  // Object URLs for staged image previews, revoked when the list changes
+  const stagedPreviews = useMemo(
+    () => (staged ?? []).map(f => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null)),
+    [staged],
+  )
+  useEffect(() => () => { stagedPreviews.forEach(u => { if (u) URL.revokeObjectURL(u) }) }, [stagedPreviews])
 
   function insertEmoji(e: string) {
     const ta = taRef.current
@@ -277,7 +290,38 @@ export function MentionComposer({
   const focusClass = accent === 'teal' ? 'focus:ring-teal-400' : 'focus:ring-gray-400'
 
   return (
-    <div className="border-t border-gray-100 p-3 flex items-end gap-2 flex-shrink-0 relative">
+    <div className="border-t border-gray-100 flex-shrink-0 relative">
+      {/* Staged files: preview + caption flow, Telegram-style */}
+      {hasStaged && (
+        <div className="px-3 pt-3 flex flex-wrap gap-2">
+          {(staged ?? []).map((f, i) => (
+            <div key={`${f.name}-${i}`} className="relative group">
+              {stagedPreviews[i] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={stagedPreviews[i]!} alt={f.name} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+              ) : (
+                <div className="w-32 h-16 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center px-2">
+                  <Paperclip size={14} className="text-gray-400" />
+                  <span className="text-[10px] text-gray-500 truncate w-full text-center mt-1">{f.name}</span>
+                </div>
+              )}
+              {onUnstage && (
+                <button
+                  onClick={() => onUnstage(i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-900 text-white rounded-full flex items-center justify-center opacity-80 hover:opacity-100"
+                  title="Прибрати"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+          <p className="w-full text-[11px] text-gray-400 -mt-0.5">
+            Додай підпис за бажанням і натисни Enter або ➤, щоб надіслати
+          </p>
+        </div>
+      )}
+      <div className="p-3 flex items-end gap-2 relative">
       {/* Mention dropdown */}
       {open && (
         <div className="absolute bottom-full left-3 mb-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto py-1">
@@ -394,7 +438,7 @@ export function MentionComposer({
           >
             <SmilePlus size={16} />
           </button>
-          {onVoice && !value.trim() && (
+          {onVoice && !value.trim() && !hasStaged && (
             <button
               onClick={startRecording}
               disabled={uploading}
@@ -406,13 +450,14 @@ export function MentionComposer({
           )}
           <button
             onClick={onSend}
-            disabled={uploading || !value.trim()}
+            disabled={uploading || (!value.trim() && !hasStaged)}
             className={`${btnClass} disabled:opacity-40 text-white rounded-xl p-2.5 transition-colors flex-shrink-0`}
           >
             <Send size={15} />
           </button>
         </>
       )}
+      </div>
     </div>
   )
 }
@@ -525,6 +570,75 @@ export function groupMessages<T extends {
   return out
 }
 
+// In-app fullscreen image viewer — images open here instead of a new tab.
+export function Lightbox({ url, name, onClose, onPrev, onNext }: {
+  url: string
+  name?: string
+  onClose: () => void
+  onPrev?: () => void
+  onNext?: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === 'ArrowLeft' && onPrev) onPrev()
+      if (e.key === 'ArrowRight' && onNext) onNext()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, onPrev, onNext])
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+        title="Закрити (Esc)"
+      >
+        <X size={22} />
+      </button>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={e => e.stopPropagation()}
+        className="absolute top-4 right-16 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+        title="Відкрити оригінал у новій вкладці"
+      >
+        <ExternalLink size={20} />
+      </a>
+      {onPrev && (
+        <button
+          onClick={e => { e.stopPropagation(); onPrev() }}
+          className="absolute left-3 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+          title="Попереднє (←)"
+        >
+          <ChevronLeft size={28} />
+        </button>
+      )}
+      {onNext && (
+        <button
+          onClick={e => { e.stopPropagation(); onNext() }}
+          className="absolute right-3 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
+          title="Наступне (→)"
+        >
+          <ChevronRight size={28} />
+        </button>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={name ?? 'image'}
+        onClick={e => e.stopPropagation()}
+        className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+      />
+    </div>
+  )
+}
+
 // Photo gallery bubble for a group of image messages
 export function GalleryBubble({ images, mine, senderName, timestamp }: {
   images: { url: string; name: string }[]
@@ -533,6 +647,7 @@ export function GalleryBubble({ images, mine, senderName, timestamp }: {
   timestamp: string
 }) {
   const cols = images.length >= 5 ? 3 : 2
+  const [openIdx, setOpenIdx] = useState<number | null>(null)
   return (
     <div className={`max-w-[85%] ${mine ? 'self-end' : 'self-start'}`}>
       {senderName && <p className="text-[10px] text-gray-400 mb-0.5 px-1">{senderName}</p>}
@@ -541,12 +656,21 @@ export function GalleryBubble({ images, mine, senderName, timestamp }: {
         style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, width: cols === 3 ? 300 : 260, maxWidth: '100%' }}
       >
         {images.map((im, i) => (
-          <a key={i} href={im.url} target="_blank" rel="noreferrer" className="block aspect-square bg-gray-100">
+          <button key={i} onClick={() => setOpenIdx(i)} className="block aspect-square bg-gray-100 cursor-zoom-in">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={im.url} alt={im.name} className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
-          </a>
+          </button>
         ))}
       </div>
+      {openIdx !== null && (
+        <Lightbox
+          url={images[openIdx].url}
+          name={images[openIdx].name}
+          onClose={() => setOpenIdx(null)}
+          onPrev={openIdx > 0 ? () => setOpenIdx(openIdx - 1) : undefined}
+          onNext={openIdx < images.length - 1 ? () => setOpenIdx(openIdx + 1) : undefined}
+        />
+      )}
       <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
         {new Date(timestamp).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
       </p>
@@ -576,12 +700,7 @@ export function Attachment({ url, name, mine }: {
 
   const isImage = IMAGE_RE.test(name) || IMAGE_RE.test(url)
   if (isImage) {
-    return (
-      <a href={url} target="_blank" rel="noreferrer" className="block mt-1.5">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={name} className="max-w-full max-h-48 rounded-lg border border-black/5" />
-      </a>
-    )
+    return <AttachmentImage url={url} name={name} />
   }
   return (
     <a
@@ -602,6 +721,20 @@ export function Attachment({ url, name, mine }: {
 
 export const MAX_FILE_MB = 10
 
+// Image attachment with an in-app lightbox instead of a new browser tab
+function AttachmentImage({ url, name }: { url: string; name: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="block mt-1.5 cursor-zoom-in">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={name} className="max-w-full max-h-48 rounded-lg border border-black/5" />
+      </button>
+      {open && <Lightbox url={url} name={name} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
 export function fileTooBig(f: File) {
   return f.size > MAX_FILE_MB * 1024 * 1024
 }
@@ -609,6 +742,56 @@ export function fileTooBig(f: File) {
 export function safeStoragePath(projectId: string, fileName: string) {
   const safe = fileName.replace(/[^\w.\-]+/g, '_').slice(-80)
   return `${projectId}/${crypto.randomUUID()}-${safe}`
+}
+
+// ── Read receipts (group chats) ────────────────────────────────────────────────
+// One row per (chat, person): the moment they last had the chat open. Every
+// message older than that mark counts as read by them.
+
+export interface ChatReader {
+  reader_key: string
+  reader_name: string | null
+  last_read_at: string
+}
+
+export async function markChatSeen(chatKey: string, readerKey: string, readerName: string) {
+  try {
+    await supabase.from('chat_reads').upsert(
+      { chat_key: chatKey, reader_key: readerKey, reader_name: readerName, last_read_at: new Date().toISOString() },
+      { onConflict: 'chat_key,reader_key' },
+    )
+  } catch { /* table not migrated yet */ }
+}
+
+export async function fetchChatReaders(chatKey: string): Promise<ChatReader[]> {
+  try {
+    const { data } = await supabase
+      .from('chat_reads')
+      .select('reader_key, reader_name, last_read_at')
+      .eq('chat_key', chatKey)
+    return data ?? []
+  } catch { return [] }
+}
+
+// Names of everyone (except the viewer) who has read up to this timestamp
+export function readersOf(readers: ChatReader[], selfKey: string, createdAt: string): string[] {
+  return readers
+    .filter(r => r.reader_key !== selfKey && r.last_read_at >= createdAt)
+    .map(r => r.reader_name || r.reader_key)
+}
+
+// Tiny "seen by" line under a message
+export function SeenBy({ names, mine }: { names: string[]; mine: boolean }) {
+  if (names.length === 0) return null
+  const label = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2}`
+  return (
+    <span
+      title={`Прочитали: ${names.join(', ')}`}
+      className={`inline-flex items-center gap-1 text-[10px] text-gray-400 ${mine ? 'justify-end' : ''}`}
+    >
+      <Eye size={10} /> {label}
+    </span>
+  )
 }
 
 // ── Emoji reactions (iOS-tapback set + the usual suspects) ─────────────────────

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Hash, Trash2, Users, Pin, CornerUpLeft, Phone } from 'lucide-react'
 import { startCall } from '@/lib/callBus'
@@ -8,6 +8,7 @@ import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
+  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -52,6 +53,8 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { width, startResize } = useChatWidth()
   const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [staged, setStaged] = useState<File[]>([])
+  const [readers, setReaders] = useState<ChatReader[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
 
   async function togglePin(m: Message) {
@@ -188,6 +191,20 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
     markRead(`chat:${chat.id}`, 'team')
   }, [chat.id, messages.length])
 
+  // Read receipts
+  const selfReadKey = sender.type === 'admin' ? 'admin' : `team-${sender.teamMemberId}`
+  useEffect(() => {
+    markChatSeen(`chat:${chat.id}`, selfReadKey, sender.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.id, messages.length])
+  useEffect(() => {
+    let alive = true
+    const pull = async () => { const r = await fetchChatReaders(`chat:${chat.id}`); if (alive) setReaders(r) }
+    pull()
+    const iv = setInterval(pull, 7000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [chat.id])
+
   const mentionNames = people.map(p => p.name)
 
   function isMine(m: Message) {
@@ -296,7 +313,7 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
 
   return (
     <DropZone
-      onFiles={sendFiles}
+      onFiles={fs => setStaged(p => [...p, ...fs])}
       className={embedded
         ? 'relative h-full w-full min-w-0 bg-white flex flex-col'
         : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
@@ -419,18 +436,29 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
             Ще немає повідомлень
           </p>
         )}
-        {groupMessages(messages).map(item => {
+        {(() => {
+          let lastOwnId: string | null = null
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (isMine(messages[i])) { lastOwnId = messages[i].id; break }
+          }
+          const lastOwn = messages.find(m => m.id === lastOwnId)
+          const seenNames = lastOwn ? readersOf(readers, selfReadKey, lastOwn.created_at) : []
+          return groupMessages(messages).map(item => {
           if (Array.isArray(item)) {
             const first = item[0]
             const gm = isMine(first)
             return (
-              <GalleryBubble
-                key={first.id}
-                images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
-                mine={gm}
-                senderName={!gm ? first.sender_name : undefined}
-                timestamp={item[item.length - 1].created_at}
-              />
+              <Fragment key={first.id}>
+                <GalleryBubble
+                  images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
+                  mine={gm}
+                  senderName={!gm ? first.sender_name : undefined}
+                  timestamp={item[item.length - 1].created_at}
+                />
+                {gm && item.some(x => x.id === lastOwnId) && seenNames.length > 0 && (
+                  <div className="self-end px-1 -mt-1"><SeenBy names={seenNames} mine /></div>
+                )}
+              </Fragment>
             )
           }
           const m = item
@@ -502,9 +530,13 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </p>
+              {mine && m.id === lastOwnId && seenNames.length > 0 && (
+                <p className="text-right px-1"><SeenBy names={seenNames} mine /></p>
+              )}
             </div>
           )
-        })}
+        })
+        })()}
         <div ref={bottomRef} />
       </div>
 
@@ -529,9 +561,17 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
       <MentionComposer
         value={input}
         onChange={setInput}
-        onSend={send}
-        onPickFile={sendFile}
-        onPickFiles={sendFiles}
+        onSend={() => {
+          if (staged.length > 0) {
+            const fs = staged
+            setStaged([])
+            sendFiles(fs)
+          } else send()
+        }}
+        onPickFile={f => setStaged(p => [...p, f])}
+        onPickFiles={fs => setStaged(p => [...p, ...fs])}
+        staged={staged}
+        onUnstage={i => setStaged(p => p.filter((_, idx) => idx !== i))}
         people={people}
         placeholder="Повідомлення... (@ — згадати)"
         uploading={uploading}

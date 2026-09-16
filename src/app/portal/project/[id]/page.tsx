@@ -547,6 +547,7 @@ function PortalChat({ projectId, token, people, onClose }: {
   const [bookingOpen, setBookingOpen] = useState(false)
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
   const [myKey, setMyKey] = useState('')
+  const [staged, setStaged] = useState<File[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const { width, startResize } = useChatWidth()
 
@@ -651,7 +652,7 @@ function PortalChat({ projectId, token, people, onClose }: {
 
   return (
     <DropZone
-      onFiles={sendFiles}
+      onFiles={fs => setStaged(p => [...p, ...fs])}
       className="fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col"
       style={{ width }}
     >
@@ -732,9 +733,17 @@ function PortalChat({ projectId, token, people, onClose }: {
       <MentionComposer
         value={input}
         onChange={setInput}
-        onSend={send}
-        onPickFile={sendFile}
-        onPickFiles={sendFiles}
+        onSend={() => {
+          if (staged.length > 0) {
+            const fs = staged
+            setStaged([])
+            sendFiles(fs)
+          } else send()
+        }}
+        onPickFile={f => setStaged(p => [...p, f])}
+        onPickFiles={fs => setStaged(p => [...p, ...fs])}
+        staged={staged}
+        onUnstage={i => setStaged(p => p.filter((_, idx) => idx !== i))}
         people={people.map(name => ({ name, type: 'team' as const }))}
         placeholder="Message... (@ to mention)"
         uploading={uploading}

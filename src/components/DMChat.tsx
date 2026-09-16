@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MessageSquare, X, Phone, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
+  markChatSeen, fetchChatReaders, readersOf, ChatReader,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -56,6 +57,7 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [staged, setStaged] = useState<File[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -105,6 +107,20 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
   useEffect(() => {
     markRead(`dm:${dmKey}`, 'team')
   }, [dmKey, messages.length])
+
+  // Read receipt: "Прочитано" under my last message once the peer has seen it
+  const [readers, setReaders] = useState<ChatReader[]>([])
+  useEffect(() => {
+    markChatSeen(`dm:${dmKey}`, selfKey, sender.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmKey, messages.length])
+  useEffect(() => {
+    let alive = true
+    const pull = async () => { const r = await fetchChatReaders(`dm:${dmKey}`); if (alive) setReaders(r) }
+    pull()
+    const iv = setInterval(pull, 7000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [dmKey])
 
   function isMine(m: Message) {
     if (sender.type === 'admin') return m.sender_type === 'admin'
@@ -225,7 +241,7 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
 
   return (
     <DropZone
-      onFiles={sendFiles}
+      onFiles={fs => setStaged(p => [...p, ...fs])}
       className={embedded
         ? 'relative h-full w-full min-w-0 bg-white flex flex-col'
         : 'fixed right-0 top-0 h-full max-w-[100vw] bg-white border-l border-gray-200 shadow-xl z-40 flex flex-col'}
@@ -293,18 +309,31 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
             Напиши перше повідомлення 👋
           </p>
         )}
-        {groupMessages(messages).map(item => {
+        {(() => {
+          let lastOwnId: string | null = null
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (isMine(messages[i])) { lastOwnId = messages[i].id; break }
+          }
+          const lastOwn = messages.find(m => m.id === lastOwnId)
+          const peerRead = lastOwn
+            ? readersOf(readers, selfKey, lastOwn.created_at).length > 0
+            : false
+          return groupMessages(messages).map(item => {
           if (Array.isArray(item)) {
             const first = item[0]
             const gm = isMine(first)
             return (
-              <GalleryBubble
-                key={first.id}
-                images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
-                mine={gm}
-                senderName={!gm ? first.sender_name : undefined}
-                timestamp={item[item.length - 1].created_at}
-              />
+              <Fragment key={first.id}>
+                <GalleryBubble
+                  images={item.map(x => ({ url: x.file_url as string, name: x.file_name ?? 'image' }))}
+                  mine={gm}
+                  senderName={!gm ? first.sender_name : undefined}
+                  timestamp={item[item.length - 1].created_at}
+                />
+                {gm && item.some(x => x.id === lastOwnId) && peerRead && (
+                  <p className="self-end px-1 -mt-1 text-[10px] text-teal-500">✓✓ Прочитано</p>
+                )}
+              </Fragment>
             )
           }
           const m = item
@@ -383,9 +412,13 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
               <p className={`text-[10px] text-gray-300 mt-0.5 px-1 ${mine ? 'text-right' : ''}`}>
                 {new Date(m.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </p>
+              {mine && m.id === lastOwnId && peerRead && (
+                <p className="text-right px-1 text-[10px] text-teal-500">✓✓ Прочитано</p>
+              )}
             </div>
           )
-        })}
+        })
+        })()}
         <div ref={bottomRef} />
       </div>
 
@@ -409,9 +442,17 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
       <MentionComposer
         value={input}
         onChange={setInput}
-        onSend={send}
-        onPickFile={sendFile}
-        onPickFiles={sendFiles}
+        onSend={() => {
+          if (staged.length > 0) {
+            const fs = staged
+            setStaged([])
+            sendFiles(fs)
+          } else send()
+        }}
+        onPickFile={f => setStaged(p => [...p, f])}
+        onPickFiles={fs => setStaged(p => [...p, ...fs])}
+        staged={staged}
+        onUnstage={i => setStaged(p => p.filter((_, idx) => idx !== i))}
         people={[]}
         placeholder={`Повідомлення для ${peer.name}...`}
         uploading={uploading}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Camera, Check, Loader2 } from 'lucide-react'
 import PushToggle from '@/components/PushToggle'
+import NotifSoundSettings from '@/components/NotifSoundSettings'
 
 // Team member profile: photo, name, nickname, custom status (emoji + text)
 // and password change. Everything saves into team_members / Supabase Auth.
@@ -124,6 +125,7 @@ export default function TeamProfilePage() {
         )}
 
         <PushToggle userKey={`team-${member.id}`} />
+        <NotifSoundSettings userKey={`team-${member.id}`} />
 
         {/* Photo + basics */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">

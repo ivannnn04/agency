@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { playNotifSound } from '@/lib/notifSound'
 
 // Per-browser read state: localStorage keeps the last-read timestamp for every
 // project/channel pair. Unread = any foreign message newer than that mark.
@@ -26,48 +27,10 @@ export function markRead(projectId: string, channel: string) {
   window.dispatchEvent(new Event('gudrix:chat-read'))
 }
 
-// Slack-style two-tone ping via Web Audio (no asset files needed).
-let audioCtx: AudioContext | null = null
-
-// Browsers keep audio locked until the first user gesture. Priming the
-// context on the first click/keypress lets later pings actually sound.
-let audioPrimed = false
-function primeAudio() {
-  try {
-    audioCtx = audioCtx ?? new AudioContext()
-    if (audioCtx.state === 'suspended') audioCtx.resume()
-    audioPrimed = true
-  } catch { /* unavailable */ }
-}
-if (typeof window !== 'undefined' && !audioPrimed) {
-  window.addEventListener('pointerdown', primeAudio, { once: true })
-  window.addEventListener('keydown', primeAudio, { once: true })
-}
-
+// The ping itself (sound choice + volume) lives in lib/notifSound —
+// members pick their own in the profile settings.
 export function playChatPing() {
-  try {
-    audioCtx = audioCtx ?? new AudioContext()
-    const ctx = audioCtx
-    if (ctx.state === 'suspended') ctx.resume()
-    const now = ctx.currentTime
-    // A whole tone below the original 830/623 Hz pair
-    const notes: [number, number][] = [[739, 0], [555, 0.13]]
-    for (const [freq, off] of notes) {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.0001, now + off)
-      gain.gain.exponentialRampToValueAtTime(0.16, now + off + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + off + 0.28)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start(now + off)
-      osc.stop(now + off + 0.32)
-    }
-  } catch {
-    // AudioContext unavailable or blocked until first user gesture — fine
-  }
+  playNotifSound()
 }
 
 interface MsgRow {

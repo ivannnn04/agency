@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getAdminProfile, clearAdminProfileCache } from '@/lib/adminProfile'
 import { Camera, Check, Loader2 } from 'lucide-react'
 import PushToggle from '@/components/PushToggle'
+import NotifSoundSettings from '@/components/NotifSoundSettings'
 
 const STATUS_EMOJIS = ['💬', '🎨', '💻', '🔥', '☕', '🏖', '🤒', '🎧', '🍕', '🚀', '🌙', '📵']
 
@@ -77,6 +78,7 @@ export default function AdminProfilePage() {
       )}
 
       <div className="mb-4"><PushToggle userKey="admin" /></div>
+      <div className="mb-4"><NotifSoundSettings userKey="admin" /></div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">
         <div className="flex items-center gap-4">

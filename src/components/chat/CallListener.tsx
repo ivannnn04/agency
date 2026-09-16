@@ -7,6 +7,7 @@ import VoiceRoom from '@/components/chat/VoiceRoom'
 import type { CallRequest } from '@/lib/callBus'
 import { startPresence } from '@/lib/presence'
 import { refreshPush } from '@/lib/pushClient'
+import { loadNotifPrefs } from '@/lib/notifSound'
 
 // Global call host, mounted once per layout (admin layout / team layout).
 // Because it lives in the layout, an active call keeps running while the
@@ -41,6 +42,8 @@ export default function CallListener({ selfKey, selfName, selfColor }: {
   // Devices that already allowed notifications silently re-sync their
   // push subscription on every app load
   useEffect(() => { refreshPush(selfKey) }, [selfKey])
+  // Account's sound preference → this device's cache
+  useEffect(() => { loadNotifPrefs(selfKey) }, [selfKey])
 
   function stopRinging() {
     ringStopRef.current?.()

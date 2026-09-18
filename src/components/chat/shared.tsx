@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Send, Paperclip, Loader2, CalendarDays, SmilePlus, Mic, X, CornerUpLeft, Pin, MoreHorizontal, Pencil, Copy, Trash2, Check, Eye, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
@@ -791,6 +792,75 @@ export function SeenBy({ names, mine }: { names: string[]; mine: boolean }) {
     >
       <Eye size={10} /> {label}
     </span>
+  )
+}
+
+// ── Typing indicator ───────────────────────────────────────────────────────────
+// Ephemeral Realtime broadcast per chat — nothing touches the DB. Senders
+// ping at most every 2s while typing; receivers drop names after 4s of
+// silence.
+
+export function useTyping(chatKey: string, selfKey: string, selfName: string) {
+  const [typing, setTyping] = useState<Record<string, { name: string; until: number }>>({})
+  const chRef = useRef<RealtimeChannel | null>(null)
+  const lastSentRef = useRef(0)
+
+  useEffect(() => {
+    const topic = `typing-${chatKey.replace(/[^\w:.-]+/g, '_')}`
+    const ch = supabase.channel(topic)
+    ch.on('broadcast', { event: 'typing' }, ({ payload }) => {
+      const p = payload as { key?: string; name?: string }
+      if (!p?.key || p.key === selfKey) return
+      setTyping(prev => ({ ...prev, [p.key!]: { name: p.name || p.key!, until: Date.now() + 4000 } }))
+    }).subscribe()
+    chRef.current = ch
+    const iv = setInterval(() => {
+      setTyping(prev => {
+        const now = Date.now()
+        let changed = false
+        const next: typeof prev = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (v.until > now) next[k] = v
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+    }, 1500)
+    return () => {
+      clearInterval(iv)
+      supabase.removeChannel(ch)
+      chRef.current = null
+      setTyping({})
+    }
+  }, [chatKey, selfKey])
+
+  const notifyTyping = useCallback(() => {
+    if (!selfKey) return
+    const now = Date.now()
+    if (now - lastSentRef.current < 2000) return
+    lastSentRef.current = now
+    chRef.current?.send({ type: 'broadcast', event: 'typing', payload: { key: selfKey, name: selfName } })
+  }, [selfKey, selfName])
+
+  return { typingNames: Object.values(typing).map(t => t.name), notifyTyping }
+}
+
+// "Olga друкує..." line with bouncing dots, sits right above the composer
+export function TypingLine({ names }: { names: string[] }) {
+  if (names.length === 0) return null
+  const label =
+    names.length === 1 ? `${names[0]} друкує` :
+    names.length === 2 ? `${names[0]} і ${names[1]} друкують` :
+    `${names.length} людей друкують`
+  return (
+    <div className="px-4 pb-1.5 flex items-center gap-1.5 text-[11px] text-gray-400 flex-shrink-0">
+      <span className="flex gap-0.5 items-end">
+        <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" />
+        <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+      </span>
+      {label}...
+    </div>
   )
 }
 

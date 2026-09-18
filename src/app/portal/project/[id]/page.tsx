@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB, safeStoragePath,
-  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble,
+  useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, useTyping, TypingLine,
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -551,6 +551,10 @@ function PortalChat({ projectId, token, people, onClose }: {
   const bottomRef = useRef<HTMLDivElement>(null)
   const { width, startResize } = useChatWidth()
 
+  // Typing indicator shares the channel with the team's client-channel chat
+  const myName = messages.find(m => m.sender_type === 'client')?.sender_name ?? 'Client'
+  const { typingNames, notifyTyping } = useTyping(`${projectId}:client`, myKey, myName)
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/portal/project/${projectId}/messages`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -730,9 +734,10 @@ function PortalChat({ projectId, token, people, onClose }: {
         <p className="text-[11px] text-red-500 px-4 py-1.5 border-t border-red-100 bg-red-50 flex-shrink-0">{error}</p>
       )}
 
+      <TypingLine names={typingNames} />
       <MentionComposer
         value={input}
-        onChange={setInput}
+        onChange={v => { setInput(v); notifyTyping() }}
         onSend={() => {
           if (staged.length > 0) {
             const fs = staged

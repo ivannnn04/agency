@@ -8,7 +8,7 @@ import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
-  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader,
+  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader, useTyping, TypingLine,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -204,6 +204,8 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
     const iv = setInterval(pull, 7000)
     return () => { alive = false; clearInterval(iv) }
   }, [chat.id])
+
+  const { typingNames, notifyTyping } = useTyping(`chat:${chat.id}`, selfReadKey, sender.name)
 
   const mentionNames = people.map(p => p.name)
 
@@ -558,9 +560,10 @@ export default function GeneralChat({ chat, sender, onClose, onDeleted, embedded
         </div>
       )}
 
+      <TypingLine names={typingNames} />
       <MentionComposer
         value={input}
-        onChange={setInput}
+        onChange={v => { setInput(v); notifyTyping() }}
         onSend={() => {
           if (staged.length > 0) {
             const fs = staged

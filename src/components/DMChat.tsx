@@ -6,7 +6,7 @@ import { MessageSquare, X, Phone, Pin, CornerUpLeft } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
-  markChatSeen, fetchChatReaders, readersOf, ChatReader,
+  markChatSeen, fetchChatReaders, readersOf, ChatReader, useTyping, TypingLine,
 } from '@/components/chat/shared'
 import { ChatSender } from '@/components/ProjectChat'
 import { markRead } from '@/lib/chatUnread'
@@ -121,6 +121,8 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
     const iv = setInterval(pull, 7000)
     return () => { alive = false; clearInterval(iv) }
   }, [dmKey])
+
+  const { typingNames, notifyTyping } = useTyping(`dm:${dmKey}`, selfKey, sender.name)
 
   function isMine(m: Message) {
     if (sender.type === 'admin') return m.sender_type === 'admin'
@@ -439,9 +441,10 @@ export default function DMChat({ peer, sender, onClose, embedded }: {
         </div>
       )}
 
+      <TypingLine names={typingNames} />
       <MentionComposer
         value={input}
-        onChange={setInput}
+        onChange={v => { setInput(v); notifyTyping() }}
         onSend={() => {
           if (staged.length > 0) {
             const fs = staged

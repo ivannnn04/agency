@@ -8,7 +8,7 @@ import { getAdminProfile } from '@/lib/adminProfile'
 import {
   MentionComposer, MessageBody, Attachment, ChatPerson, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, Reaction, ReactionPicker, ReactionChips, DropZone, groupMessages, GalleryBubble, MessageActions, MessageEditBox,
-  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader,
+  markChatSeen, fetchChatReaders, readersOf, SeenBy, ChatReader, useTyping, TypingLine,
 } from '@/components/chat/shared'
 import { getLastRead, markRead } from '@/lib/chatUnread'
 
@@ -203,6 +203,8 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
     const iv = setInterval(pull, 7000)
     return () => { alive = false; clearInterval(iv) }
   }, [readChatKey])
+
+  const { typingNames, notifyTyping } = useTyping(readChatKey, selfReadKey, sender.name)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -670,9 +672,10 @@ export default function ProjectChat({ projectId, projectName, sender, onClose, e
       )}
 
       {/* Composer with mentions + attachments */}
+      <TypingLine names={typingNames} />
       <MentionComposer
         value={input}
-        onChange={setInput}
+        onChange={v => { setInput(v); notifyTyping() }}
         onSend={() => {
           if (staged.length > 0) {
             const fs = staged

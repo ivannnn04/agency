@@ -4,6 +4,21 @@
   --background: #ffffff;
   --foreground: #171717;
   color-scheme: light;
+
+  /* ── Gudrix brand (matches the agency website redesign) ──
+     Dark green #00140c, neon mint #2affaa, green #00b871 for
+     buttons/links. Every teal-* utility in the app resolves through
+     these variables, so this remap rebrands the whole platform. */
+  --color-teal-50: #e9faf2;
+  --color-teal-100: #d3f5e4;
+  --color-teal-200: #a7ebc9;
+  --color-teal-300: #6fe0ac;
+  --color-teal-400: #2affaa;
+  --color-teal-500: #00b871;
+  --color-teal-600: #009c60;
+  --color-teal-700: #007a4b;
+  --color-teal-800: #005a38;
+  --color-teal-900: #003d26;
 }
 
 @theme inline {
@@ -44,30 +59,30 @@ body {
 
 .dark {
   color-scheme: dark;
-  --background: #0f141b;
-  --foreground: #e4eaf2;
+  --background: #03170e;
+  --foreground: #e0efe8;
 
-  /* Neutral ramp, inverted */
-  --color-white: #151b24;    /* cards / modals / drawers */
-  --color-gray-50: #0f141b;  /* page background */
-  --color-gray-100: #1b232e; /* hovers, pills, subtle fills */
-  --color-gray-200: #2a3441; /* borders */
-  --color-gray-300: #3d4a5c; /* strong borders / faint text */
-  --color-gray-400: #8494a7;
-  --color-gray-500: #9dabbd;
-  --color-gray-600: #b7c3d2;
-  --color-gray-700: #d0d9e5;
-  --color-gray-800: #e4eaf2;
-  --color-gray-900: #f3f6fa;
+  /* Neutral ramp, inverted — green-tinted to match the brand dark #00140c */
+  --color-white: #0b241a;    /* cards / modals / drawers */
+  --color-gray-50: #03170e;  /* page background */
+  --color-gray-100: #123227; /* hovers, pills, subtle fills */
+  --color-gray-200: #1d4433; /* borders */
+  --color-gray-300: #2f5c47; /* strong borders / faint text */
+  --color-gray-400: #7fa393;
+  --color-gray-500: #94b5a6;
+  --color-gray-600: #adc9bc;
+  --color-gray-700: #c8ded3;
+  --color-gray-800: #e0efe8;
+  --color-gray-900: #f0f9f4;
 
   /* Accent tints: -50/-100 backgrounds go dark, -600+ text goes light.
      -200/-300/-400/-500 keep their stock values (mixed text/border roles —
      border/ring/bg uses are pinned individually below). */
-  --color-teal-50: #102f2b;
-  --color-teal-100: #143f38;
-  --color-teal-600: #35d9c3;
-  --color-teal-700: #6fe6d6;
-  --color-teal-800: #a0f0e4;
+  --color-teal-50: #0c3324;
+  --color-teal-100: #114430;
+  --color-teal-600: #4ffdb4;
+  --color-teal-700: #86ffcd;
+  --color-teal-800: #b4ffe0;
 
   --color-amber-50: #33270e;
   --color-amber-100: #453413;
@@ -116,23 +131,23 @@ body {
 .dark .hover\:text-white:hover { color: #ffffff; }
 
 /* Dark buttons / own chat bubbles: stay dark, just lifted off the dark bg */
-.dark .bg-gray-900 { background-color: #2e3947; }
-.dark .bg-gray-800 { background-color: #354251; }
-.dark .hover\:bg-gray-700:hover { background-color: #3c4a5c; }
+.dark .bg-gray-900 { background-color: #234639; }
+.dark .bg-gray-800 { background-color: #2a5342; }
+.dark .hover\:bg-gray-700:hover { background-color: #315f4c; }
 
 /* Colored button hovers must stay darker than the -500 base */
-.dark .hover\:bg-teal-600:hover { background-color: #0d9488; }
+.dark .hover\:bg-teal-600:hover { background-color: #00875a; }
 .dark .hover\:bg-red-600:hover { background-color: #dc2626; }
 .dark .bg-violet-600 { background-color: #7c3aed; }
 .dark .hover\:bg-violet-700:hover { background-color: #6d28d9; }
 
 /* -200/-300 teal & amber borders/rings/fills on tinted cards go dark
    (their text- twins keep the light stock value for use on dark bubbles) */
-.dark .border-teal-200 { border-color: #175048; }
-.dark .ring-teal-200 { --tw-ring-color: #175048; }
-.dark .bg-teal-200 { background-color: #175048; }
-.dark .border-teal-300 { border-color: #1d5f55; }
-.dark .ring-teal-300 { --tw-ring-color: #1d5f55; }
+.dark .border-teal-200 { border-color: #14523a; }
+.dark .ring-teal-200 { --tw-ring-color: #14523a; }
+.dark .bg-teal-200 { background-color: #14523a; }
+.dark .border-teal-300 { border-color: #1a6647; }
+.dark .ring-teal-300 { --tw-ring-color: #1a6647; }
 .dark .border-amber-300 { border-color: #6b5313; }
 
 /* White-alpha overlays (dark sidebar chrome) keep literal white */

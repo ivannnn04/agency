@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Manrope } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 
-const inter = Inter({ subsets: ['latin', 'cyrillic'] })
+// The agency site's DM Sans has no Cyrillic — Manrope is its closest
+// geometric cousin that speaks Ukrainian
+const brandFont = Manrope({ subsets: ['latin', 'cyrillic'] })
 
 export const metadata: Metadata = {
   title: 'Gudrix Cowork Space',
@@ -21,13 +23,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0f1117',
+  themeColor: '#00140c',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="uk" className="h-full" suppressHydrationWarning>
-      <body className={`${inter.className} h-full`}>
+      <body className={`${brandFont.className} h-full`}>
         {/* Apply the saved theme before first paint to avoid a light flash */}
         <script
           dangerouslySetInnerHTML={{

@@ -206,7 +206,7 @@ export default function TeamReportsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-[#0f1117] text-white px-6 py-4 flex items-center gap-3">
+      <header className="bg-[#00140c] text-white px-6 py-4 flex items-center gap-3">
         <button
           onClick={() => router.push('/team/dashboard')}
           className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm mr-1"

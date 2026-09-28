@@ -65,7 +65,7 @@ function WelcomeInner() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#00140c] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
         <div className="flex items-center gap-2.5 mb-8">
           <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
@@ -152,7 +152,7 @@ function WelcomeInner() {
 
 export default function PortalWelcomePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0f1117]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#00140c]" />}>
       <WelcomeInner />
     </Suspense>
   )

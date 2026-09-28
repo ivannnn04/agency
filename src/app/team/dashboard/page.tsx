@@ -318,7 +318,7 @@ export default function TeamDashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Left icon rail (desktop) */}
-      <aside className="hidden md:flex w-[76px] bg-[#0f1117] flex-col items-center py-4 gap-1.5 flex-shrink-0 sticky top-0 h-screen">
+      <aside className="hidden md:flex w-[76px] bg-[#00140c] flex-col items-center py-4 gap-1.5 flex-shrink-0 sticky top-0 h-screen">
         <button
           onClick={() => router.push('/team/profile')}
           className="mb-3 hover:opacity-80 transition-opacity"
@@ -370,7 +370,7 @@ export default function TeamDashboardPage() {
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-      <header className="bg-[#0f1117] text-white px-6 py-4 flex items-center gap-3">
+      <header className="bg-[#00140c] text-white px-6 py-4 flex items-center gap-3">
         <button onClick={() => router.push('/team/profile')} className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left" title="Мій профіль">
           {member?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -598,7 +598,7 @@ export default function TeamDashboardPage() {
 
       {/* Bottom tab bar (mobile) */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 bg-[#0f1117] border-t border-white/10 flex z-30"
+        className="md:hidden fixed bottom-0 inset-x-0 bg-[#00140c] border-t border-white/10 flex z-30"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {navItems.map(item => {

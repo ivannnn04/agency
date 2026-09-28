@@ -392,7 +392,7 @@ export default function TeamBoardPage() {
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-[#0f1117] text-white px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap">
+      <header className="bg-[#00140c] text-white px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap">
         <button
           onClick={() => router.push('/team/dashboard')}
           className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
@@ -456,7 +456,7 @@ export default function TeamBoardPage() {
           >
             <MessageSquare size={14} /> Чат
             {!chatOpen && (chatUnread[id]?.team || chatUnread[id]?.client) && (
-              <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#0f1117] animate-pulse ${
+              <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#00140c] animate-pulse ${
                 chatUnread[id]?.clientNew ? 'bg-amber-400' : 'bg-teal-400'
               }`} />
             )}

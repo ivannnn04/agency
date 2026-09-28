@@ -28,8 +28,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-      <div className="bg-[#1a1d27] rounded-2xl p-10 w-full max-w-md text-center shadow-2xl">
+    <div className="min-h-screen bg-[#00140c] flex items-center justify-center">
+      <div className="bg-[#0a2a1c] rounded-2xl p-10 w-full max-w-md text-center shadow-2xl">
         <div className="mb-8">
           <div className="w-16 h-16 bg-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl font-bold text-white">G</span>
@@ -39,7 +39,7 @@ export default function LoginPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-[#0f1117] rounded-xl p-1 mb-6">
+        <div className="flex bg-[#00140c] rounded-xl p-1 mb-6">
           {([
             ['admin', 'Адмін'],
             ['manager', 'Менеджер'],
@@ -77,7 +77,7 @@ export default function LoginPage() {
                 type="email" required
                 value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="manager@example.com"
-                className="w-full bg-[#0f1117] border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+                className="w-full bg-[#00140c] border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
               />
             </div>
             <div>
@@ -86,7 +86,7 @@ export default function LoginPage() {
                 type="password" required
                 value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-[#0f1117] border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+                className="w-full bg-[#00140c] border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
               />
             </div>
             {error && <p className="text-red-400 text-xs">{error}</p>}

@@ -9,7 +9,7 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#0f1117] px-6 py-3 flex items-center justify-between border-b border-white/5">
+      <header className="bg-[#00140c] px-6 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">F</span>

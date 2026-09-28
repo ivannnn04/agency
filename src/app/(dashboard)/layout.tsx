@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="bg-[#0f1117] px-3 sm:px-6 py-3 flex items-center justify-between gap-2 border-b border-white/5 flex-shrink-0">
+        <header className="bg-[#00140c] px-3 sm:px-6 py-3 flex items-center justify-between gap-2 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             {/* Mobile burger */}
             <button

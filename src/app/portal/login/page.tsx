@@ -57,8 +57,8 @@ export default function PortalLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="bg-[#1a1d27] rounded-2xl p-10 w-full max-w-md shadow-2xl">
+    <div className="min-h-screen bg-[#00140c] flex items-center justify-center p-4">
+      <div className="bg-[#0a2a1c] rounded-2xl p-10 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-xl font-bold text-white">G</span>
@@ -68,7 +68,7 @@ export default function PortalLoginPage() {
         </div>
 
         {/* Login / Register tabs */}
-        <div className="flex bg-[#0f1117] rounded-xl p-1 mb-6">
+        <div className="flex bg-[#00140c] rounded-xl p-1 mb-6">
           {([['login', 'Sign in'], ['register', 'Sign up']] as const).map(([key, label]) => (
             <button
               key={key}
@@ -109,7 +109,7 @@ export default function PortalLoginPage() {
               type="email" required
               value={email} onChange={e => setEmail(e.target.value)}
               placeholder="you@company.com"
-              className="w-full bg-[#0f1117] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+              className="w-full bg-[#00140c] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
             />
           </div>
           <div>
@@ -118,7 +118,7 @@ export default function PortalLoginPage() {
               type="password" required
               value={password} onChange={e => setPassword(e.target.value)}
               placeholder={mode === 'register' ? 'At least 8 characters' : '••••••••'}
-              className="w-full bg-[#0f1117] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+              className="w-full bg-[#00140c] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
             />
           </div>
 

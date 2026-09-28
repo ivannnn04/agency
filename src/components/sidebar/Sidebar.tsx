@@ -257,10 +257,10 @@ export default function Sidebar() {
     <>
     <div className="flex h-full flex-shrink-0">
       {/* Icon rail */}
-      <div className="w-[68px] bg-[#0b0d12] border-r border-white/5 flex flex-col items-center py-4 gap-1.5 flex-shrink-0">
+      <div className="w-[68px] bg-[#000f09] border-r border-white/5 flex flex-col items-center py-4 gap-1.5 flex-shrink-0">
         {/* Full wordmark — always visible even on rail-only pages */}
-        <div className="w-14 py-2.5 bg-[#041911] border border-white/10 rounded-xl flex items-center justify-center mb-1">
-          <span className="text-white font-extrabold text-[13px] tracking-tight leading-none lowercase">gudrix</span>
+        <div className="w-14 py-2.5 bg-[#00140c] border border-white/10 rounded-xl flex items-center justify-center mb-1">
+          <span className="text-white font-extrabold text-[13px] tracking-tight leading-none lowercase">gudrix<span className="text-[#2affaa]">.</span></span>
         </div>
         <button
           onClick={() => router.push('/profile')}
@@ -307,7 +307,7 @@ export default function Sidebar() {
       {/* Full-width pages keep only the icon rail — no section panel */}
       {!railOnly && (
       <aside
-        className="relative bg-[#0f1117] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
+        className="relative bg-[#00140c] text-white flex flex-col overflow-hidden border-r border-white/5 flex-shrink-0"
         style={{ width: sidebarWidth, minWidth: sidebarWidth }}
       >
         {/* Resize handle */}
@@ -321,7 +321,7 @@ export default function Sidebar() {
         <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-white font-extrabold text-base tracking-tight lowercase leading-tight">gudrix</p>
+              <p className="text-white font-extrabold text-base tracking-tight lowercase leading-tight">gudrix<span className="text-[#2affaa]">.</span></p>
               <p className="text-gray-500 text-xs">Cowork Space</p>
             </div>
             <ThemeToggle variant="sidebar" />

@@ -3,9 +3,9 @@ import { Manrope } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 
-// The agency site's DM Sans has no Cyrillic — Manrope is its closest
-// geometric cousin that speaks Ukrainian
-const brandFont = Manrope({ subsets: ['latin', 'cyrillic'] })
+// Cyrillic fallback for PP Mori (the brand font, self-hosted in
+// public/fonts/pp-mori — it has no Cyrillic glyphs)
+const manrope = Manrope({ subsets: ['latin', 'cyrillic'], variable: '--font-manrope' })
 
 export const metadata: Metadata = {
   title: 'Gudrix Cowork Space',
@@ -29,7 +29,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="uk" className="h-full" suppressHydrationWarning>
-      <body className={`${brandFont.className} h-full`}>
+      <body className={`${manrope.variable} h-full`}>
         {/* Apply the saved theme before first paint to avoid a light flash */}
         <script
           dangerouslySetInnerHTML={{

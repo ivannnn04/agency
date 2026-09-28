@@ -110,14 +110,14 @@ export default function ActiveTimerChip({ memberId }: { memberId: string }) {
   if (!entry) return null
 
   return (
-    <div className="flex items-center gap-2 bg-teal-500/15 border border-teal-500/30 rounded-xl pl-2.5 pr-1.5 py-1.5 min-w-0 max-w-[60vw] md:max-w-md">
+    <div className="flex items-center gap-2 bg-[#2affaa]/10 border border-[#2affaa]/25 rounded-xl pl-2.5 pr-1.5 py-1.5 min-w-0 max-w-[60vw] md:max-w-md">
       <Timer size={13} className="text-teal-400 flex-shrink-0 animate-pulse" />
       <div className="flex items-center gap-1.5 min-w-0 text-xs">
         {entry.projectId && (
           <>
             <button
               onClick={() => router.push(`/team/board/${entry.projectId}`)}
-              className="text-teal-300 hover:text-white font-semibold truncate max-w-[90px] md:max-w-[140px] transition-colors"
+              className="text-[#2affaa] hover:text-white font-semibold truncate max-w-[90px] md:max-w-[140px] transition-colors"
               title={`Відкрити проєкт «${entry.projectName ?? ''}»`}
             >
               {entry.projectName ?? 'Проєкт'}

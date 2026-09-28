@@ -350,7 +350,7 @@ export default function TeamDashboardPage() {
               <Icon size={18} />
               <span className="text-[9px] font-medium">{item.label}</span>
               {(item.count ?? 0) > 0 && (
-                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-[#00140c] bg-[#2affaa] rounded-full px-1 py-px min-w-[16px] text-center">
                   {(item.count ?? 0) > 99 ? '99+' : item.count}
                 </span>
               )}
@@ -615,7 +615,7 @@ export default function TeamDashboardPage() {
               <Icon size={18} />
               <span className="text-[10px] font-medium">{item.label}</span>
               {(item.count ?? 0) > 0 && (
-                <span className="absolute top-0.5 right-[24%] text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                <span className="absolute top-0.5 right-[24%] text-[9px] font-bold text-[#00140c] bg-[#2affaa] rounded-full px-1 py-px min-w-[16px] text-center">
                   {(item.count ?? 0) > 99 ? '99+' : item.count}
                 </span>
               )}

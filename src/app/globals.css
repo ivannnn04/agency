@@ -1,24 +1,58 @@
 @import "tailwindcss";
 
+/* ── PP Mori (the site's brand type, self-hosted). It has no Cyrillic,
+   so Ukrainian text falls back to Manrope (loaded via next/font as
+   --font-manrope) — a close geometric cousin. Latin, digits and the
+   wordmark render in Mori, кирилиця in Manrope. */
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/pp-mori/ppmori-regular.woff2') format('woff2');
+  font-weight: 300 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/pp-mori/ppmori-regularitalic.woff2') format('woff2');
+  font-weight: 300 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/pp-mori/ppmori-semibold.woff2') format('woff2');
+  font-weight: 600 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/pp-mori/ppmori-semibolditalic.woff2') format('woff2');
+  font-weight: 600 800;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
   color-scheme: light;
 
-  /* ── Gudrix brand (matches the agency website redesign) ──
-     Dark green #00140c, neon mint #2affaa, green #00b871 for
-     buttons/links. Every teal-* utility in the app resolves through
-     these variables, so this remap rebrands the whole platform. */
-  --color-teal-50: #e9faf2;
-  --color-teal-100: #d3f5e4;
-  --color-teal-200: #a7ebc9;
-  --color-teal-300: #6fe0ac;
+  /* ── Gudrix brand (staging redesign: minimal, black on white) ──
+     PP Mori type, black #09090b for primary actions, deep green
+     #00140c for dark chrome, neon mint #2affaa as the only accent.
+     Every teal-* utility resolves through these variables, so this
+     remap restyles the whole platform. */
+  --color-teal-50: #f5f6f4;
+  --color-teal-100: #e9ebe8;
+  --color-teal-200: #d0d5cf;
+  --color-teal-300: #b0b8b2;
   --color-teal-400: #2affaa;
-  --color-teal-500: #00b871;
-  --color-teal-600: #009c60;
-  --color-teal-700: #007a4b;
-  --color-teal-800: #005a38;
-  --color-teal-900: #003d26;
+  --color-teal-500: #09090b;
+  --color-teal-600: #1b1b1f;
+  --color-teal-700: #09090b;
+  --color-teal-800: #00140c;
+  --color-teal-900: #00140c;
 }
 
 @theme inline {
@@ -31,7 +65,8 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'PP Mori', var(--font-manrope, Manrope), 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: 0.01em;
 }
 
 /* Form fields must not inherit the OS color scheme (Tailwind preflight makes
@@ -59,30 +94,30 @@ body {
 
 .dark {
   color-scheme: dark;
-  --background: #03170e;
-  --foreground: #e0efe8;
+  --background: #0b0b0d;
+  --foreground: #e8e8ec;
 
-  /* Neutral ramp, inverted — green-tinted to match the brand dark #00140c */
-  --color-white: #0b241a;    /* cards / modals / drawers */
-  --color-gray-50: #03170e;  /* page background */
-  --color-gray-100: #123227; /* hovers, pills, subtle fills */
-  --color-gray-200: #1d4433; /* borders */
-  --color-gray-300: #2f5c47; /* strong borders / faint text */
-  --color-gray-400: #7fa393;
-  --color-gray-500: #94b5a6;
-  --color-gray-600: #adc9bc;
-  --color-gray-700: #c8ded3;
-  --color-gray-800: #e0efe8;
-  --color-gray-900: #f0f9f4;
+  /* Neutral ramp, inverted — near-black like the site's #09090b */
+  --color-white: #151517;    /* cards / modals / drawers */
+  --color-gray-50: #0b0b0d;  /* page background */
+  --color-gray-100: #1c1c1f; /* hovers, pills, subtle fills */
+  --color-gray-200: #2a2a2e; /* borders */
+  --color-gray-300: #3f3f46; /* strong borders / faint text */
+  --color-gray-400: #8b8b93;
+  --color-gray-500: #a2a2ab;
+  --color-gray-600: #bcbcc4;
+  --color-gray-700: #d4d4da;
+  --color-gray-800: #e8e8ec;
+  --color-gray-900: #f5f5f7;
 
   /* Accent tints: -50/-100 backgrounds go dark, -600+ text goes light.
      -200/-300/-400/-500 keep their stock values (mixed text/border roles —
      border/ring/bg uses are pinned individually below). */
-  --color-teal-50: #0c3324;
-  --color-teal-100: #114430;
-  --color-teal-600: #4ffdb4;
-  --color-teal-700: #86ffcd;
-  --color-teal-800: #b4ffe0;
+  --color-teal-50: #1c1c1f;
+  --color-teal-100: #26262a;
+  --color-teal-600: #d4d4da;
+  --color-teal-700: #e8e8ec;
+  --color-teal-800: #f0f0f4;
 
   --color-amber-50: #33270e;
   --color-amber-100: #453413;
@@ -131,23 +166,24 @@ body {
 .dark .hover\:text-white:hover { color: #ffffff; }
 
 /* Dark buttons / own chat bubbles: stay dark, just lifted off the dark bg */
-.dark .bg-gray-900 { background-color: #234639; }
-.dark .bg-gray-800 { background-color: #2a5342; }
-.dark .hover\:bg-gray-700:hover { background-color: #315f4c; }
+.dark .bg-gray-900 { background-color: #2e2e34; }
+.dark .bg-gray-800 { background-color: #38383f; }
+.dark .hover\:bg-gray-700:hover { background-color: #42424a; }
 
-/* Colored button hovers must stay darker than the -500 base */
-.dark .hover\:bg-teal-600:hover { background-color: #00875a; }
+/* Primary (black) buttons must stay visible on the dark background */
+.dark .bg-teal-500 { background-color: #2e2e34; }
+.dark .hover\:bg-teal-600:hover { background-color: #3a3a41; }
 .dark .hover\:bg-red-600:hover { background-color: #dc2626; }
 .dark .bg-violet-600 { background-color: #7c3aed; }
 .dark .hover\:bg-violet-700:hover { background-color: #6d28d9; }
 
 /* -200/-300 teal & amber borders/rings/fills on tinted cards go dark
    (their text- twins keep the light stock value for use on dark bubbles) */
-.dark .border-teal-200 { border-color: #14523a; }
-.dark .ring-teal-200 { --tw-ring-color: #14523a; }
-.dark .bg-teal-200 { background-color: #14523a; }
-.dark .border-teal-300 { border-color: #1a6647; }
-.dark .ring-teal-300 { --tw-ring-color: #1a6647; }
+.dark .border-teal-200 { border-color: #303036; }
+.dark .ring-teal-200 { --tw-ring-color: #303036; }
+.dark .bg-teal-200 { background-color: #303036; }
+.dark .border-teal-300 { border-color: #3d3d44; }
+.dark .ring-teal-300 { --tw-ring-color: #3d3d44; }
 .dark .border-amber-300 { border-color: #6b5313; }
 
 /* White-alpha overlays (dark sidebar chrome) keep literal white */

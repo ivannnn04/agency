@@ -290,7 +290,7 @@ export default function Sidebar() {
               <Icon size={18} />
               <span className="text-[9px] font-medium">{item.label}</span>
               {count > 0 && (
-                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-white bg-teal-500 rounded-full px-1 py-px min-w-[16px] text-center">
+                <span className="absolute -top-0.5 right-0.5 text-[9px] font-bold text-[#00140c] bg-[#2affaa] rounded-full px-1 py-px min-w-[16px] text-center">
                   {count > 99 ? '99+' : count}
                 </span>
               )}
@@ -313,7 +313,7 @@ export default function Sidebar() {
         {/* Resize handle */}
         <div
           onMouseDown={startResize}
-          className={`absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-20 transition-colors ${resizing ? 'bg-teal-500/60' : 'hover:bg-teal-500/40'}`}
+          className={`absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-20 transition-colors ${resizing ? 'bg-[#2affaa]/60' : 'hover:bg-[#2affaa]/40'}`}
           title="Потягніть, щоб змінити ширину"
         />
 
@@ -525,7 +525,7 @@ export default function Sidebar() {
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={createPmProject}
-                    className="flex-1 text-xs bg-teal-500 hover:bg-teal-600 text-white rounded-lg py-1.5 transition-colors"
+                    className="flex-1 text-xs bg-[#2affaa] hover:bg-[#7dffcc] text-[#00140c] font-semibold rounded-lg py-1.5 transition-colors"
                   >
                     Створити
                   </button>
@@ -590,8 +590,8 @@ export default function Sidebar() {
                       if (count === 0) return null
                       return (
                         <span
-                          className={`ml-auto flex-shrink-0 text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
-                            u?.clientNew ? 'bg-amber-500 animate-pulse' : 'bg-teal-500'
+                          className={`ml-auto flex-shrink-0 text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
+                            u?.clientNew ? 'bg-amber-500 animate-pulse text-white' : 'bg-[#2affaa] text-[#00140c]'
                           }`}
                           title={u?.clientNew ? 'Клієнт написав у чат' : 'Нові повідомлення в чаті'}
                         >
@@ -635,7 +635,7 @@ export default function Sidebar() {
                   <Hash size={12} className="flex-shrink-0 text-teal-400" />
                   <span className="truncate">{c.name}</span>
                   {gc > 0 && (
-                    <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-white bg-teal-500 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                    <span className="ml-auto flex-shrink-0 text-[10px] font-bold text-[#00140c] bg-[#2affaa] rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                       {gc > 99 ? '99+' : gc}
                     </span>
                   )}

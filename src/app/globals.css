@@ -69,6 +69,35 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* ── Docs editor prose (contentEditable on /docs) ── */
+.doc-editor h1 { font-size: 1.7rem; font-weight: 700; margin: 1.2em 0 0.4em; color: var(--color-gray-900); }
+.doc-editor h2 { font-size: 1.35rem; font-weight: 700; margin: 1.1em 0 0.35em; color: var(--color-gray-900); }
+.doc-editor h3 { font-size: 1.1rem; font-weight: 600; margin: 1em 0 0.3em; color: var(--color-gray-900); }
+.doc-editor p { margin: 0.35em 0; }
+.doc-editor ul { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
+.doc-editor ol { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
+.doc-editor li { margin: 0.15em 0; }
+.doc-editor blockquote {
+  border-left: 3px solid var(--color-gray-300);
+  padding-left: 1em;
+  margin: 0.6em 0;
+  color: var(--color-gray-500);
+}
+.doc-editor pre {
+  background: var(--color-gray-100);
+  border-radius: 0.6rem;
+  padding: 0.75em 1em;
+  margin: 0.6em 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+.doc-editor a { color: var(--color-teal-600); text-decoration: underline; }
+.doc-editor hr { border: none; border-top: 1px solid var(--color-gray-200); margin: 1.2em 0; }
+.doc-editor .doc-check { display: flex; align-items: flex-start; gap: 0.5em; margin: 0.2em 0; }
+.doc-editor .doc-check input[type="checkbox"] { margin-top: 0.35em; accent-color: #09090b; }
+.doc-editor .doc-check:has(input:checked) { color: var(--color-gray-400); text-decoration: line-through; }
+
 /* Form fields must not inherit the OS color scheme (Tailwind preflight makes
    them inherit body color). Track our own theme via the gray ramp variables.
    Lives in the base layer so utility classes like text-white still win. */

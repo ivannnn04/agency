@@ -98,6 +98,10 @@ export default function LoginPage() {
             </button>
           </form>
         )}
+
+        <a href="/team/login" className="block text-center text-xs text-gray-500 hover:text-[#2affaa] mt-6 transition-colors">
+          Я в команді — вхід для учасників →
+        </a>
       </div>
     </div>
   )

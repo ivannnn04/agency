@@ -31,11 +31,11 @@ export default function TeamLoginPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 w-full max-w-sm p-8">
         <div className="flex items-center gap-2.5 mb-8">
-          <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">A</span>
+          <div className="w-8 h-8 bg-[#00140c] rounded-lg flex items-center justify-center">
+            <span className="text-white font-extrabold text-base leading-none">g</span>
           </div>
           <div>
-            <p className="font-semibold text-sm text-gray-900">Gudrix</p>
+            <p className="font-extrabold text-sm text-gray-900 lowercase tracking-tight">gudrix<span className="text-[#2affaa]">.</span></p>
             <p className="text-xs text-gray-400">Cowork Space</p>
           </div>
         </div>
@@ -78,6 +78,10 @@ export default function TeamLoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <a href="/login" className="block text-center text-xs text-gray-400 hover:text-gray-600 mt-6 transition-colors">
+          Я адмін — вхід через Google →
+        </a>
       </div>
     </div>
   )

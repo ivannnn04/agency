@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Gudrix Cowork Space',
     short_name: 'Gudrix',
     description: 'Управління проєктами та фінансами агенції Gudrix',
-    start_url: '/',
+    start_url: '/start',
     display: 'standalone',
     background_color: '#00140c',
     theme_color: '#00140c',

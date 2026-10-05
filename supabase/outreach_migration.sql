@@ -18,3 +18,5 @@ create index if not exists outreach_status_idx on outreach_proposals (status);
 alter table outreach_proposals enable row level security;
 drop policy if exists "outreach_all" on outreach_proposals;
 create policy "outreach_all" on outreach_proposals for all using (true) with check (true);
+-- Converted proposals keep a link to the CRM lead they became
+alter table outreach_proposals add column if not exists lead_id uuid references crm_leads(id) on delete set null;

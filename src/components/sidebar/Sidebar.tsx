@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun, Clapperboard, UserRound,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun, Clapperboard, UserRound, Send,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -222,13 +222,14 @@ export default function Sidebar() {
   const onProfile = pathname.startsWith('/profile')
   const onRecord = pathname.startsWith('/record')
   const onDocs = pathname.startsWith('/docs')
+  const onOutreach = pathname.startsWith('/outreach')
   // Pages with their own full-width layout show only the icon rail
-  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs
+  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
-      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs,
+      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach,
       go: () => { setSection('finance'); router.push('/') },
     },
     {
@@ -251,6 +252,11 @@ export default function Sidebar() {
       key: 'docs', label: 'Доки', icon: FileText,
       active: onDocs,
       go: () => router.push('/docs'),
+    },
+    {
+      key: 'outreach', label: 'Аутріч', icon: Send,
+      active: onOutreach,
+      go: () => router.push('/outreach'),
     },
     {
       key: 'record', label: 'Запис', icon: Clapperboard,

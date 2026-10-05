@@ -37,5 +37,6 @@ export const config = {
   //   (called by designers, clients and scheduled jobs — no admin cookie there)
   // - /api/push/* (subscribe from team dashboard; dispatch from Supabase webhook)
   // - /start (public PWA launcher — routes to the right sign-in)
-  matcher: ['/((?!login|start|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
+  // - /api/outreach (browser Claude agents post proposals with an API key)
+  matcher: ['/((?!login|start|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/outreach|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
 }

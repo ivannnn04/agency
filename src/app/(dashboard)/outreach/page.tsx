@@ -22,6 +22,8 @@ interface Proposal {
   status: 'sent' | 'replied' | 'won' | 'lost'
   notes: string | null
   lead_id: string | null
+  client_reply?: string | null
+  replied_at?: string | null
   sent_at: string
 }
 
@@ -407,6 +409,21 @@ export default function OutreachPage() {
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-xl p-4">
                 {detail.cover_letter || '— без тексту —'}
               </div>
+              {detail.client_reply && (
+                <>
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2 mt-5">
+                    Відповідь клієнта
+                    {detail.replied_at && (
+                      <span className="text-gray-400 font-normal normal-case ml-2">
+                        {new Date(detail.replied_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </p>
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-amber-50 border border-amber-100 rounded-xl p-4">
+                    {detail.client_reply}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-2 p-5 border-t border-gray-100 flex-wrap">

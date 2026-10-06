@@ -58,6 +58,22 @@ export default function OutreachPage() {
   const [detail, setDetail] = useState<Proposal | null>(null)
   const [converting, setConverting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [thread, setThread] = useState<{ id: string; message: string; created_at: string }[]>([])
+
+  // The client's message thread for the open card (table may be unmigrated — fine)
+  useEffect(() => {
+    if (!detail?.id) { setThread([]); return }
+    let alive = true
+    ;(async () => {
+      const { data } = await supabase
+        .from('outreach_replies')
+        .select('id, message, created_at')
+        .eq('proposal_id', detail.id)
+        .order('created_at', { ascending: true })
+      if (alive) setThread(data ?? [])
+    })()
+    return () => { alive = false }
+  }, [detail?.id])
 
   useEffect(() => { load() }, [])
 
@@ -409,18 +425,23 @@ export default function OutreachPage() {
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-xl p-4">
                 {detail.cover_letter || '— без тексту —'}
               </div>
-              {detail.client_reply && (
+              {(thread.length > 0 || detail.client_reply) && (
                 <>
                   <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2 mt-5">
-                    Відповідь клієнта
-                    {detail.replied_at && (
-                      <span className="text-gray-400 font-normal normal-case ml-2">
-                        {new Date(detail.replied_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
+                    Діалог із клієнтом
                   </p>
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-amber-50 border border-amber-100 rounded-xl p-4">
-                    {detail.client_reply}
+                  <div className="flex flex-col gap-2">
+                    {(thread.length > 0
+                      ? thread
+                      : [{ id: 'last', message: detail.client_reply!, created_at: detail.replied_at ?? detail.sent_at }]
+                    ).map(r => (
+                      <div key={r.id} className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-amber-50 border border-amber-100 rounded-xl p-4">
+                        <p className="text-[10px] text-amber-600/70 mb-1">
+                          {new Date(r.created_at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {r.message}
+                      </div>
+                    ))}
                   </div>
                 </>
               )}

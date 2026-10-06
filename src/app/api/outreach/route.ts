@@ -74,9 +74,34 @@ export async function PATCH(req: NextRequest) {
 
   const patch: Record<string, unknown> = {}
   if (['sent', 'replied', 'won', 'lost'].includes(status)) patch.status = status
+
+  // Client messages build a thread: every NEW message is logged and pushed;
+  // an exact repeat (agent re-reading the dialog) is silently ignored
+  let newReply = false
+  const hadReplyBefore = !!proposal.client_reply
   if (body.client_reply) {
-    patch.client_reply = String(body.client_reply).slice(0, 10000)
+    const msg = String(body.client_reply).slice(0, 10000)
+    const { data: dup, error: thrErr } = await supabaseAdmin
+      .from('outreach_replies')
+      .select('id')
+      .eq('proposal_id', proposal.id)
+      .eq('message', msg)
+      .maybeSingle()
+    if (thrErr) {
+      // outreach_replies not migrated yet — fall back to the last stored reply
+      newReply = msg !== proposal.client_reply
+    } else if (!dup) {
+      await supabaseAdmin.from('outreach_replies').insert({
+        proposal_id: proposal.id,
+        message: msg,
+        ...(body.replied_at ? { created_at: body.replied_at } : {}),
+      })
+      newReply = true
+    }
+    patch.client_reply = msg
     patch.replied_at = body.replied_at ?? new Date().toISOString()
+    // A fresh message bumps closed-nothing statuses back to "replied"
+    if (!patch.status && proposal.status === 'sent') patch.status = 'replied'
   } else if (body.replied_at) {
     patch.replied_at = body.replied_at
   }
@@ -100,15 +125,18 @@ export async function PATCH(req: NextRequest) {
     leadId = await ensureLead(proposal, body.client_reply ? String(body.client_reply) : undefined)
   }
 
-  // A client replied → push straight to the admin's phone
-  if (body.client_reply || wantsLead) {
+  // Push the admin's phone: on every NEW client message, and on the first
+  // lead-marking even without text
+  if (newReply || (wantsLead && !proposal.lead_id)) {
     const who = proposal.client_name || proposal.job_title
     const srcLabel = SOURCE_LABEL[proposal.source] ?? proposal.source
     await sendPushTo(['admin'], {
-      title: `🎉 Відповідь на пропозал (${srcLabel})`,
+      title: newReply && hadReplyBefore
+        ? `💬 ${who} написали ще (${srcLabel})`
+        : `🎉 Відповідь на пропозал (${srcLabel})`,
       body: body.client_reply ? `${who}: ${String(body.client_reply)}` : `${who} відповіли на пропозал`,
       url: '/outreach',
-      tag: `outreach-${proposal.id}`,
+      tag: `outreach-${proposal.id}-${Date.now()}`,
     })
   }
 
@@ -118,6 +146,7 @@ export async function PATCH(req: NextRequest) {
     status: (patch.status as string) ?? proposal.status,
     lead_id: leadId,
     lead_created: wantsLead && !proposal.lead_id && !!leadId,
+    duplicate_reply: !!body.client_reply && !newReply,
   })
 }
 

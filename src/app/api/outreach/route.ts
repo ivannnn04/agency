@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
+import { sendPushTo } from '@/lib/pushServer'
 
 // Intake for the browser Claude agents that submit proposals on Dribbble/
 // Behance: they POST every sent proposal here with the OUTREACH_API_KEY.
@@ -97,6 +98,18 @@ export async function PATCH(req: NextRequest) {
   let leadId = proposal.lead_id as string | null
   if (wantsLead) {
     leadId = await ensureLead(proposal, body.client_reply ? String(body.client_reply) : undefined)
+  }
+
+  // A client replied → push straight to the admin's phone
+  if (body.client_reply || wantsLead) {
+    const who = proposal.client_name || proposal.job_title
+    const srcLabel = SOURCE_LABEL[proposal.source] ?? proposal.source
+    await sendPushTo(['admin'], {
+      title: `🎉 Відповідь на пропозал (${srcLabel})`,
+      body: body.client_reply ? `${who}: ${String(body.client_reply)}` : `${who} відповіли на пропозал`,
+      url: '/outreach',
+      tag: `outreach-${proposal.id}`,
+    })
   }
 
   return NextResponse.json({

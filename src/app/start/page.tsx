@@ -27,7 +27,7 @@ export default function StartPage() {
         // Admin — NextAuth session
         const res = await fetch('/api/auth/session')
         const s = res.ok ? await res.json() : null
-        if (s?.user) { router.replace('/'); return }
+        if (s?.user) { router.replace('/overview'); return }
       } catch { /* show the chooser */ }
       setChecking(false)
     })()

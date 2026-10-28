@@ -58,7 +58,7 @@ export default function LoginPage() {
 
         {tab === 'admin' ? (
           <button
-            onClick={() => signIn('google', { callbackUrl: '/' })}
+            onClick={() => signIn('google', { callbackUrl: '/overview' })}
             className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-medium py-3 px-6 rounded-xl hover:bg-gray-100 transition-colors"
           >
             <svg width="20" height="20" viewBox="0 0 24 24">

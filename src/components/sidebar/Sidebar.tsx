@@ -24,7 +24,6 @@ function currencySymbol(currency: string) {
 }
 
 const financeNav = [
-  { label: 'CEO огляд', href: '/overview',    icon: Gauge },
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },
@@ -224,13 +223,19 @@ export default function Sidebar() {
   const onRecord = pathname.startsWith('/record')
   const onDocs = pathname.startsWith('/docs')
   const onOutreach = pathname.startsWith('/outreach')
+  const onOverview = pathname.startsWith('/overview')
   // Pages with their own full-width layout show only the icon rail
-  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach
+  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
+      key: 'overview', label: 'Дашборд', icon: Gauge,
+      active: onOverview,
+      go: () => router.push('/overview'),
+    },
+    {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
-      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach,
+      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach && !onOverview,
       go: () => { setSection('finance'); router.push('/') },
     },
     {

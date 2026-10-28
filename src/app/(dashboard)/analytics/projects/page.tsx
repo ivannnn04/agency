@@ -41,6 +41,7 @@ interface Detail {
   monthly: MonthPoint[]
   byPerson: ByPerson[]
   transactions: TxRow[]
+  unassigned: TxRow[]
 }
 
 const MONTHS = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру']
@@ -169,6 +170,21 @@ export default function ProjectsPage() {
 
     if (!txs) { setLoading(null); return }
 
+    // Income/expense logged WITHOUT a project — the usual reason a client's
+    // money doesn't show in the project's numbers. Offered for one-click
+    // attachment below the transactions table.
+    const { data: unassigned } = await supabase
+      .from('transactions')
+      .select(`id, date, type, amount, currency, comment, is_planned,
+        counterparty:counterparties(name),
+        category:categories(name)`)
+      .is('project_id', null)
+      .neq('type', 'transfer')
+      .gte('date', `${year}-01-01`)
+      .lte('date', `${year}-12-31`)
+      .order('date', { ascending: false })
+      .limit(50)
+
     // Monthly chart data (amounts in USD)
     const monthly: MonthPoint[] = MONTHS.map((m, i) => {
       const mo = txs.filter(t => new Date(t.date).getMonth() === i)
@@ -200,8 +216,21 @@ export default function ProjectsPage() {
       monthly,
       byPerson: Object.values(personMap).sort((a, b) => b.expense - a.expense),
       transactions: txs as unknown as TxRow[],
+      unassigned: (unassigned ?? []) as unknown as TxRow[],
     }}))
     setLoading(null)
+  }
+
+  // Attach a project-less transaction to this project and refresh the numbers
+  async function assignTx(projectId: string, txId: string) {
+    await supabase.from('transactions').update({ project_id: projectId }).eq('id', txId)
+    setDetails(d => {
+      const next = { ...d }
+      delete next[projectId]
+      return next
+    })
+    await fetchSummary()
+    await fetchDetail(projectId)
   }
 
   function toggle(id: string) {
@@ -528,6 +557,46 @@ export default function ProjectsPage() {
                                 </table>
                               </div>
                             </div>
+
+                            {/* Transactions logged without a project — attach in one click */}
+                            {det.unassigned.length > 0 && (
+                              <div className="bg-white rounded-2xl border border-amber-100 overflow-hidden">
+                                <div className="px-4 py-3 bg-amber-50/60">
+                                  <p className="text-sm font-semibold text-amber-700">Транзакції без проєкту ({det.unassigned.length})</p>
+                                  <p className="text-[11px] text-amber-600/80 mt-0.5">
+                                    Ці гроші не враховані в жодному проєкті. Якщо щось із цього стосується «{p.name}» — натисни «→ сюди», і дохід/витрата одразу зʼявиться в цифрах проєкту.
+                                  </p>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto">
+                                  <table className="w-full text-xs">
+                                    <tbody>
+                                      {det.unassigned.map(t => (
+                                        <tr key={t.id} className="border-b border-gray-50">
+                                          <td className="py-2 px-4 text-gray-500 whitespace-nowrap">
+                                            {new Date(t.date).toLocaleDateString('uk-UA')}
+                                          </td>
+                                          <td className="py-2 px-4 text-gray-700 max-w-xs truncate">
+                                            {(t.counterparty as { name?: string } | null)?.name || t.comment || '—'}
+                                          </td>
+                                          <td className={`py-2 px-4 text-right font-medium whitespace-nowrap ${t.type === 'income' ? 'text-teal-600' : 'text-red-500'}`}>
+                                            {t.type === 'income' ? '+' : '−'}{fmt(toEUR(t.amount, t.currency))}
+                                          </td>
+                                          <td className="py-2 px-4 text-right">
+                                            <button
+                                              onClick={() => assignTx(p.id, t.id)}
+                                              className="text-xs font-medium bg-gray-900 hover:bg-gray-700 text-white px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap"
+                                              title={`Привʼязати до «${p.name}»`}
+                                            >
+                                              → сюди
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
 
                           </div>
                         ) : null}

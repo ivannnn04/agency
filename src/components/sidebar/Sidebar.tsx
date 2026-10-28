@@ -24,6 +24,7 @@ function currencySymbol(currency: string) {
 }
 
 const financeNav = [
+  { label: 'CEO огляд', href: '/overview',    icon: Gauge },
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },

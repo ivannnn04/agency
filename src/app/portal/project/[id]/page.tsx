@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowLeft, Calendar, Flag, Clock, MessageSquare, X, FilePen, Paperclip, Loader2, CalendarDays,
-  NotebookPen, Plus, ReceiptText,
+  NotebookPen, Plus, ReceiptText, CircleCheck, AlertTriangle, Users, FilePen as CrIcon,
 } from 'lucide-react'
 import {
   MentionComposer, MessageBody, Attachment, fileTooBig, MAX_FILE_MB, safeStoragePath,
@@ -56,6 +56,180 @@ interface ChatMessage {
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
+
+// ── Client-facing project dashboard (the Overview view) ────────────────────────
+// Everything is computed from the payload the page already has — the last
+// board column counts as "done".
+function OverviewDashboard({ data, sym, onOpenBoard, onOpenChat }: {
+  data: PortalProjectData
+  sym: string
+  onOpenBoard: () => void
+  onOpenChat: () => void
+}) {
+  const { project, columns, tasks, assigneesByTask, timeByTask, people, changeRequests } = data
+  const lastCol = columns.length > 0 ? columns[columns.length - 1] : null
+  const doneIds = new Set(tasks.filter(t => t.column_id === lastCol?.id).map(t => t.id))
+  const total = tasks.length
+  const done = doneIds.size
+  const progress = total > 0 ? Math.round((done / total) * 100) : 0
+
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const overdue = tasks
+    .filter(t => t.due_date && !doneIds.has(t.id) && new Date(t.due_date) < today)
+    .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1))
+  const upcoming = tasks
+    .filter(t => t.due_date && !doneIds.has(t.id) && new Date(t.due_date) >= today)
+    .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1))
+    .slice(0, 5)
+
+  const trackedTotal = timeByTask ? Object.values(timeByTask).reduce((s, v) => s + v, 0) : null
+  const openCrs = (changeRequests ?? []).filter(c => c.status === 'open')
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const taskById: Record<string, PortalTask> = {}
+  for (const t of tasks) taskById[t.id] = t
+
+  return (
+    <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto flex flex-col gap-4">
+      {/* Progress hero */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
+          <div>
+            <p className="text-xs text-gray-400">Project progress</p>
+            <p className="text-3xl font-bold text-gray-900">{progress}%</p>
+          </div>
+          <p className="text-sm text-gray-500">
+            <span className="font-semibold text-gray-900">{done}</span> of {total} tasks done
+          </p>
+        </div>
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+        </div>
+        {/* Per-stage breakdown */}
+        <div className="flex flex-col gap-2 mt-5">
+          {columns.map(col => {
+            const n = tasks.filter(t => t.column_id === col.id).length
+            return (
+              <div key={col.id} className="flex items-center gap-3">
+                <span className="text-xs text-gray-500 w-28 sm:w-36 truncate">{col.name}</span>
+                <div className="flex-1 h-2 bg-gray-50 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: total > 0 ? `${(n / total) * 100}%` : 0, backgroundColor: col.color }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-gray-700 w-5 text-right">{n}</span>
+              </div>
+            )
+          })}
+        </div>
+        <button onClick={onOpenBoard} className="text-xs text-teal-600 hover:underline mt-4">
+          Open the board →
+        </button>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <p className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1"><CircleCheck size={12} /> Done</p>
+          <p className="text-xl font-bold text-gray-900">{done}<span className="text-sm text-gray-400 font-normal"> / {total}</span></p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <p className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1"><AlertTriangle size={12} /> Overdue</p>
+          <p className={`text-xl font-bold ${overdue.length > 0 ? 'text-red-500' : 'text-gray-900'}`}>{overdue.length}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <p className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1"><CrIcon size={12} /> Open requests</p>
+          <p className="text-xl font-bold text-gray-900">{openCrs.length}</p>
+        </div>
+        {trackedTotal != null ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <p className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1"><Clock size={12} /> Hours logged</p>
+            <p className="text-xl font-bold text-gray-900">{formatHours(trackedTotal)}</p>
+          </div>
+        ) : (project.contract_amount ?? 0) > 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <p className="text-[11px] text-gray-400 mb-1">Budget</p>
+            <p className="text-xl font-bold text-gray-900">{sym}{project.contract_amount!.toLocaleString('en-US')}</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <p className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-1"><Users size={12} /> Team</p>
+            <p className="text-xl font-bold text-gray-900">{people.length}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Deadlines */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <p className="text-sm font-semibold text-gray-900 mb-3">Deadlines</p>
+          {overdue.length === 0 && upcoming.length === 0 ? (
+            <p className="text-xs text-gray-300">No dated tasks yet</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {overdue.map(t => (
+                <div key={t.id} className="flex items-center gap-2.5">
+                  <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
+                  <span className="text-sm text-gray-800 flex-1 truncate">{t.title}</span>
+                  <span className="text-xs font-semibold text-red-500 whitespace-nowrap">{fmtDate(t.due_date!)}</span>
+                </div>
+              ))}
+              {upcoming.map(t => (
+                <div key={t.id} className="flex items-center gap-2.5">
+                  <Calendar size={13} className="text-gray-300 flex-shrink-0" />
+                  <span className="text-sm text-gray-800 flex-1 truncate">{t.title}</span>
+                  {(assigneesByTask[t.id] ?? []).length > 0 && (
+                    <span className="text-[11px] text-gray-400 hidden sm:inline truncate max-w-[90px]">{assigneesByTask[t.id].join(', ')}</span>
+                  )}
+                  <span className="text-xs text-gray-500 whitespace-nowrap">{fmtDate(t.due_date!)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Team + recent change requests */}
+        <div className="flex flex-col gap-4">
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <p className="text-sm font-semibold text-gray-900 mb-3">Your team</p>
+            <div className="flex flex-wrap gap-1.5">
+              {people.length === 0 ? (
+                <p className="text-xs text-gray-300">Team is being assigned</p>
+              ) : people.map(name => (
+                <span key={name} className="text-xs bg-gray-50 border border-gray-100 text-gray-600 px-2.5 py-1 rounded-lg">{name}</span>
+              ))}
+            </div>
+            <button onClick={onOpenChat} className="text-xs text-teal-600 hover:underline mt-3">
+              Message the team →
+            </button>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <p className="text-sm font-semibold text-gray-900 mb-3">Your change requests</p>
+            {(changeRequests ?? []).length === 0 ? (
+              <p className="text-xs text-gray-300">None yet — open a task on the board to request changes</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {(changeRequests ?? []).slice(0, 3).map(cr => (
+                  <div key={cr.id} className="flex items-start gap-2.5">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex-shrink-0 mt-0.5 ${
+                      cr.status === 'done' ? 'bg-teal-50 text-teal-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {cr.status === 'done' ? 'Done' : 'Open'}
+                    </span>
+                    <div className="min-w-0">
+                      {taskById[cr.task_id] && <p className="text-[11px] text-gray-400 truncate">{taskById[cr.task_id].title}</p>}
+                      <p className="text-sm text-gray-700 line-clamp-2">{cr.content || 'Attached files'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 const PRIORITY_COLOR: Record<string, string> = { low: '#9CA3AF', medium: '#F59E0B', high: '#EF4444' }
 const PRIORITY_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
@@ -78,7 +252,7 @@ export default function PortalProjectPage() {
   const [notesOpen, setNotesOpen] = useState(false)
   const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [addTaskOpen, setAddTaskOpen] = useState(false)
-  const [view, setView] = useState<'board' | 'timeline'>('board')
+  const [view, setView] = useState<'overview' | 'board' | 'timeline'>('overview')
   const [crTask, setCrTask] = useState<PortalTask | null>(null)
 
   const refetch = useCallback(async (accessToken: string) => {
@@ -123,15 +297,21 @@ export default function PortalProjectPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#00140c] px-6 py-4 flex items-center justify-between">
+      <header className="bg-[#00140c] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between flex-wrap gap-y-2 gap-x-2">
         <div className="flex items-center gap-3">
           <Link href="/portal" className="text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={16} />
           </Link>
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: project.color ?? '#14b8a6' }} />
           <p className="text-white font-semibold text-sm">{project.name}</p>
-          {/* Board / Timeline switcher */}
+          {/* Overview / Board / Timeline switcher */}
           <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5 ml-3">
+            <button
+              onClick={() => setView('overview')}
+              className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'overview' ? 'bg-white text-gray-900' : 'text-gray-400 hover:text-white'}`}
+            >
+              Overview
+            </button>
             <button
               onClick={() => setView('board')}
               className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'board' ? 'bg-white text-gray-900' : 'text-gray-400 hover:text-white'}`}
@@ -153,7 +333,7 @@ export default function PortalProjectPage() {
             className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
             title="Add a task to the backlog"
           >
-            <Plus size={13} /> Add task
+            <Plus size={13} /> <span className="hidden sm:inline">Add task</span>
           </button>
           <button
             onClick={() => { setChatOpen(false); setNotesOpen(false); setInvoicesOpen(v => !v) }}
@@ -161,7 +341,7 @@ export default function PortalProjectPage() {
               invoicesOpen ? 'bg-indigo-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
           >
-            <ReceiptText size={13} /> Invoices
+            <ReceiptText size={13} /> <span className="hidden sm:inline">Invoices</span>
           </button>
           <button
             onClick={() => { setChatOpen(false); setInvoicesOpen(false); setNotesOpen(v => !v) }}
@@ -169,13 +349,13 @@ export default function PortalProjectPage() {
               notesOpen ? 'bg-amber-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
           >
-            <NotebookPen size={13} /> Notes
+            <NotebookPen size={13} /> <span className="hidden sm:inline">Notes</span>
           </button>
           <button
             onClick={() => { setNotesOpen(false); setInvoicesOpen(false); setChatOpen(v => !v) }}
             className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
           >
-            <MessageSquare size={13} /> Team chat
+            <MessageSquare size={13} /> <span className="hidden sm:inline">Team chat</span>
           </button>
         </div>
       </header>
@@ -184,6 +364,13 @@ export default function PortalProjectPage() {
         <div className="h-[calc(100vh-64px)] bg-white">
           <GanttView tasks={tasks} onUpdate={() => {}} readOnly />
         </div>
+      ) : view === 'overview' ? (
+        <OverviewDashboard
+          data={data}
+          sym={sym}
+          onOpenBoard={() => setView('board')}
+          onOpenChat={() => { setNotesOpen(false); setInvoicesOpen(false); setChatOpen(true) }}
+        />
       ) : (
       <div className="px-6 py-6">
         {/* Budget */}

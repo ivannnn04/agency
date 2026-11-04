@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  FileText, Plus, Trash2, ChevronRight, ChevronDown, Search, Loader2, Check,
+  FileText, Plus, Trash2, ChevronRight, ChevronDown, ChevronLeft, Search, Loader2, Check,
   Bold, Italic, Underline, Strikethrough, List, ListOrdered, Quote, Code,
   Link2, Minus, Heading1, Heading2, Heading3, CheckSquare,
 } from 'lucide-react'
@@ -176,8 +176,8 @@ export default function DocsPage() {
 
   return (
     <div className="flex h-full">
-      {/* Doc tree */}
-      <aside className="w-72 border-r border-gray-100 flex flex-col flex-shrink-0 bg-white">
+      {/* Doc tree — on phones it IS the screen until a doc is opened */}
+      <aside className={`w-full md:w-72 border-r border-gray-100 flex-col flex-shrink-0 bg-white ${activeId ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-3 border-b border-gray-100 flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
             <Search size={13} className="text-gray-300 flex-shrink-0" />
@@ -210,7 +210,7 @@ export default function DocsPage() {
       </aside>
 
       {/* Editor */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white">
+      <div className={`flex-1 flex-col min-w-0 bg-white ${activeId ? 'flex' : 'hidden md:flex'}`}>
         {dbError && (
           <div className="m-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-2xl px-4 py-3">{dbError}</div>
         )}
@@ -228,7 +228,14 @@ export default function DocsPage() {
         ) : (
           <>
             {/* Toolbar */}
-            <div className="flex items-center gap-0.5 px-6 py-2 border-b border-gray-100 flex-wrap flex-shrink-0">
+            <div className="flex items-center gap-0.5 px-3 sm:px-6 py-2 border-b border-gray-100 flex-wrap flex-shrink-0">
+              <button
+                className={`${toolbarBtn} md:hidden`}
+                onClick={() => setActiveId(null)}
+                title="До списку документів"
+              >
+                <ChevronLeft size={15} />
+              </button>
               <button className={toolbarBtn} onClick={() => exec('formatBlock', '<h1>')} title="Заголовок 1"><Heading1 size={15} /></button>
               <button className={toolbarBtn} onClick={() => exec('formatBlock', '<h2>')} title="Заголовок 2"><Heading2 size={15} /></button>
               <button className={toolbarBtn} onClick={() => exec('formatBlock', '<h3>')} title="Заголовок 3"><Heading3 size={15} /></button>
@@ -256,7 +263,7 @@ export default function DocsPage() {
 
             {/* Title + content */}
             <div className="flex-1 overflow-y-auto">
-              <div className="max-w-3xl mx-auto px-8 py-8">
+              <div className="max-w-3xl mx-auto px-4 sm:px-8 py-5 sm:py-8">
                 <input
                   value={activeDoc.title}
                   onChange={e => scheduleSave(activeDoc.id, { title: e.target.value })}

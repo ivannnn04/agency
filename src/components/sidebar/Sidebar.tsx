@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Sun, Clapperboard, UserRound, Send,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -242,11 +242,6 @@ export default function Sidebar() {
       key: 'leads', label: 'Ліди', icon: Users,
       active: onLeads,
       go: () => router.push('/leads'),
-    },
-    {
-      key: 'daily', label: 'Мій день', icon: Sun,
-      active: onDaily,
-      go: () => router.push('/daily'),
     },
     {
       key: 'projects', label: 'Проєкти', icon: FolderKanban,

@@ -54,72 +54,87 @@ export async function POST(req: NextRequest) {
 
   const ctx = await loadContext()
 
-  // ── Execute a confirmed action ──
-  if (body.action) {
-    const a = body.action as Action
-    try {
-      if (a.kind === 'add_transaction') {
-        if (!a.account_id || !(a.amount > 0) || !CUR.includes(a.currency)) throw new Error('Некоректна транзакція')
-        const { data: cats } = await supabaseAdmin
-          .from('categories').select('id').eq('type', a.type).ilike('name', a.type === 'income' ? '%дохід%' : '%інше%').limit(1)
-        await supabaseAdmin.from('transactions').insert({
-          type: a.type,
-          amount: a.amount,
-          currency: a.currency,
-          account_id: a.account_id,
-          category_id: cats?.[0]?.id ?? null,
-          project_id: a.project_id,
-          date: new Date().toISOString(),
-          comment: a.comment || 'Голосова команда',
-          is_planned: false,
-        })
-        await supabaseAdmin.rpc('update_account_balance', {
-          p_account_id: a.account_id,
-          p_delta: a.type === 'income' ? a.amount : -a.amount,
-        })
-      } else if (a.kind === 'add_task') {
-        const { data: cols } = await supabaseAdmin
-          .from('pm_columns').select('id').eq('project_id', a.project_id).order('position').limit(1)
-        if (!cols?.[0]) throw new Error('У проєкту немає колонок на дошці')
-        const base = {
-          title: a.title,
-          finance_project_id: a.project_id,
-          column_id: cols[0].id,
-          team_member_id: a.assignee_id,
-          status: 'todo',
-          priority: 'medium',
-        }
-        let { error } = await supabaseAdmin.from('pm_tasks').insert({ ...base, estimate_hours: suggestEstimate(a.title) })
-        if (error && error.message.includes('estimate_hours')) {
-          ;({ error } = await supabaseAdmin.from('pm_tasks').insert(base))
-        }
-        if (error) throw new Error(error.message)
-        if (a.assignee_id) {
-          await supabaseAdmin.from('notifications').insert({
-            type: 'task_created',
-            message: `Ivan створив задачу «${a.title}» (голосом)`,
-            project_id: a.project_id,
-            team_member_id: a.assignee_id,
-            recipient_team_member_id: a.assignee_id,
-          })
-        }
-      } else if (a.kind === 'create_project') {
-        if (!a.name?.trim()) throw new Error('Порожня назва проєкту')
-        await supabaseAdmin.from('projects').insert({ name: a.name.trim(), status: 'active' })
-      } else if (a.kind === 'add_lead') {
-        if (!a.name?.trim()) throw new Error('Порожнє імʼя ліда')
-        await supabaseAdmin.from('crm_leads').insert({
-          name: a.name.trim(),
-          channel: a.channel,
-          amount: a.amount,
-          status: 'new',
-        })
-      } else {
-        throw new Error('Невідома дія')
+  // ── Execute confirmed action(s) ──
+  if (body.action || body.actions) {
+    const list: Action[] = body.actions ?? [body.action]
+    const results: { ok: boolean; text: string }[] = []
+    for (const a of list) {
+      try {
+        await executeAction(a)
+        results.push({ ok: true, text: summarize(a, ctx) })
+      } catch (e) {
+        results.push({ ok: false, text: `${summarize(a, ctx)} — ${(e as Error).message}` })
       }
-      return NextResponse.json({ ok: true, done: summarize(a, ctx) })
-    } catch (e) {
-      return NextResponse.json({ error: (e as Error).message }, { status: 400 })
+    }
+    const failed = results.filter(r => !r.ok)
+    return NextResponse.json({
+      ok: failed.length === 0,
+      results,
+      done: failed.length === 0
+        ? (results.length === 1 ? results[0].text : `Виконано ${results.length} дії`)
+        : `Виконано ${results.length - failed.length} з ${results.length}`,
+    })
+  }
+
+  async function executeAction(a: Action) {
+    if (a.kind === 'add_transaction') {
+      if (!a.account_id || !(a.amount > 0) || !CUR.includes(a.currency)) throw new Error('Некоректна транзакція')
+      const { data: cats } = await supabaseAdmin
+        .from('categories').select('id').eq('type', a.type).ilike('name', a.type === 'income' ? '%дохід%' : '%інше%').limit(1)
+      await supabaseAdmin.from('transactions').insert({
+        type: a.type,
+        amount: a.amount,
+        currency: a.currency,
+        account_id: a.account_id,
+        category_id: cats?.[0]?.id ?? null,
+        project_id: a.project_id,
+        date: new Date().toISOString(),
+        comment: a.comment || 'Голосова команда',
+        is_planned: false,
+      })
+      await supabaseAdmin.rpc('update_account_balance', {
+        p_account_id: a.account_id,
+        p_delta: a.type === 'income' ? a.amount : -a.amount,
+      })
+    } else if (a.kind === 'add_task') {
+      const { data: cols } = await supabaseAdmin
+        .from('pm_columns').select('id').eq('project_id', a.project_id).order('position').limit(1)
+      if (!cols?.[0]) throw new Error('У проєкту немає колонок на дошці')
+      const base = {
+        title: a.title,
+        finance_project_id: a.project_id,
+        column_id: cols[0].id,
+        team_member_id: a.assignee_id,
+        status: 'todo',
+        priority: 'medium',
+      }
+      let { error } = await supabaseAdmin.from('pm_tasks').insert({ ...base, estimate_hours: suggestEstimate(a.title) })
+      if (error && error.message.includes('estimate_hours')) {
+        ;({ error } = await supabaseAdmin.from('pm_tasks').insert(base))
+      }
+      if (error) throw new Error(error.message)
+      if (a.assignee_id) {
+        await supabaseAdmin.from('notifications').insert({
+          type: 'task_created',
+          message: `Ivan створив задачу «${a.title}» (голосом)`,
+          project_id: a.project_id,
+          team_member_id: a.assignee_id,
+          recipient_team_member_id: a.assignee_id,
+        })
+      }
+    } else if (a.kind === 'create_project') {
+      if (!a.name?.trim()) throw new Error('Порожня назва проєкту')
+      await supabaseAdmin.from('projects').insert({ name: a.name.trim(), status: 'active' })
+    } else if (a.kind === 'add_lead') {
+      if (!a.name?.trim()) throw new Error('Порожнє імʼя ліда')
+      await supabaseAdmin.from('crm_leads').insert({
+        name: a.name.trim(),
+        channel: a.channel,
+        amount: a.amount,
+        status: 'new',
+      })
+    } else {
+      throw new Error('Невідома дія')
     }
   }
 
@@ -132,7 +147,7 @@ export async function POST(req: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const system = `Ти — парсер голосових команд адмінки агенції Gudrix. Команди українською. Поточна дата: ${new Date().toISOString().slice(0, 10)}.
-Обери ОДИН інструмент, що відповідає команді. Підбирай id зі списків нижче за змістом (нечітке співпадіння назв — нормально). Якщо рахунок не назвали — обери найдоречніший за валютою. Суми: "п'ятсот доларів" = 500 USD, "дві тисячі гривень" = 2000 UAH.
+Команда може містити КІЛЬКА дій (наприклад "додай витрату ... і створи задачу ...") — тоді виклич кілька інструментів, по одному на кожну дію, у порядку, в якому їх сказали. Підбирай id зі списків нижче за змістом (нечітке співпадіння назв — нормально). Якщо рахунок не назвали — обери найдоречніший за валютою. Суми: "п'ятсот доларів" = 500 USD, "дві тисячі гривень" = 2000 UAH.
 
 РАХУНКИ: ${ctx.accounts.map(a => `${a.id}=${a.name}(${a.currency})`).join('; ')}
 ПРОЄКТИ: ${ctx.projects.map(p => `${p.id}=${p.name}`).join('; ')}
@@ -141,7 +156,7 @@ export async function POST(req: NextRequest) {
   const idEnum = (xs: { id: string }[]) => xs.map(x => x.id)
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 500,
+    max_tokens: 1500,
     system,
     tool_choice: { type: 'any' },
     tools: [
@@ -201,12 +216,16 @@ export async function POST(req: NextRequest) {
     messages: [{ role: 'user', content: transcript }],
   })
 
-  const tu = msg.content.find(b => b.type === 'tool_use')
-  if (!tu || tu.type !== 'tool_use' || tu.name === 'unknown') {
-    const reason = tu && tu.type === 'tool_use' ? (tu.input as { reason?: string }).reason : null
+  const tus = msg.content.filter(b => b.type === 'tool_use' && b.name !== 'unknown')
+  if (tus.length === 0) {
+    const unk = msg.content.find(b => b.type === 'tool_use')
+    const reason = unk && unk.type === 'tool_use' ? (unk.input as { reason?: string }).reason : null
     return NextResponse.json({ unknown: true, reason: reason ?? 'Не зрозумів команду — спробуй ще раз' })
   }
 
-  const action = { kind: tu.name, ...(tu.input as object) } as Action
-  return NextResponse.json({ action, summary: summarize(action, ctx) })
+  const actions = tus.map(tu => (tu.type === 'tool_use' ? ({ kind: tu.name, ...(tu.input as object) } as Action) : null)).filter(Boolean) as Action[]
+  return NextResponse.json({
+    actions,
+    summaries: actions.map(a => summarize(a, ctx)),
+  })
 }

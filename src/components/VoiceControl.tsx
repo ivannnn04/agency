@@ -35,8 +35,9 @@ export default function VoiceControl() {
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
   const [transcript, setTranscript] = useState('')
-  const [summary, setSummary] = useState('')
+  const [summaries, setSummaries] = useState<string[]>([])
   const [message, setMessage] = useState('')
+  const [results, setResults] = useState<{ ok: boolean; text: string }[]>([])
   const actionRef = useRef<unknown>(null)
   const recRef = useRef<SpeechRecognitionLike | null>(null)
   const finalRef = useRef('')
@@ -101,8 +102,8 @@ export default function VoiceControl() {
         setPhase('error')
         return
       }
-      actionRef.current = data.action
-      setSummary(data.summary)
+      actionRef.current = data.actions
+      setSummaries(data.summaries ?? [])
       setPhase('confirm')
     } catch (e) {
       setMessage((e as Error).message)
@@ -160,7 +161,8 @@ export default function VoiceControl() {
   function startListening() {
     setOpen(true)
     setTranscript('')
-    setSummary('')
+    setSummaries([])
+    setResults([])
     setMessage('')
     finalRef.current = ''
     errorRef.current = ''
@@ -222,13 +224,16 @@ export default function VoiceControl() {
       const res = await fetch('/api/voice-command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: actionRef.current }),
+        body: JSON.stringify({ actions: actionRef.current }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Не вдалося виконати')
+      setResults(data.results ?? [])
       setMessage(data.done ?? 'Готово')
       setPhase('done')
-      setTimeout(() => { setOpen(false); setPhase('idle'); window.location.reload() }, 1200)
+      if (data.ok) {
+        setTimeout(() => { setOpen(false); setPhase('idle'); window.location.reload() }, 1600)
+      }
     } catch (e) {
       setMessage((e as Error).message)
       setPhase('error')
@@ -312,13 +317,20 @@ export default function VoiceControl() {
           {phase === 'confirm' && (
             <>
               <p className="text-[11px] text-gray-400 mb-1">«{transcript}»</p>
-              <p className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">{summary}</p>
+              <div className="flex flex-col gap-1.5">
+                {summaries.map((s, i) => (
+                  <p key={i} className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                    {summaries.length > 1 && <span className="text-[10px] font-bold text-gray-300 mt-0.5">{i + 1}</span>}
+                    <span className="min-w-0">{s}</span>
+                  </p>
+                ))}
+              </div>
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={execute}
                   className="flex-1 flex items-center justify-center gap-1.5 bg-gray-900 hover:bg-gray-700 text-white py-2 rounded-xl text-sm font-medium transition-colors"
                 >
-                  <Check size={14} /> Виконати
+                  <Check size={14} /> {summaries.length > 1 ? `Виконати всі (${summaries.length})` : 'Виконати'}
                 </button>
                 <button
                   onClick={startListening}
@@ -339,9 +351,25 @@ export default function VoiceControl() {
           )}
 
           {phase === 'done' && (
-            <p className="flex items-center gap-2 text-sm text-teal-700 py-2">
-              <Check size={15} /> {message}
-            </p>
+            <div className="py-1">
+              {results.length > 1 ? (
+                <div className="flex flex-col gap-1">
+                  {results.map((r, i) => (
+                    <p key={i} className={`flex items-start gap-1.5 text-sm ${r.ok ? 'text-teal-700' : 'text-red-500'}`}>
+                      {r.ok ? <Check size={14} className="mt-0.5 flex-shrink-0" /> : <X size={14} className="mt-0.5 flex-shrink-0" />}
+                      <span className="min-w-0">{r.text}</span>
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="flex items-center gap-2 text-sm text-teal-700">
+                  <Check size={15} /> {message}
+                </p>
+              )}
+              {results.some(r => !r.ok) && (
+                <button onClick={close} className="mt-2 text-xs text-gray-400 hover:text-gray-600">Закрити</button>
+              )}
+            </div>
           )}
 
           {phase === 'error' && (

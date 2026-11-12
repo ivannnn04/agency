@@ -8,6 +8,7 @@ import AddTransactionModal from '@/components/modals/AddTransactionModal'
 import { Settings, Plus, Minus, ArrowLeftRight, Menu, X } from 'lucide-react'
 import { TransactionType } from '@/types'
 import NotificationBell from '@/components/NotificationBell'
+import VoiceControl from '@/components/VoiceControl'
 import CallListener from '@/components/chat/CallListener'
 import { getAdminProfile } from '@/lib/adminProfile'
 
@@ -93,6 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-3 flex-shrink-0">
+            <VoiceControl />
             <NotificationBell />
             <button onClick={() => signOut()} className="text-gray-400 hover:text-white transition-colors">
               <Settings size={18} />

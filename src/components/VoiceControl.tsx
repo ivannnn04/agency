@@ -41,6 +41,8 @@ export default function VoiceControl() {
   const recRef = useRef<SpeechRecognitionLike | null>(null)
   const finalRef = useRef('')
   const errorRef = useRef('')
+  const mediaRecRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
   // Live voice meter (equalizer bars driven by the real mic level)
   const barRefs = useRef<(HTMLSpanElement | null)[]>([])
   const meterStopRef = useRef<(() => void) | null>(null)
@@ -108,6 +110,53 @@ export default function VoiceControl() {
     }
   }, [])
 
+  // Fallback for browsers that block the built-in speech service (Arc,
+  // Brave): record the mic and transcribe server-side with Whisper.
+  async function startRecorder() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      chunksRef.current = []
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        stopMeter()
+        mediaRecRef.current = null
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' })
+        if (blob.size < 2000) {
+          setMessage('Не почув голосу — спробуй ще раз')
+          setPhase('error')
+          return
+        }
+        setPhase('parsing')
+        try {
+          const form = new FormData()
+          form.append('audio', new File([blob], 'voice.webm', { type: blob.type }))
+          const res = await fetch('/api/voice-command/transcribe', { method: 'POST', body: form })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'Не вдалося розпізнати')
+          if (!data.transcript) throw new Error('Не розчув — спробуй ще раз')
+          setTranscript(data.transcript)
+          parse(data.transcript)
+        } catch (e) {
+          setMessage((e as Error).message)
+          setPhase('error')
+        }
+      }
+      mediaRecRef.current = mr
+      setPhase('listening')
+      setTranscript('')
+      startMeter()
+      mr.start()
+    } catch {
+      setMessage('Немає дозволу на мікрофон — дозволь його для сайту')
+      setPhase('error')
+    }
+  }
+
   function startListening() {
     setOpen(true)
     setTranscript('')
@@ -115,9 +164,9 @@ export default function VoiceControl() {
     setMessage('')
     finalRef.current = ''
     errorRef.current = ''
-    if (!supported) {
-      setMessage('Браузер не підтримує розпізнавання мови — спробуй Chrome або Safari')
-      setPhase('error')
+    // Browsers that block the speech service go straight to the recorder
+    if (!supported || localStorage.getItem('gudrix:voiceMode') === 'recorder') {
+      startRecorder()
       return
     }
     const Ctor = (window as unknown as Record<string, new () => SpeechRecognitionLike>).SpeechRecognition
@@ -144,11 +193,17 @@ export default function VoiceControl() {
       const text = finalRef.current.trim()
       if (text) {
         parse(text)
-      } else {
-        // Nothing recognized — never close silently, always say why
-        setMessage(REC_ERRORS[errorRef.current] ?? REC_ERRORS['no-speech'])
-        setPhase('error')
+        return
       }
+      // The built-in service is blocked in this browser (Arc/Brave report
+      // "network") — remember that and switch to the recorder fallback
+      if (errorRef.current === 'network' || errorRef.current === 'service-not-allowed') {
+        localStorage.setItem('gudrix:voiceMode', 'recorder')
+        startRecorder()
+        return
+      }
+      setMessage(REC_ERRORS[errorRef.current] ?? REC_ERRORS['no-speech'])
+      setPhase('error')
     }
     recRef.current = rec
     setPhase('listening')
@@ -158,6 +213,7 @@ export default function VoiceControl() {
 
   function stopListening() {
     recRef.current?.stop()
+    if (mediaRecRef.current && mediaRecRef.current.state !== 'inactive') mediaRecRef.current.stop()
   }
 
   async function execute() {
@@ -181,6 +237,10 @@ export default function VoiceControl() {
 
   function close() {
     recRef.current?.stop()
+    if (mediaRecRef.current && mediaRecRef.current.state !== 'inactive') {
+      mediaRecRef.current.onstop = null
+      mediaRecRef.current.stop()
+    }
     stopMeter()
     setOpen(false)
     setPhase('idle')

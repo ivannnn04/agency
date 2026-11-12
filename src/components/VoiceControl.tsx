@@ -17,9 +17,18 @@ interface SpeechRecognitionLike {
   continuous: boolean
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null
   onend: (() => void) | null
-  onerror: (() => void) | null
+  onerror: ((e: { error?: string }) => void) | null
   start: () => void
   stop: () => void
+}
+
+const REC_ERRORS: Record<string, string> = {
+  'not-allowed': 'Немає дозволу на мікрофон — дозволь його для сайту в налаштуваннях браузера',
+  'service-not-allowed': 'Браузер заблокував розпізнавання мови — спробуй Chrome',
+  'no-speech': 'Не почув голосу — натисни мікрофон і спробуй ще раз',
+  'audio-capture': 'Не бачу мікрофона — перевір, чи він підключений',
+  network: 'Розпізнавання недоступне (потрібен інтернет) — спробуй ще раз',
+  aborted: 'Запис перервано',
 }
 
 export default function VoiceControl() {
@@ -31,6 +40,44 @@ export default function VoiceControl() {
   const actionRef = useRef<unknown>(null)
   const recRef = useRef<SpeechRecognitionLike | null>(null)
   const finalRef = useRef('')
+  const errorRef = useRef('')
+  // Live voice meter (equalizer bars driven by the real mic level)
+  const barRefs = useRef<(HTMLSpanElement | null)[]>([])
+  const meterStopRef = useRef<(() => void) | null>(null)
+
+  async function startMeter() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const ctx = new AudioContext()
+      const src = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 64
+      src.connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      let raf = 0
+      const tick = () => {
+        analyser.getByteFrequencyData(data)
+        const avg = data.reduce((s, v) => s + v, 0) / data.length / 255
+        barRefs.current.forEach((el, i) => {
+          if (!el) return
+          const wave = Math.sin(Date.now() / 120 + i * 1.3) * 0.25 + 0.75
+          el.style.height = `${Math.max(4, Math.round((6 + avg * 26 * wave) * 1.2))}px`
+        })
+        raf = requestAnimationFrame(tick)
+      }
+      tick()
+      meterStopRef.current = () => {
+        cancelAnimationFrame(raf)
+        stream.getTracks().forEach(t => t.stop())
+        ctx.close()
+      }
+    } catch { /* meter is best-effort — recognition still works */ }
+  }
+
+  function stopMeter() {
+    meterStopRef.current?.()
+    meterStopRef.current = null
+  }
 
   const supported =
     typeof window !== 'undefined' &&
@@ -67,6 +114,7 @@ export default function VoiceControl() {
     setSummary('')
     setMessage('')
     finalRef.current = ''
+    errorRef.current = ''
     if (!supported) {
       setMessage('Браузер не підтримує розпізнавання мови — спробуй Chrome або Safari')
       setPhase('error')
@@ -89,16 +137,22 @@ export default function VoiceControl() {
       finalRef.current = final
       setTranscript((final + ' ' + interim).trim())
     }
+    rec.onerror = e => { errorRef.current = e?.error ?? 'unknown' }
     rec.onend = () => {
       recRef.current = null
+      stopMeter()
       const text = finalRef.current.trim()
-      setPhase(p => (p === 'listening' ? 'parsing' : p))
-      if (text) parse(text)
-      else setPhase(p => (p === 'parsing' ? 'idle' : p))
+      if (text) {
+        parse(text)
+      } else {
+        // Nothing recognized — never close silently, always say why
+        setMessage(REC_ERRORS[errorRef.current] ?? REC_ERRORS['no-speech'])
+        setPhase('error')
+      }
     }
-    rec.onerror = () => { /* onend fires next */ }
     recRef.current = rec
     setPhase('listening')
+    startMeter()
     rec.start()
   }
 
@@ -127,6 +181,7 @@ export default function VoiceControl() {
 
   function close() {
     recRef.current?.stop()
+    stopMeter()
     setOpen(false)
     setPhase('idle')
   }
@@ -155,10 +210,33 @@ export default function VoiceControl() {
 
           {phase === 'listening' && (
             <>
-              <p className="text-sm text-gray-700 min-h-[40px]">{transcript || 'Слухаю... кажи 🎙'}</p>
+              <div className="flex flex-col items-center py-3">
+                {/* Pulsing mic circle */}
+                <div className="relative mb-3">
+                  <span className="absolute inset-0 rounded-full bg-red-400/30 animate-ping" />
+                  <span className="absolute -inset-2 rounded-full bg-red-400/15 animate-pulse" />
+                  <span className="relative w-14 h-14 rounded-full bg-red-500 flex items-center justify-center">
+                    <Mic size={22} className="text-white" />
+                  </span>
+                </div>
+                {/* Live equalizer bars driven by the mic level */}
+                <div className="flex items-end gap-1 h-9 mb-1">
+                  {[0, 1, 2, 3, 4, 5, 6].map(i => (
+                    <span
+                      key={i}
+                      ref={el => { barRefs.current[i] = el }}
+                      className="w-1.5 rounded-full bg-red-400 transition-[height] duration-75"
+                      style={{ height: 5 }}
+                    />
+                  ))}
+                </div>
+                <p className="text-sm text-gray-700 text-center min-h-[20px] px-1">
+                  {transcript || 'Слухаю... кажи 🎙'}
+                </p>
+              </div>
               <button
                 onClick={stopListening}
-                className="mt-2 flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3.5 py-2 rounded-xl text-xs font-medium transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors"
               >
                 <Square size={11} fill="currentColor" /> Стоп — розпізнати
               </button>

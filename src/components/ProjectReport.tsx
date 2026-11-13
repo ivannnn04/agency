@@ -11,7 +11,7 @@ import { useChatWidth, ChatResizeHandle } from '@/components/chat/shared'
 // and labor cost by member rates, next to the project budget and actual money.
 // Mounted only on the admin board — the team and clients never see it.
 
-interface TaskRow { id: string; title: string }
+interface TaskRow { id: string; title: string; estimate_hours?: number | null; estimate_by?: string | null }
 interface EntryRow { task_id: string; team_member_id: string; duration_seconds: number | null }
 
 const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
@@ -43,11 +43,21 @@ export default function ProjectReport({ project, members, onClose }: {
   useEffect(() => {
     if (ratesLoading) return
     ;(async () => {
-      const { data: tx } = await supabase
+      const res1 = await supabase
         .from('pm_tasks')
-        .select('id, title')
+        .select('id, title, estimate_hours, estimate_by')
         .eq('finance_project_id', project.id)
         .order('created_at')
+      let tx: TaskRow[] | null = res1.data as TaskRow[] | null
+      if (!tx) {
+        // estimate columns may not be migrated yet
+        const res2 = await supabase
+          .from('pm_tasks')
+          .select('id, title')
+          .eq('finance_project_id', project.id)
+          .order('created_at')
+        tx = res2.data as TaskRow[] | null
+      }
       const taskIds = (tx ?? []).map(t => t.id)
       const [{ data: ents }, { data: txs }] = await Promise.all([
         taskIds.length > 0
@@ -101,6 +111,37 @@ export default function ProjectReport({ project, members, onClose }: {
     const sb = [...(byTask.get(b.id)?.values() ?? [])].reduce((x, y) => x + y, 0)
     return sb - sa
   })
+
+  // ── Estimate discipline: accuracy, adherence, overtracking ──
+  const trackedOf = (taskId: string) => [...(byTask.get(taskId)?.values() ?? [])].reduce((x, y) => x + y, 0)
+  const estRows = tasks
+    .map(t => {
+      const estSec = t.estimate_hours != null ? t.estimate_hours * 3600 : null
+      const tracked = trackedOf(t.id)
+      const over = estSec !== null && tracked > estSec
+      // accuracy: how close the estimate came to reality (100% = spot on)
+      const accuracy = estSec !== null && estSec > 0 && tracked > 0
+        ? Math.round((Math.min(estSec, tracked) / Math.max(estSec, tracked)) * 100)
+        : null
+      return { t, estSec, tracked, over, accuracy }
+    })
+    .filter(r => r.estSec !== null || r.tracked > 0)
+  const withBoth = estRows.filter(r => r.accuracy !== null)
+  const avgAccuracy = withBoth.length > 0
+    ? Math.round(withBoth.reduce((s, r) => s + (r.accuracy ?? 0), 0) / withBoth.length)
+    : null
+  const overCount = estRows.filter(r => r.over).length
+  const noEstimate = estRows.filter(r => r.estSec === null && r.tracked > 0).length
+  // Per estimate author: how good their estimates turn out
+  const byAuthor = new Map<string, { n: number; accSum: number; over: number }>()
+  for (const r of withBoth) {
+    const who = r.t.estimate_by || 'не вказано'
+    const a = byAuthor.get(who) ?? { n: 0, accSum: 0, over: 0 }
+    a.n++
+    a.accSum += r.accuracy ?? 0
+    if (r.over) a.over++
+    byAuthor.set(who, a)
+  }
 
   return (
     <div
@@ -170,6 +211,71 @@ export default function ProjectReport({ project, members, onClose }: {
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Estimate discipline */}
+          {estRows.length > 0 && (
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium mb-2">Естімейти: точність і дотримання</p>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className={`text-base font-bold ${avgAccuracy === null ? 'text-gray-300' : avgAccuracy >= 80 ? 'text-teal-600' : avgAccuracy >= 60 ? 'text-amber-600' : 'text-red-500'}`}>
+                    {avgAccuracy === null ? '—' : `${avgAccuracy}%`}
+                  </p>
+                  <p className="text-[10px] text-gray-400">середня точність</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className={`text-base font-bold ${overCount > 0 ? 'text-red-500' : 'text-teal-600'}`}>{overCount}</p>
+                  <p className="text-[10px] text-gray-400">овертрек задач</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className={`text-base font-bold ${noEstimate > 0 ? 'text-amber-600' : 'text-teal-600'}`}>{noEstimate}</p>
+                  <p className="text-[10px] text-gray-400">без естімейту</p>
+                </div>
+              </div>
+
+              {byAuthor.size > 0 && (
+                <div className="flex flex-col gap-1 mb-2">
+                  {[...byAuthor.entries()].sort((a, b) => (b[1].accSum / b[1].n) - (a[1].accSum / a[1].n)).map(([who, a]) => {
+                    const acc = Math.round(a.accSum / a.n)
+                    return (
+                      <div key={who} className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-xs">
+                        <span className="text-gray-700 font-medium">Естімейти: {who}</span>
+                        <span className="ml-auto text-gray-400">{a.n} задач</span>
+                        <span className={`font-bold ${acc >= 80 ? 'text-teal-600' : acc >= 60 ? 'text-amber-600' : 'text-red-500'}`}>{acc}%</span>
+                        {a.over > 0 && <span className="text-red-400">· {a.over} овертрек</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                {estRows
+                  .sort((a, b) => (a.accuracy ?? 101) - (b.accuracy ?? 101))
+                  .map(({ t, estSec, tracked, over, accuracy }) => (
+                    <div key={t.id} className={`border rounded-xl px-3 py-2 ${over ? 'bg-red-50/60 border-red-100' : estSec === null ? 'bg-amber-50/60 border-amber-100' : 'bg-white border-gray-100'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-800 truncate flex-1">{t.title}</span>
+                        {estSec === null ? (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-md flex-shrink-0">БЕЗ ЕСТІМЕЙТУ</span>
+                        ) : over ? (
+                          <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                            ОВЕРТРЕК +{fmtDur(tracked - estSec)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-md flex-shrink-0">ДОТРИМАНО</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {estSec !== null ? <>естімейт {fmtDur(estSec)}{t.estimate_by ? ` (${t.estimate_by})` : ''}</> : 'естімейт не ставили'}
+                        {' · '}затрекано {fmtDur(tracked)}
+                        {accuracy !== null && <> · точність <span className={accuracy >= 80 ? 'text-teal-600 font-semibold' : accuracy >= 60 ? 'text-amber-600 font-semibold' : 'text-red-500 font-semibold'}>{accuracy}%</span></>}
+                      </p>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

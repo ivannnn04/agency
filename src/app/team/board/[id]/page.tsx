@@ -232,6 +232,12 @@ export default function TeamBoardPage() {
   }
 
   async function startTimer(taskId: string) {
+    // Hard rule: tracking requires an estimate on the task
+    const target = tasks.find(t => t.id === taskId)
+    if (target && target.estimate_hours == null) {
+      window.alert('⛔ Без естімейту таймер не стартує. Постав оцінку годин у картці задачі — і трекай.')
+      return
+    }
     if (activeTimer) await stopTimer()
 
     const { data } = await supabase
@@ -368,7 +374,14 @@ export default function TeamBoardPage() {
   }
 
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
-    await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    // Hard estimate rule: remember WHO set/changed the estimate
+    if ('estimate_hours' in patch && member) patch = { ...patch, estimate_by: member.name }
+    let { error } = await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    if (error && error.message.includes('estimate_by')) {
+      const { estimate_by: _skip, ...rest } = patch
+      void _skip
+      ;({ error } = await supabase.from('pm_tasks').update(rest).eq('id', taskId))
+    }
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
     setSelectedTask(prev => prev?.id === taskId ? { ...prev, ...patch } : prev)
   }

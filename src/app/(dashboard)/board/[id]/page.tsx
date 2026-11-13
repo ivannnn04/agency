@@ -214,10 +214,10 @@ export default function BoardPage() {
     // field if the estimate_hours column isn't in the DB yet.
     let { data, error } = await supabase
       .from('pm_tasks')
-      .insert({ ...baseTask, estimate_hours: suggestEstimate(patch.title) })
+      .insert({ ...baseTask, estimate_hours: suggestEstimate(patch.title), estimate_by: 'авто' })
       .select()
       .single()
-    if (error && error.message.includes('estimate_hours')) {
+    if (error && error.message.includes('estimate_')) {
       ;({ data, error } = await supabase.from('pm_tasks').insert(baseTask).select().single())
     }
     setAddingInColumn(null)
@@ -372,7 +372,13 @@ export default function BoardPage() {
   }
 
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
-    await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    if ('estimate_hours' in patch) patch = { ...patch, estimate_by: 'Адмін' }
+    let { error: upErr } = await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    if (upErr && upErr.message.includes('estimate_by')) {
+      const { estimate_by: _skip, ...rest } = patch
+      void _skip
+      await supabase.from('pm_tasks').update(rest).eq('id', taskId)
+    }
     // Notify designer when assigned
     if (patch.team_member_id) {
       // Keep the assignees join table (the member's dashboard reads it) and

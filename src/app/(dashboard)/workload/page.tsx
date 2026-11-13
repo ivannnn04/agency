@@ -13,7 +13,7 @@ export default function WorkloadPage() {
           Черга активних задач кожного учасника. «Старт через» рахується з естімейтів мінус уже затреканий час.
         </p>
       </div>
-      <WorkloadView canEdit />
+      <WorkloadView canEdit editorName="Адмін" />
     </div>
   )
 }

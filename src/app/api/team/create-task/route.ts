@@ -32,10 +32,10 @@ export async function POST(req: Request) {
   // stays editable. Fall back without the field if the column doesn't exist yet.
   let { data: task, error } = await admin
     .from('pm_tasks')
-    .insert({ ...base, estimate_hours: suggestEstimate(title) })
+    .insert({ ...base, estimate_hours: suggestEstimate(title), estimate_by: 'авто' })
     .select()
     .single()
-  if (error && error.message.includes('estimate_hours')) {
+  if (error && error.message.includes('estimate_')) {
     ;({ data: task, error } = await admin.from('pm_tasks').insert(base).select().single())
   }
 

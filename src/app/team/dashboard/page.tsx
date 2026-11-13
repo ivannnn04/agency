@@ -260,6 +260,13 @@ export default function TeamDashboardPage() {
         return
       }
     }
+    // Hard rule: tracking requires an estimate on the task
+    const { data: est } = await supabase.from('pm_tasks').select('estimate_hours').eq('id', taskId).single()
+    if (est && est.estimate_hours == null) {
+      window.alert('⛔ Без естімейту таймер не стартує. Постав оцінку годин у картці задачі — і трекай.')
+      window.dispatchEvent(new Event('gudrix:timer-changed'))
+      return
+    }
     const { data } = await supabase
       .from('time_entries')
       .insert({ task_id: taskId, team_member_id: member.id, started_at: new Date().toISOString() })
@@ -580,7 +587,7 @@ export default function TeamDashboardPage() {
                 Черга активних задач кожного учасника. «Старт через» рахується з естімейтів мінус уже затреканий час.
               </p>
             </div>
-            <WorkloadView canEdit />
+            <WorkloadView canEdit editorName={member?.name} />
           </>
         )}
 

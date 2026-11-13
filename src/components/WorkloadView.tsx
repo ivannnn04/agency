@@ -30,7 +30,7 @@ function fmtH(h: number) {
   return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}г`
 }
 
-export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
+export default function WorkloadView({ canEdit, editorName }: { canEdit: boolean; editorName?: string }) {
   const [members, setMembers] = useState<Member[]>([])
   const [tasks, setTasks] = useState<WTask[]>([])
   const [assignees, setAssignees] = useState<Record<string, string[]>>({}) // task_id -> member ids
@@ -135,7 +135,13 @@ export default function WorkloadView({ canEdit }: { canEdit: boolean }) {
     if (v !== null && (isNaN(v) || v < 0)) return
     if (v === t.estimate_hours) return
     setTasks(prev => prev.map(x => x.id === t.id ? { ...x, estimate_hours: v } : x))
-    await supabase.from('pm_tasks').update({ estimate_hours: v }).eq('id', t.id)
+    const { error } = await supabase
+      .from('pm_tasks')
+      .update({ estimate_hours: v, estimate_by: editorName ?? 'Адмін' })
+      .eq('id', t.id)
+    if (error && error.message.includes('estimate_by')) {
+      await supabase.from('pm_tasks').update({ estimate_hours: v }).eq('id', t.id)
+    }
   }
 
   if (loading) return <p className="text-sm text-gray-400 py-10 text-center">Завантаження...</p>

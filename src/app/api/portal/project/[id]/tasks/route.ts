@@ -53,10 +53,10 @@ export async function POST(
   // Auto pre-estimate from the title; falls back if the column isn't migrated yet
   let { data: task, error } = await supabaseAdmin
     .from('pm_tasks')
-    .insert({ ...baseTask, estimate_hours: suggestEstimate(baseTask.title) })
+    .insert({ ...baseTask, estimate_hours: suggestEstimate(baseTask.title), estimate_by: 'авто' })
     .select('id, title, description, column_id, priority, start_date, due_date, created_at')
     .single()
-  if (error && error.message.includes('estimate_hours')) {
+  if (error && error.message.includes('estimate_')) {
     ;({ data: task, error } = await supabaseAdmin
       .from('pm_tasks')
       .insert(baseTask)

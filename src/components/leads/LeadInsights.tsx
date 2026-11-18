@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
+  AlertTriangle, BookOpen, Check, Mail, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
   Unlink, Video, Zap,
 } from 'lucide-react'
 
@@ -18,6 +18,7 @@ export interface Insights {
   pending: number
   agency_profile: string
   fellow: { configured: boolean; last_synced_at: string | null; last_error: string | null; webhook: boolean }
+  mail?: { configured: boolean; last_synced_at: string | null; last_error: string | null }
 }
 
 interface Overview {
@@ -99,7 +100,7 @@ export function FellowBar({ insights, error, leads, syncing, onSync, onChanged }
     return <div className="mb-4 text-xs bg-amber-50 border border-amber-100 text-amber-700 rounded-xl px-4 py-2.5">Fellow / AI-огляд: {error}</div>
   }
   if (!insights) return null
-  const { fellow, unmatched } = insights
+  const { fellow, unmatched, mail } = insights
 
   async function act(id: string, body: Record<string, unknown>) {
     setBusy(id)
@@ -190,6 +191,19 @@ export function FellowBar({ insights, error, leads, syncing, onSync, onChanged }
           <span className="text-xs text-gray-400">не підключено — додай FELLOW_API_KEY і FELLOW_SUBDOMAIN у Vercel</span>
         )}
 
+        {mail?.configured && (
+          <>
+            <span className="w-px h-3.5 bg-gray-200" />
+            <span
+              className="flex items-center gap-1.5 text-xs text-gray-400"
+              title="Відповіді лідів і листи, надіслані поза платформою, підтягуються в картку ліда"
+            >
+              <Mail size={12} className="text-gray-600" />
+              <span className="font-semibold text-gray-700">Пошта</span> {syncing ? 'синхронізація…' : ago(mail.last_synced_at)}
+            </span>
+          </>
+        )}
+
         <span className="w-px h-3.5 bg-gray-200" />
         {bulk ? (
           <span className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -216,7 +230,9 @@ export function FellowBar({ insights, error, leads, syncing, onSync, onChanged }
           </button>
         )}
       </div>
-      {(note || error || fellow.last_error) && <p className="px-4 pb-2.5 text-xs text-red-500">{note || error || fellow.last_error}</p>}
+      {(note || error || fellow.last_error || mail?.last_error) && (
+        <p className="px-4 pb-2.5 text-xs text-red-500">{note || error || fellow.last_error || mail?.last_error}</p>
+      )}
 
       {profileOpen && (
         <div className="border-t border-gray-100 px-4 py-3 flex flex-col gap-2">

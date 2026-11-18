@@ -120,29 +120,46 @@ export default function LeadsCrmBoard() {
 
   const refresh = useCallback(() => { fetchLeads(true); fetchInsights() }, [fetchLeads, fetchInsights])
 
-  const syncFellow = useCallback(async () => {
+  // One sync pulls both sources of lead communication: Fellow calls and the mailbox
+  const syncAll = useCallback(async (sources: { fellow: boolean; mail: boolean }) => {
     setSyncing(true)
-    try {
-      const res = await fetch('/api/fellow/sync', { method: 'POST' })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) setInsightsError(data.error ?? `HTTP ${res.status}`)
-    } catch (e) {
-      setInsightsError((e as Error).message)
+    const run = async (url: string) => {
+      try {
+        const res = await fetch(url, { method: 'POST' })
+        const data = await res.json().catch(() => ({}))
+        return res.ok ? '' : String(data.error ?? `HTTP ${res.status}`)
+      } catch (e) {
+        return (e as Error).message
+      }
     }
+    const errors = await Promise.all([
+      sources.fellow ? run('/api/fellow/sync') : '',
+      sources.mail ? run('/api/mail/sync') : '',
+    ])
     setSyncing(false)
     fetchLeads(true)
-    fetchInsights()
+    await fetchInsights()
+    const failed = errors.filter(Boolean).join(' · ')
+    if (failed) setInsightsError(failed)
   }, [fetchLeads, fetchInsights])
+
+  const syncNow = useCallback(() => {
+    syncAll({ fellow: !!insights?.fellow.configured, mail: !!insights?.mail?.configured })
+  }, [syncAll, insights])
 
   useEffect(() => {
     fetchLeads()
-    // Opening the board pulls fresh calls from Fellow when the last sync is stale
+    // Opening the board pulls fresh calls and letters when the last sync is stale
     fetchInsights().then(d => {
-      if (!d?.fellow.configured || autoSynced.current) return
-      const last = d.fellow.last_synced_at ? new Date(d.fellow.last_synced_at).getTime() : 0
-      if (Date.now() - last > SYNC_STALE_MS) { autoSynced.current = true; syncFellow() }
+      if (!d || autoSynced.current) return
+      const stale = (iso: string | null | undefined) => Date.now() - (iso ? new Date(iso).getTime() : 0) > SYNC_STALE_MS
+      const sources = {
+        fellow: d.fellow.configured && stale(d.fellow.last_synced_at),
+        mail: !!d.mail?.configured && stale(d.mail.last_synced_at),
+      }
+      if (sources.fellow || sources.mail) { autoSynced.current = true; syncAll(sources) }
     })
-  }, [fetchLeads, fetchInsights, syncFellow])
+  }, [fetchLeads, fetchInsights, syncAll])
 
   async function addLead(status: CrmLead['status'], patch: { name: string; email: string; amount: string; channel: string }) {
     const { data, error } = await supabase.from('crm_leads').insert({
@@ -209,7 +226,7 @@ export default function LeadsCrmBoard() {
         error={insightsError}
         leads={leads.filter(l => l.status !== 'lost')}
         syncing={syncing}
-        onSync={syncFellow}
+        onSync={syncNow}
         onChanged={refresh}
       />
 

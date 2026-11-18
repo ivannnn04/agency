@@ -44,9 +44,9 @@ export async function leadSection(leadId: string): Promise<string | null> {
     .from('lead_emails')
     .select('direction, subject, body, sent_at')
     .eq('lead_id', leadId)
-    .order('sent_at', { ascending: true })
-    .limit(20)
-  for (const e of emails ?? []) {
+    .order('sent_at', { ascending: false })
+    .limit(60)
+  for (const e of [...(emails ?? [])].reverse()) {
     out.push(`Лист (${e.direction === 'in' ? 'від клієнта' : 'від нас'}, ${day(e.sent_at)}): ${e.subject ?? ''}\n${(e.body ?? '').slice(0, 4000)}`)
   }
 

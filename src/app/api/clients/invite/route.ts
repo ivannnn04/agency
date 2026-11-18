@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { decode } from 'next-auth/jwt'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
+import { mailFrom } from '@/lib/mailer'
 
 // Sends a portal client an email invitation from the corporate mailbox.
 // Same own-token flow as team invites: the link carries our single-use token,
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   const { clientId, projectName } = await req.json()
   if (!clientId) return NextResponse.json({ error: 'clientId is required' }, { status: 400 })
 
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     return NextResponse.json({
       error: 'SMTP не налаштовано. Додай SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS у змінні середовища.',
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
 
   try {
     await transporter.sendMail({
-      from: SMTP_FROM ?? SMTP_USER,
+      from: mailFrom(),
       to: client.email,
       subject: 'Your Gudrix client portal access',
       html: `

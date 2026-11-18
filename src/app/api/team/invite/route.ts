@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { decode } from 'next-auth/jwt'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
+import { mailFrom } from '@/lib/mailer'
 
 // Sends a team member an email invitation from the corporate mailbox.
 // The link carries our own invite token → the member lands on /team/welcome
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   const { id, email: newEmail } = await req.json()
   if (!id) return NextResponse.json({ error: 'Потрібен id учасника' }, { status: 400 })
 
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     return NextResponse.json({
       error: 'SMTP не налаштовано. Додай SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS у змінні середовища.',
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
   const firstName = member.name.split(' ')[0]
   try {
     await transporter.sendMail({
-      from: SMTP_FROM ?? SMTP_USER,
+      from: mailFrom(),
       to: email,
       subject: 'You’re invited to Gudrix Cowork Space',
       html: `

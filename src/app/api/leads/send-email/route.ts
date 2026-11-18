@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { decode } from 'next-auth/jwt'
 import nodemailer from 'nodemailer'
 import supabaseAdmin from '@/lib/supabaseAdmin'
+import { letterHtml, mailFrom, mailFromAddress } from '@/lib/mailer'
 
 async function requireAdmin() {
   const jar = await cookies()
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'leadId, to, subject і body обовʼязкові' }, { status: 400 })
   }
 
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     return NextResponse.json({
       error: 'SMTP не налаштовано. Додай SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (і опційно SMTP_FROM) у змінні середовища.',
@@ -36,19 +37,22 @@ export async function POST(req: NextRequest) {
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   })
 
-  const from = SMTP_FROM ?? SMTP_USER
+  const from = mailFromAddress()
 
+  let messageId: string | null = null
   try {
-    await transporter.sendMail({ from, to, subject, text: body })
+    const info = await transporter.sendMail({ from: mailFrom(), to, subject, text: body, html: letterHtml(body) })
+    messageId = info.messageId ?? null
   } catch (e) {
     return NextResponse.json({ error: `Не вдалося надіслати: ${(e as Error).message}` }, { status: 502 })
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('lead_emails')
-    .insert({ lead_id: leadId, direction: 'out', subject, body, to_email: to, from_email: from })
-    .select()
-    .single()
+  // The Message-ID lets the mailbox sync recognise this letter in the Sent folder
+  const row = { lead_id: leadId, direction: 'out', subject, body, to_email: to, from_email: from }
+  let { data, error } = await supabaseAdmin.from('lead_emails').insert({ ...row, message_id: messageId }).select().single()
+  if (error && /message_id/.test(error.message)) {
+    ;({ data, error } = await supabaseAdmin.from('lead_emails').insert(row).select().single())
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   return NextResponse.json(data)

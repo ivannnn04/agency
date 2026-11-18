@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { fellowConfig } from '@/lib/fellow'
 import { getFellowState } from '@/lib/fellowSync'
+import { getMailState, imapConfig } from '@/lib/mailSync'
 import { generateLeadOverview, getAgencyProfile, OVERVIEW_VERSION, setAgencyProfile } from '@/lib/leadInsight'
 
 // AI overviews and Fellow meetings for the leads board. Admin-only via the
@@ -76,9 +77,10 @@ export async function GET(req: NextRequest) {
     .map(m => ({ id: m.id, title: m.title, started_at: m.started_at, attendees: m.attendees }))
 
   const state = await getFellowState().catch(() => ({}) as Awaited<ReturnType<typeof getFellowState>>)
-  const [pending, agencyProfile] = await Promise.all([
+  const [pending, agencyProfile, mail] = await Promise.all([
     pendingLeadIds().catch(() => [] as string[]),
     getAgencyProfile().catch(() => ''),
+    getMailState().catch(() => ({}) as Awaited<ReturnType<typeof getMailState>>),
   ])
   return NextResponse.json({
     scores,
@@ -86,6 +88,11 @@ export async function GET(req: NextRequest) {
     unmatched,
     pending: pending.length,
     agency_profile: agencyProfile,
+    mail: {
+      configured: !!imapConfig(),
+      last_synced_at: mail.last_synced_at ?? null,
+      last_error: mail.last_error ?? null,
+    },
     fellow: {
       configured: !!fellowConfig(),
       last_synced_at: state.last_synced_at ?? null,

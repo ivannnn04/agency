@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -224,8 +224,9 @@ export default function Sidebar() {
   const onOutreach = pathname.startsWith('/outreach')
   const onOverview = pathname.startsWith('/overview')
   const onLeads = pathname.startsWith('/leads')
+  const onSales = pathname.startsWith('/sales-ai')
   // Pages with their own full-width layout show only the icon rail
-  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview || onLeads
+  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview || onLeads || onSales
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
@@ -235,7 +236,7 @@ export default function Sidebar() {
     },
     {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
-      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach && !onOverview && !onLeads,
+      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach && !onOverview && !onLeads && !onSales,
       go: () => { setSection('finance'); router.push('/') },
     },
     {
@@ -263,6 +264,11 @@ export default function Sidebar() {
       key: 'outreach', label: 'Аутріч', icon: Send,
       active: onOutreach,
       go: () => router.push('/outreach'),
+    },
+    {
+      key: 'sales', label: 'Sales AI', icon: Headset,
+      active: onSales,
+      go: () => router.push('/sales-ai'),
     },
     {
       key: 'record', label: 'Запис', icon: Clapperboard,

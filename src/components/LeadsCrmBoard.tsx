@@ -53,8 +53,14 @@ function fmtAmount(lead: CrmLead) {
   return `${CURRENCY_SYMBOL[lead.currency]}${short(lead.amount)}`
 }
 
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleString('uk-UA', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+// The year only when it is not the current one — cards are narrow
+function fmtDate(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleString('uk-UA', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  })
+}
 
 const SYNC_STALE_MS = 15 * 60_000
 
@@ -207,14 +213,14 @@ export default function LeadsCrmBoard() {
         onChanged={refresh}
       />
 
-      <div className="flex gap-4 overflow-x-auto items-start pb-4">
+      <div className="flex gap-1.5 overflow-x-auto items-start pb-4">
         {COLUMNS.map(col => {
           const colLeads = leads.filter(l => l.status === col.key)
           const colTotal = colLeads.reduce((s, l) => s + (l.amount ?? 0), 0)
           return (
             <div
               key={col.key}
-              className={`flex-shrink-0 w-[272px] flex flex-col rounded-2xl transition-colors p-1.5 ${dragOverCol === col.key ? 'bg-gray-100 ring-2 ring-gray-200' : ''}`}
+              className={`flex-1 min-w-[204px] max-w-[340px] flex flex-col rounded-2xl transition-colors p-1 ${dragOverCol === col.key ? 'bg-gray-100 ring-2 ring-gray-200' : ''}`}
               onDragOver={e => { e.preventDefault(); setDragOverCol(col.key) }}
               onDragLeave={() => setDragOverCol(prev => prev === col.key ? null : prev)}
               onDrop={e => {
@@ -240,7 +246,7 @@ export default function LeadsCrmBoard() {
                       draggable
                       onDragStart={e => { e.dataTransfer.setData('text/plain', lead.id); e.dataTransfer.effectAllowed = 'move' }}
                       onClick={() => setSelectedId(lead.id)}
-                      className={`bg-white rounded-xl border p-3 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer active:cursor-grabbing select-none group flex flex-col gap-2 ${
+                      className={`bg-white rounded-xl border px-2.5 py-2.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer active:cursor-grabbing select-none group flex flex-col gap-2 ${
                         selectedId === lead.id ? 'border-gray-400' : 'border-gray-100'
                       }`}
                     >

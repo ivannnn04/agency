@@ -204,7 +204,7 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className={view === 'crm' ? 'px-4 sm:px-6 py-5' : 'p-6 max-w-6xl mx-auto'}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Ліди</h1>

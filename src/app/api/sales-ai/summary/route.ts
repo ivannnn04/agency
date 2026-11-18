@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   try {
     const msg = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 2500,
+      max_tokens: 6000,
       system: DEBRIEF,
       messages: [{
         role: 'user',

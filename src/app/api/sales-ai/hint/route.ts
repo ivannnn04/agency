@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   try {
     const msg = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 900,
+      max_tokens: 2500,
       system: [
         { type: 'text', text: COACH },
         // Stable for the whole call → cached after the first request

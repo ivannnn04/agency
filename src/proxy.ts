@@ -39,5 +39,5 @@ export const config = {
   // - /start (public PWA launcher — routes to the right sign-in)
   // - /api/outreach (browser Claude agents post proposals with an API key)
   // - /photo-demo + /api/photo-card (public AI postcard demo for a client)
-  matcher: ['/((?!login|start|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/outreach|photo-demo|api/photo-card|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
+  matcher: ['/((?!login|start|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/outreach|api/fellow/webhook|photo-demo|api/photo-card|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
 }

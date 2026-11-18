@@ -20,7 +20,7 @@ const CONTEXT_BUDGET_CHARS = 400_000
 
 const day = (iso: string | null | undefined) => (iso ?? '').slice(0, 10)
 
-async function leadSection(leadId: string): Promise<string | null> {
+export async function leadSection(leadId: string): Promise<string | null> {
   const { data: lead } = await supabaseAdmin
     .from('crm_leads')
     .select('name, email, amount, currency, channel, status, notes')
@@ -67,6 +67,37 @@ async function leadSection(leadId: string): Promise<string | null> {
     for (const r of replies ?? []) out.push(`Відповідь клієнта (${day(r.created_at)}): ${r.message.slice(0, 4000)}`)
   }
   return out.join('\n\n')
+}
+
+// Calls with this lead recorded by the Fellow notetaker. Recaps always go in;
+// full transcripts are added newest-first while the budget lasts.
+export async function leadMeetingsSection(leadId: string, budgetChars: number): Promise<string | null> {
+  const { data: meetings } = await supabaseAdmin
+    .from('lead_meetings')
+    .select('title, started_at, recap, transcript')
+    .eq('lead_id', leadId)
+    .eq('ignored', false)
+    .order('started_at', { ascending: true })
+  if (!meetings || meetings.length === 0) return null
+
+  const withTranscript = new Set<number>()
+  let left = budgetChars
+  for (let i = meetings.length - 1; i >= 0; i--) {
+    const len = (meetings[i].transcript ?? '').length
+    if (len === 0) continue
+    if (len > left) break
+    left -= len
+    withTranscript.add(i)
+  }
+  return meetings
+    .map((m, i) => {
+      const parts = [`## Дзвінок (Fellow): ${m.title} (${day(m.started_at)})`]
+      if (m.recap?.trim()) parts.push(`### Нотатки Fellow\n${m.recap.trim().slice(0, 12_000)}`)
+      if (withTranscript.has(i)) parts.push(`### Транскрипт\n${m.transcript!.trim()}`)
+      else if (m.transcript?.trim()) parts.push('(Транскрипт не вмістився в контекст — спирайся на нотатки.)')
+      return parts.join('\n\n')
+    })
+    .join('\n\n')
 }
 
 async function projectSection(projectId: string): Promise<string | null> {
@@ -145,6 +176,8 @@ export async function buildSalesContext(
   if (room.lead_id) {
     const s = await leadSection(room.lead_id).catch(() => null)
     if (s) parts.push(s)
+    const m = await leadMeetingsSection(room.lead_id, 150_000).catch(() => null)
+    if (m) parts.push(m)
   }
   if (room.project_id) {
     const s = await projectSection(room.project_id).catch(() => null)

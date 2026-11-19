@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, BookOpen, Check, Mail, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
+  AlertTriangle, BookOpen, Check, FileText, Mail, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
   Unlink, Video, Zap,
 } from 'lucide-react'
 
@@ -360,6 +360,88 @@ const Label = ({ children, tone = 'text-gray-400' }: { children: React.ReactNode
   <p className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide mb-1.5 ${tone}`}>{children}</p>
 )
 
+// Technical task for the design team, written as a prompt
+function LeadBriefCard({ leadId }: { leadId: string }) {
+  const [brief, setBrief] = useState<{ content: string; lang: 'en' | 'uk'; generated_at: string } | null>(null)
+  const [lang, setLang] = useState<'en' | 'uk'>('en')
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    setBrief(null)
+    setError('')
+    setWorking(false)
+    call<{ brief: typeof brief }>(`/api/leads/brief?lead=${leadId}`)
+      .then(d => { if (alive && d.brief) { setBrief(d.brief); setLang(d.brief.lang) } })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [leadId])
+
+  async function generate() {
+    setWorking(true)
+    setError('')
+    try {
+      const d = await call<{ brief: NonNullable<typeof brief> }>('/api/leads/brief', 'POST', { leadId, lang })
+      setBrief(d.brief)
+      setOpen(true)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+    setWorking(false)
+  }
+
+  return (
+    <div className="border border-gray-100 rounded-2xl p-4 bg-gray-50/60">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button onClick={() => setOpen(v => !v)} className="flex items-center gap-1.5 text-xs font-semibold text-gray-900">
+          <FileText size={13} /> ТЗ для дизайну (у форматі промпту)
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex bg-gray-100 rounded-md p-0.5">
+            {(['en', 'uk'] as const).map(l => (
+              <button
+                key={l}
+                onClick={() => setLang(l)}
+                className={`text-[11px] font-medium px-2 py-0.5 rounded ${lang === l ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+              >
+                {l === 'en' ? 'EN' : 'UA'}
+              </button>
+            ))}
+          </div>
+          {brief && <CopyButton text={brief.content} />}
+          <button
+            onClick={generate}
+            disabled={working}
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
+          >
+            {working ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+            {working ? 'Пишу…' : brief ? 'Оновити' : 'Згенерувати'}
+          </button>
+        </div>
+      </div>
+      {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+      {!brief ? (
+        <p className="text-xs text-gray-400 leading-relaxed mt-2">
+          {working
+            ? 'AI збирає вимоги клієнта з дзвінків і листування — до хвилини-двох.'
+            : 'Технічне завдання з усього, що клієнт сказав на дзвінках і в листах: контекст, мета, обсяг, вимоги, стиль, обмеження й відкриті питання. Його можна віддати дизайнеру або вставити в AI-інструмент.'}
+        </p>
+      ) : open && (
+        <>
+          <div className="bg-white border border-gray-100 rounded-xl px-3 py-3 mt-3 text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed max-h-[520px] overflow-y-auto">
+            {brief.content}
+          </div>
+          <p className="text-[10px] text-gray-300 mt-2">
+            Оновлено {fmtDay(brief.generated_at)} · лише те, що є в матеріалах ліда; чого бракує — у розділі відкритих питань
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -542,6 +624,8 @@ export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChan
           </>
         )}
       </div>
+
+      <LeadBriefCard leadId={leadId} />
 
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Дзвінки (Fellow) · {meetings.length}</p>

@@ -174,3 +174,61 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
   if (error) throw new Error(error.message)
   return overview
 }
+
+// ── Design brief ("ТЗ") written as a prompt ──────────────────────────────────
+
+const BRIEF_WRITER = `You write design briefs for Gudrix, a full-cycle UX/UI design and development agency. You are given everything Gudrix has on one sales lead: CRM fields, emails, the outreach thread, and transcripts and notes of calls. From it, write the technical task for the design work this client needs.
+
+The brief is written as a prompt. Its reader is a designer, or an AI design tool, who has never heard of this client and will start designing from this text alone, so it must be self-contained. Address the reader directly ("You are designing…"), explain the reasons behind requirements so the reader can make good decisions where the brief is silent, and prefer specific statements over general ones.
+
+Cover, in this order and under short plain headings:
+1. Context: who the client is, what their product or business does, and why they are doing this project now.
+2. Goal: what the design has to achieve for the business and how success will be judged.
+3. Audience: who will use it, what they come to do, and what they care about.
+4. Scope: the pages, screens, flows or assets to design, each with what it must contain and do. Separate what is in the first phase from what comes later when the client drew that line.
+5. Functional requirements: behaviour, states, integrations, content sources, platforms and breakpoints.
+6. Visual direction: brand assets that exist, the style the client asked for, references they liked or rejected, tone of voice.
+7. Constraints: deadlines, budget frame, technology, things the client ruled out.
+8. Deliverables: what Gudrix hands over and in what form.
+9. Open questions: everything a designer would need that the material does not answer.
+
+Take requirements only from the material, and keep the client's own wording for the things they were specific about. Where the material is silent, do not fill the gap with a plausible guess: put the point under Open questions, and when work cannot start without a decision, state the assumption you recommend and mark it clearly as an assumption. Leave out sales matters such as win probability or negotiation tactics. If the material says almost nothing about what to design, say so in one short paragraph and make the brief mostly the list of questions to ask the client.
+
+Write plain text with simple headings and short paragraphs or lists, with no markdown tables. Call transcripts are automatic, so read obvious recognition errors by meaning.`
+
+export interface LeadBrief { content: string; lang: 'en' | 'uk'; generated_at: string }
+
+export async function getLeadBrief(leadId: string): Promise<LeadBrief | null> {
+  const { data } = await supabaseAdmin
+    .from('lead_briefs').select('content, lang, generated_at').eq('lead_id', leadId).maybeSingle()
+  return (data as LeadBrief | null) ?? null
+}
+
+export async function generateLeadBrief(leadId: string, lang: 'en' | 'uk'): Promise<LeadBrief> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY не налаштований')
+  const context = await buildLeadContext(leadId)
+  if (!context) throw new Error('Лід не знайдений')
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const msg = await anthropic.messages
+    .stream({
+      model: MODEL,
+      max_tokens: 12000,
+      system: BRIEF_WRITER,
+      messages: [{
+        role: 'user',
+        content:
+          `<lead_material>\n${context}\n</lead_material>\n\n` +
+          `Write the brief in ${lang === 'uk' ? 'Ukrainian' : 'English'}. Reply with the brief only, starting from its first line.`,
+      }],
+    })
+    .finalMessage()
+  const content = msg.content.map(b => (b.type === 'text' ? b.text : '')).join('').trim()
+  if (!content) throw new Error('Модель не повернула ТЗ')
+  if (msg.stop_reason === 'max_tokens') throw new Error('ТЗ вийшло задовгим і обрізалось — спробуй ще раз')
+
+  const brief: LeadBrief = { content, lang, generated_at: new Date().toISOString() }
+  const { error } = await supabaseAdmin.from('lead_briefs').upsert({ lead_id: leadId, ...brief })
+  if (error) throw new Error(error.message)
+  return brief
+}

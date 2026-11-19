@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { leadMeetingsSection, leadSection } from '@/lib/salesContext'
+import { DEAL_FACTORS, FactorKey, FactorScore, Lever, probabilityFrom } from '@/lib/dealFactors'
 
 // AI deal overview for a CRM lead: how likely we are to win and what still
 // has to be clarified, grounded in everything stored about the lead — CRM
@@ -20,11 +21,16 @@ export interface LeadOverview {
   call_agenda: { topic: string; goal: string }[]
   message_draft: string
   materials: { what: string; why: string }[]
+  factors: FactorScore[]
+  why_not_higher: string
+  why_not_lower: string
+  levers: Lever[]
+  potential: number
   version: number
 }
 
 // Bumped when the overview gains sections, so older stored ones get refreshed
-export const OVERVIEW_VERSION = 2
+export const OVERVIEW_VERSION = 3
 const PROFILE_KEY = 'agency_profile'
 
 export async function getAgencyProfile(): Promise<string> {
@@ -41,10 +47,23 @@ export async function setAgencyProfile(text: string) {
 
 const ANALYST = `You are a deal analyst for Ivan, the founder of Gudrix, a full-cycle UX/UI design and development agency. You are given everything Gudrix has on one sales lead: CRM fields, emails, the outreach thread, transcripts and AI notes of calls recorded by the Fellow notetaker, and notes from Ivan's sales assistant. You may also be given an agency profile listing what Gudrix can show a client: case studies, links, decks and other materials. Ivan reads your overview on the lead's card to decide where to spend effort and exactly what to do next.
 
-Assess the deal honestly. The win probability is your calibrated estimate, from 0 to 100, that this lead becomes a paying project. Base it on evidence in the material: an explicit need and urgency, a stated budget that fits, access to the person who decides, how engaged the client is, competing options, unresolved objections, and how recently they were in touch. A lead with one friendly call and no budget, timeline or decision process discussed is not a likely win, so do not inflate the number to be encouraging. Set confidence to low when there is little material (for example only an outreach proposal and no reply or call yet), and say in the summary what the estimate rests on. For a lead with almost no material, still give useful preparation: what to find out first and how to open the conversation.
+Assess the deal honestly through a scorecard. Score each of the eight factors below from 0 to 100 on the evidence in the material. The win probability shown to Ivan is computed from your scores (each factor's weight times its score, summed), so the scores are the estimate: do not aim for a total, judge each factor on its own.
+
+${DEAL_FACTORS.map(f => `- ${f.key} (weight ${f.weight}): ${f.asks}`).join('\n')}
+
+Anchors for a score: 0 to 15 means there is evidence against (the client said the budget is far too low, has gone silent, chose someone else). 20 to 40 means not known yet, which is the right score when the topic never came up, however friendly the conversation was. 45 to 70 means partial or indirect evidence in favour. 75 to 100 means the client confirmed it explicitly or showed it by what they did. A lead who never replied scores near zero on engagement and momentum. Two leads rarely deserve the same scores, so look for what actually differs between a deal and a typical one rather than settling on the middle.
+
+For each factor give "evidence", one sentence naming what the score rests on (a quote, a fact, a date, or plainly that it was never discussed), and "gap", what is still missing or unresolved for this factor, or an empty string when nothing is.
+
+Then explain the result:
+- why_not_higher: one or two sentences on what holds the probability down the most.
+- why_not_lower: one or two sentences on what keeps it from being lower.
+- levers: the actions that would raise the probability the most, strongest first, up to five. Each names the concrete "action" Ivan takes, the "factor" it improves, the "uplift" in percentage points you would expect once it succeeds, and "why" it works for this client. Uplift for a factor cannot exceed the points that factor is still missing (its weight times the share not yet earned). Give real moves specific to this deal, such as getting the co-founder on a call or sending a fixed-price phase one before the client's stated decision date, and skip generic advice like "follow up" or "build trust".
+
+Set confidence to low when there is little material (for example only an outreach proposal and no reply or call yet), and say in the summary what the estimate rests on. For a lead with almost no material, still give useful preparation: what to find out first and how to open the conversation.
 
 Write for a busy founder. Keep every item short and concrete:
-- summary: two to four sentences on where the deal stands and why the probability is what it is.
+- summary: two to four sentences on where the deal stands. Do not state a percentage in it; the number is computed from the scorecard.
 - next_step: the single most valuable next action, specific enough to do today.
 - call_agenda: the topics to cover on the next call with this lead, in the order Ivan should raise them, up to six. "topic" is a short title; "goal" says what Ivan needs to get out of that part of the call.
 - clarify: the questions Ivan still needs answered to qualify and win the deal, most important first, up to six. "question" is worded so Ivan can ask it as is, in the language the client communicates in. "why" explains what the answer unlocks.
@@ -79,6 +98,8 @@ export async function buildLeadContext(leadId: string): Promise<string | null> {
   }
   return parts.join('\n\n')
 }
+
+const FACTOR_KEYS = DEAL_FACTORS.map(f => f.key)
 
 const strings = (v: unknown, max: number) =>
   (Array.isArray(v) ? v : []).map(x => String(x ?? '').trim()).filter(Boolean).slice(0, max)
@@ -118,7 +139,35 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
         input_schema: {
           type: 'object',
           properties: {
-            win_probability: { type: 'integer', description: 'Calibrated chance of winning the deal, 0-100' },
+            factors: {
+              type: 'array',
+              description: 'All eight factors, each scored 0-100',
+              items: {
+                type: 'object',
+                properties: {
+                  key: { type: 'string', enum: FACTOR_KEYS },
+                  score: { type: 'integer' },
+                  evidence: { type: 'string' },
+                  gap: { type: 'string' },
+                },
+                required: ['key', 'score', 'evidence', 'gap'],
+              },
+            },
+            why_not_higher: { type: 'string' },
+            why_not_lower: { type: 'string' },
+            levers: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  action: { type: 'string' },
+                  factor: { type: 'string', enum: FACTOR_KEYS },
+                  uplift: { type: 'integer', description: 'Expected gain in percentage points' },
+                  why: { type: 'string' },
+                },
+                required: ['action', 'factor', 'uplift', 'why'],
+              },
+            },
             confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
             summary: { type: 'string' },
             next_step: { type: 'string' },
@@ -131,7 +180,7 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
             risks: list,
           },
           required: [
-            'win_probability', 'confidence', 'summary', 'next_step', 'call_agenda', 'clarify', 'message_draft',
+            'factors', 'why_not_higher', 'why_not_lower', 'levers', 'confidence', 'summary', 'next_step', 'call_agenda', 'clarify', 'message_draft',
             'materials', 'fit_points', 'positive_signals', 'risks',
           ],
         },
@@ -150,11 +199,42 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
 
   const tu = msg.content.find(b => b.type === 'tool_use')
   const raw = (tu && tu.type === 'tool_use' ? tu.input : {}) as Record<string, unknown>
-  const p = Number(raw.win_probability)
-  if (!Number.isFinite(p) || !String(raw.summary ?? '').trim()) throw new Error('Модель не повернула огляд')
+  const rawFactors = (Array.isArray(raw.factors) ? raw.factors : []) as Record<string, unknown>[]
+  if (rawFactors.length === 0 || !String(raw.summary ?? '').trim()) throw new Error('Модель не повернула огляд')
+
+  // Every factor is present exactly once; one the model skipped counts as unknown
+  const factors: FactorScore[] = DEAL_FACTORS.map(def => {
+    const f = rawFactors.find(x => x?.key === def.key)
+    const score = Number(f?.score)
+    return {
+      key: def.key,
+      score: Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 30,
+      evidence: String(f?.evidence ?? '').trim() || 'Немає даних',
+      gap: String(f?.gap ?? '').trim(),
+    }
+  })
+  const probability = probabilityFrom(factors)
+
+  // A lever cannot promise more than its factor still has to give
+  const room = new Map(factors.map(f => [f.key, (DEAL_FACTORS.find(d => d.key === f.key)!.weight * (100 - f.score)) / 100]))
+  const levers: Lever[] = []
+  for (const l of (Array.isArray(raw.levers) ? raw.levers : []) as Record<string, unknown>[]) {
+    const key = l?.factor as FactorKey
+    const action = String(l?.action ?? '').trim()
+    if (!action || !room.has(key) || levers.length >= 5) continue
+    const uplift = Math.min(Math.max(0, Math.round(Number(l.uplift) || 0)), Math.floor(room.get(key)!))
+    if (uplift < 1) continue
+    room.set(key, room.get(key)! - uplift)
+    levers.push({ action, factor: key, uplift, why: String(l.why ?? '').trim() })
+  }
 
   const overview: LeadOverview = {
-    win_probability: Math.max(0, Math.min(100, Math.round(p))),
+    win_probability: probability,
+    factors,
+    why_not_higher: String(raw.why_not_higher ?? '').trim(),
+    why_not_lower: String(raw.why_not_lower ?? '').trim(),
+    levers,
+    potential: Math.min(97, probability + levers.reduce((sum, l) => sum + l.uplift, 0)),
     confidence: raw.confidence === 'high' || raw.confidence === 'medium' ? raw.confidence : 'low',
     summary: String(raw.summary).trim(),
     positive_signals: strings(raw.positive_signals, 5),

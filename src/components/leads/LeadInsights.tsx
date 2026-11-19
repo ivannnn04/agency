@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, BookOpen, Check, FileText, Mail, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
+  AlertTriangle, BookOpen, Check, FileText, Mail, TrendingUp, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
   Unlink, Video, Zap,
 } from 'lucide-react'
+import { DEAL_FACTORS, FactorScore, Lever, factorPoints } from '@/lib/dealFactors'
 
 // Fellow notetaker + AI deal overview pieces of the leads board. All data
 // comes from admin-only API routes; the tables are closed to the browser.
@@ -33,6 +34,11 @@ interface Overview {
   call_agenda?: { topic: string; goal: string }[]
   message_draft?: string
   materials?: { what: string; why: string }[]
+  factors?: FactorScore[]
+  why_not_higher?: string
+  why_not_lower?: string
+  levers?: Lever[]
+  potential?: number
   version?: number
   generated_at: string
 }
@@ -360,6 +366,59 @@ const Label = ({ children, tone = 'text-gray-400' }: { children: React.ReactNode
   <p className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide mb-1.5 ${tone}`}>{children}</p>
 )
 
+// Where the percentage comes from: points earned per factor, with the evidence
+function Scorecard({ factors }: { factors: FactorScore[] }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl divide-y divide-gray-50">
+      {DEAL_FACTORS.map(def => {
+        const f = factors.find(x => x.key === def.key)
+        if (!f) return null
+        const bar = f.score >= 70 ? 'bg-green-500' : f.score >= 40 ? 'bg-amber-500' : 'bg-red-400'
+        return (
+          <div key={def.key} className="px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <p className="text-[13px] font-medium text-gray-900 flex-1 min-w-0 truncate">{def.label}</p>
+              <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
+                <div className={`h-full rounded-full ${bar}`} style={{ width: `${f.score}%` }} />
+              </div>
+              <p className="text-xs tabular-nums text-gray-500 w-14 text-right flex-shrink-0">
+                <span className="font-semibold text-gray-900">{factorPoints(f)}</span> з {def.weight}
+              </p>
+            </div>
+            <p className="text-xs text-gray-600 leading-snug mt-1">{f.evidence}</p>
+            {f.gap && <p className="text-[11px] text-gray-400 leading-snug mt-0.5">Бракує: {f.gap}</p>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Levers({ levers, current, potential }: { levers: Lever[]; current: number; potential: number }) {
+  if (levers.length === 0) return null
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <Label tone="text-green-700"><TrendingUp size={12} /> Що підніме шанс</Label>
+        {potential > current && <span className="text-[11px] text-gray-400">разом: {current}% → до {potential}%</span>}
+      </div>
+      <div className="flex flex-col gap-2">
+        {levers.map((l, i) => (
+          <div key={i} className="bg-white border border-gray-100 rounded-xl px-3 py-2 flex gap-2.5">
+            <span className="text-[11px] font-semibold text-green-700 bg-green-100 rounded-md px-1.5 py-0.5 h-fit flex-shrink-0 tabular-nums">+{l.uplift}%</span>
+            <div className="min-w-0">
+              <p className="text-sm text-gray-900 leading-snug">{l.action}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
+                {DEAL_FACTORS.find(d => d.key === l.factor)?.label}{l.why ? ` · ${l.why}` : ''}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Technical task for the design team, written as a prompt
 function LeadBriefCard({ leadId }: { leadId: string }) {
   const [brief, setBrief] = useState<{ content: string; lang: 'en' | 'uk'; generated_at: string } | null>(null)
@@ -480,7 +539,7 @@ export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChan
         setOverview(d.overview)
         setMeetings(d.meetings)
         // No overview yet, or one from before the call plan / materials existed
-        if ((!d.overview || (d.overview.version ?? 1) < 2) && autoFor.current !== leadId) {
+        if ((!d.overview || (d.overview.version ?? 1) < 3) && autoFor.current !== leadId) {
           autoFor.current = leadId
           regenerate()
         }
@@ -556,6 +615,33 @@ export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChan
                   </div>
                 </div>
                 <p className="text-sm text-gray-700 leading-relaxed">{overview.summary}</p>
+                <Levers levers={overview.levers ?? []} current={overview.win_probability} potential={overview.potential ?? overview.win_probability} />
+                {(overview.factors?.length ?? 0) > 0 && (
+                  <div>
+                    <Label>Чому саме {overview.win_probability}% — бали за факторами</Label>
+                    <Scorecard factors={overview.factors!} />
+                    {(overview.why_not_higher || overview.why_not_lower) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                        {overview.why_not_higher && (
+                          <div className="bg-white border border-gray-100 rounded-xl px-3 py-2">
+                            <p className="text-[11px] font-semibold text-red-600 mb-0.5">Чому не вище</p>
+                            <p className="text-xs text-gray-700 leading-snug">{overview.why_not_higher}</p>
+                          </div>
+                        )}
+                        {overview.why_not_lower && (
+                          <div className="bg-white border border-gray-100 rounded-xl px-3 py-2">
+                            <p className="text-[11px] font-semibold text-green-700 mb-0.5">Чому не нижче</p>
+                            <p className="text-xs text-gray-700 leading-snug">{overview.why_not_lower}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-2 leading-snug">
+                      Відсоток — це сума балів: кожен фактор оцінено від 0 до 100 за тим, що клієнт сказав і зробив, і помножено на його вагу.
+                      Це структурована оцінка, а не статистика по твоїх минулих угодах.
+                    </p>
+                  </div>
+                )}
                 {overview.next_step && (
                   <div className="bg-white border border-gray-100 rounded-xl px-3 py-2.5">
                     <Label>Наступний крок</Label>

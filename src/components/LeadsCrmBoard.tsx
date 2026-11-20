@@ -11,6 +11,7 @@ import {
 } from '@/components/leads/LeadInsights'
 import { QUAL_STATUS, Qualification } from '@/lib/leadQualification'
 import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
+import LeadChat from '@/components/leads/LeadChat'
 
 export interface CrmLead {
   id: string
@@ -767,6 +768,8 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
           </div>
         </div>
       </div>
+
+      <LeadChat key={lead.id} leadId={lead.id} />
     </div>
     </>
   )

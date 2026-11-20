@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { leadMeetingsSection, leadSection } from '@/lib/salesContext'
-import { DEAL_FACTORS, FactorKey, FactorScore, Lever, probabilityFrom } from '@/lib/dealFactors'
+import { DEAL_FACTORS, FIT_CHECKS, FactorKey, FactorScore, Lever, OVERVIEW_VERSION, nextLevel, probabilityFrom } from '@/lib/dealFactors'
+import { Qualification } from '@/lib/leadQualification'
 
 // AI deal overview for a CRM lead: how likely we are to win and what still
 // has to be clarified, grounded in everything stored about the lead — CRM
@@ -26,11 +27,15 @@ export interface LeadOverview {
   why_not_lower: string
   levers: Lever[]
   potential: number
+  // Qualification facts read out of the calls and letters; the lead's own
+  // fields win over these
+  facts: Qualification
+  // Probability after each evaluation, oldest first — the trend on the board
+  history: { at: string; p: number }[]
   version: number
 }
 
-// Bumped when the overview gains sections, so older stored ones get refreshed
-export const OVERVIEW_VERSION = 3
+export { OVERVIEW_VERSION }
 const PROFILE_KEY = 'agency_profile'
 
 export async function getAgencyProfile(): Promise<string> {
@@ -47,18 +52,22 @@ export async function setAgencyProfile(text: string) {
 
 const ANALYST = `You are a deal analyst for Ivan, the founder of Gudrix, a full-cycle UX/UI design and development agency. You are given everything Gudrix has on one sales lead: CRM fields, emails, the outreach thread, transcripts and AI notes of calls recorded by the Fellow notetaker, and notes from Ivan's sales assistant. You may also be given an agency profile listing what Gudrix can show a client: case studies, links, decks and other materials. Ivan reads your overview on the lead's card to decide where to spend effort and exactly what to do next.
 
-Assess the deal honestly through a scorecard. Score each of the eight factors below from 0 to 100 on the evidence in the material. The win probability shown to Ivan is computed from your scores (each factor's weight times its score, summed), so the scores are the estimate: do not aim for a total, judge each factor on its own.
+Assess the deal through a scorecard of eight factors. Each factor is a ladder of levels, listed lowest first and numbered from 0. For each factor pick the highest level whose description is fully supported by evidence in the material. A level is reached only by what the client said or did, never by a friendly tone or by what is likely; when a topic never came up, the right level is the one that says it is unknown or was not discussed. The win probability shown to Ivan is computed from the levels you pick, so do not aim for a total.
 
-${DEAL_FACTORS.map(f => `- ${f.key} (weight ${f.weight}): ${f.asks}`).join('\n')}
+${DEAL_FACTORS.filter(f => f.key !== 'fit').map(f => `${f.key} — ${f.label}:\n${f.levels.map((l, i) => `  ${i}: ${l.text}`).join('\n')}`).join('\n\n')}
 
-Anchors for a score: 0 to 15 means there is evidence against (the client said the budget is far too low, has gone silent, chose someone else). 20 to 40 means not known yet, which is the right score when the topic never came up, however friendly the conversation was. 45 to 70 means partial or indirect evidence in favour. 75 to 100 means the client confirmed it explicitly or showed it by what they did. A lead who never replied scores near zero on engagement and momentum. Two leads rarely deserve the same scores, so look for what actually differs between a deal and a typical one rather than settling on the middle.
+fit is not a ladder but four checks, each true only when the material shows it: ${FIT_CHECKS.map(c => `${c.key} (${c.label})`).join('; ')}. "case" and "offer" are true only if the client has actually been shown or sent them.
 
-For each factor give "evidence", one sentence naming what the score rests on (a quote, a fact, a date, or plainly that it was never discussed), and "gap", what is still missing or unresolved for this factor, or an empty string when nothing is.
+For objections, also list every concern the client raised that is still unresolved in "open_concerns", each as a short phrase. A concern Ivan answered and the client accepted is not open.
+
+For each factor give "evidence", one sentence naming what the level rests on (a quote, a fact, a date, or plainly that it was never discussed), and "gap", what exactly is missing to reach the next level, or an empty string at the top level.
 
 Then explain the result:
 - why_not_higher: one or two sentences on what holds the probability down the most.
 - why_not_lower: one or two sentences on what keeps it from being lower.
-- levers: the actions that would raise the probability the most, strongest first, up to five. Each names the concrete "action" Ivan takes, the "factor" it improves, the "uplift" in percentage points you would expect once it succeeds, and "why" it works for this client. Uplift for a factor cannot exceed the points that factor is still missing (its weight times the share not yet earned). Give real moves specific to this deal, such as getting the co-founder on a call or sending a fixed-price phase one before the client's stated decision date, and skip generic advice like "follow up" or "build trust".
+- levers: the moves that would lift a factor to its next level, most valuable first, up to five, at most one per factor. Each names the concrete "action" Ivan takes, the "factor" it lifts, and "why" it works for this client. The gain in points is computed from the ladder, so do not state one. Give real moves specific to this deal, such as getting the co-founder on a call or sending a fixed-price phase one before the client's stated decision date, and skip generic advice like "follow up" or "build trust".
+
+Also record the qualification facts you can read directly from the material in "facts". Fill a field only when the material states it; leave out anything you would have to guess, because these facts feed a formal score. Fields: entity (company or individual), company_size (1-10, 11-50, 51-200, 200+), contact_role (ceo for a CEO or founder, vp, cmo, cto, assistant, pm, maker for a designer or developer, other), ready_3w (yes if the client confirmed they want to start within three weeks, no if they said later or showed no intent to start), country, kpi (the business result the client wants from this project, in their words), expectations (their answer to what they expect from the project, as close to verbatim as the material allows), scope (what has to be designed or built, one or two sentences).
 
 Set confidence to low when there is little material (for example only an outreach proposal and no reply or call yet), and say in the summary what the estimate rests on. For a lead with almost no material, still give useful preparation: what to find out first and how to open the conversation.
 
@@ -141,16 +150,35 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
           properties: {
             factors: {
               type: 'array',
-              description: 'All eight factors, each scored 0-100',
+              description: 'All eight factors. "level" is the index of the ladder level reached (ignored for fit).',
               items: {
                 type: 'object',
                 properties: {
                   key: { type: 'string', enum: FACTOR_KEYS },
-                  score: { type: 'integer' },
+                  level: { type: 'integer' },
                   evidence: { type: 'string' },
                   gap: { type: 'string' },
                 },
-                required: ['key', 'score', 'evidence', 'gap'],
+                required: ['key', 'level', 'evidence', 'gap'],
+              },
+            },
+            fit_checks: {
+              type: 'object',
+              properties: Object.fromEntries(FIT_CHECKS.map(c => [c.key, { type: 'boolean' as const }])),
+              required: FIT_CHECKS.map(c => c.key),
+            },
+            open_concerns: list,
+            facts: {
+              type: 'object',
+              properties: {
+                entity: { type: 'string', enum: ['company', 'individual'] },
+                company_size: { type: 'string', enum: ['1-10', '11-50', '51-200', '200+'] },
+                contact_role: { type: 'string', enum: ['ceo', 'vp', 'cmo', 'cto', 'assistant', 'pm', 'maker', 'other'] },
+                ready_3w: { type: 'string', enum: ['yes', 'no'] },
+                country: { type: 'string' },
+                kpi: { type: 'string' },
+                expectations: { type: 'string' },
+                scope: { type: 'string' },
               },
             },
             why_not_higher: { type: 'string' },
@@ -162,10 +190,9 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
                 properties: {
                   action: { type: 'string' },
                   factor: { type: 'string', enum: FACTOR_KEYS },
-                  uplift: { type: 'integer', description: 'Expected gain in percentage points' },
                   why: { type: 'string' },
                 },
-                required: ['action', 'factor', 'uplift', 'why'],
+                required: ['action', 'factor', 'why'],
               },
             },
             confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
@@ -180,7 +207,7 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
             risks: list,
           },
           required: [
-            'factors', 'why_not_higher', 'why_not_lower', 'levers', 'confidence', 'summary', 'next_step', 'call_agenda', 'clarify', 'message_draft',
+            'factors', 'fit_checks', 'open_concerns', 'facts', 'why_not_higher', 'why_not_lower', 'levers', 'confidence', 'summary', 'next_step', 'call_agenda', 'clarify', 'message_draft',
             'materials', 'fit_points', 'positive_signals', 'risks',
           ],
         },
@@ -202,31 +229,71 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
   const rawFactors = (Array.isArray(raw.factors) ? raw.factors : []) as Record<string, unknown>[]
   if (rawFactors.length === 0 || !String(raw.summary ?? '').trim()) throw new Error('Модель не повернула огляд')
 
-  // Every factor is present exactly once; one the model skipped counts as unknown
+  const checks = (raw.fit_checks ?? {}) as Record<string, unknown>
+  const concerns = strings(raw.open_concerns, 8)
+
+  // Points come from the ladder, not from the model: it only says which
+  // level the evidence supports. A factor it skipped sits at the "unknown" level.
   const factors: FactorScore[] = DEAL_FACTORS.map(def => {
     const f = rawFactors.find(x => x?.key === def.key)
-    const score = Number(f?.score)
+    const top = def.levels.length - 1
+    let level = Math.max(0, Math.min(top, Math.round(Number(f?.level))))
+    if (!Number.isFinite(level)) level = 1
+    let details: string[] | undefined
+    if (def.key === 'fit') {
+      const met = FIT_CHECKS.filter(c => checks[c.key] === true)
+      level = met.length
+      details = FIT_CHECKS.map(c => `${checks[c.key] === true ? '✓' : '✗'} ${c.label}`)
+    } else if (def.key === 'objections') {
+      // The count of open concerns decides; with none listed the model's
+      // choice between "no conversation yet" and "nothing open" stands
+      if (concerns.length >= 3) level = 0
+      else if (concerns.length === 2) level = 1
+      else if (concerns.length === 1) level = 2
+      else level = Math.max(level, 2)
+      if (concerns.length > 0) details = concerns
+    }
     return {
       key: def.key,
-      score: Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 30,
+      level,
+      score: Math.round(def.levels[level].share * 100),
       evidence: String(f?.evidence ?? '').trim() || 'Немає даних',
       gap: String(f?.gap ?? '').trim(),
+      ...(details ? { details } : {}),
     }
   })
   const probability = probabilityFrom(factors)
 
-  // A lever cannot promise more than its factor still has to give
-  const room = new Map(factors.map(f => [f.key, (DEAL_FACTORS.find(d => d.key === f.key)!.weight * (100 - f.score)) / 100]))
+  // A lever is worth exactly what the next level of its factor adds
   const levers: Lever[] = []
+  const used = new Set<FactorKey>()
   for (const l of (Array.isArray(raw.levers) ? raw.levers : []) as Record<string, unknown>[]) {
     const key = l?.factor as FactorKey
     const action = String(l?.action ?? '').trim()
-    if (!action || !room.has(key) || levers.length >= 5) continue
-    const uplift = Math.min(Math.max(0, Math.round(Number(l.uplift) || 0)), Math.floor(room.get(key)!))
+    const factor = factors.find(f => f.key === key)
+    const next = factor ? nextLevel(factor) : null
+    if (!action || !next || used.has(key) || levers.length >= 5) continue
+    const uplift = Math.round(next.gain)
     if (uplift < 1) continue
-    room.set(key, room.get(key)! - uplift)
+    used.add(key)
     levers.push({ action, factor: key, uplift, why: String(l.why ?? '').trim() })
   }
+  levers.sort((x, y) => y.uplift - x.uplift)
+
+  const rawFacts = (raw.facts ?? {}) as Record<string, unknown>
+  const facts: Qualification = {}
+  for (const k of ['entity', 'company_size', 'contact_role', 'ready_3w', 'country', 'kpi', 'expectations', 'scope'] as const) {
+    const v = String(rawFacts[k] ?? '').trim()
+    if (v) (facts as Record<string, string>)[k] = v.slice(0, 600)
+  }
+
+  const { data: prev } = await supabaseAdmin.from('lead_ai_overviews').select('data').eq('lead_id', leadId).maybeSingle()
+  const before = (Array.isArray(prev?.data?.history) ? prev.data.history : []) as LeadOverview['history']
+  // An overview from before history was kept still gives one earlier point
+  const seed = before.length === 0 && typeof prev?.data?.win_probability === 'number'
+    ? [{ at: '', p: prev.data.win_probability as number }]
+    : before
+  const history = [...seed, { at: new Date().toISOString(), p: probability }].slice(-12)
 
   const overview: LeadOverview = {
     win_probability: probability,
@@ -235,6 +302,8 @@ export async function generateLeadOverview(leadId: string): Promise<LeadOverview
     why_not_lower: String(raw.why_not_lower ?? '').trim(),
     levers,
     potential: Math.min(97, probability + levers.reduce((sum, l) => sum + l.uplift, 0)),
+    facts,
+    history,
     confidence: raw.confidence === 'high' || raw.confidence === 'medium' ? raw.confidence : 'low',
     summary: String(raw.summary).trim(),
     positive_signals: strings(raw.positive_signals, 5),

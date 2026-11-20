@@ -2,15 +2,23 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, BookOpen, Check, FileText, Mail, TrendingUp, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
+  AlertTriangle, BookOpen, Check, ClipboardCheck, FileText, Mail, TrendingUp, ChevronDown, ChevronRight, CircleHelp, Copy, Loader2, RefreshCw, Sparkles, ThumbsUp,
   Unlink, Video, Zap,
 } from 'lucide-react'
-import { DEAL_FACTORS, FactorScore, Lever, factorPoints } from '@/lib/dealFactors'
+import { DEAL_FACTORS, FactorScore, Lever, OVERVIEW_VERSION, factorPoints, nextLevel } from '@/lib/dealFactors'
+import { QUAL_OPTIONS, QUAL_STATUS, Qualification, mergeFacts, qualify } from '@/lib/leadQualification'
 
 // Fellow notetaker + AI deal overview pieces of the leads board. All data
 // comes from admin-only API routes; the tables are closed to the browser.
 
-export interface LeadScore { win_probability: number; confidence: string; next_step: string; generated_at: string }
+export interface LeadScore {
+  win_probability: number
+  confidence: string
+  next_step: string
+  generated_at: string
+  facts?: Qualification
+  delta?: number | null
+}
 export interface UnmatchedMeeting { id: string; title: string; started_at: string | null; attendees: string[] }
 export interface Insights {
   scores: Record<string, LeadScore>
@@ -374,6 +382,7 @@ function Scorecard({ factors }: { factors: FactorScore[] }) {
         const f = factors.find(x => x.key === def.key)
         if (!f) return null
         const bar = f.score >= 70 ? 'bg-green-500' : f.score >= 40 ? 'bg-amber-500' : 'bg-red-400'
+        const next = nextLevel(f)
         return (
           <div key={def.key} className="px-3 py-2.5">
             <div className="flex items-center gap-2.5">
@@ -385,8 +394,20 @@ function Scorecard({ factors }: { factors: FactorScore[] }) {
                 <span className="font-semibold text-gray-900">{factorPoints(f)}</span> з {def.weight}
               </p>
             </div>
+            {f.level != null && <p className="text-xs font-medium text-gray-800 leading-snug mt-1">{def.levels[f.level]?.text}</p>}
+            {f.details && (
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {f.details.map((d, i) => <li key={i} className="text-[11px] text-gray-500 leading-snug">{d}</li>)}
+              </ul>
+            )}
             <p className="text-xs text-gray-600 leading-snug mt-1">{f.evidence}</p>
-            {f.gap && <p className="text-[11px] text-gray-400 leading-snug mt-0.5">Бракує: {f.gap}</p>}
+            {next ? (
+              <p className="text-[11px] text-gray-400 leading-snug mt-0.5">
+                <span className="font-semibold text-green-700">+{next.gain}</span> наступний рівень: {next.text}{f.gap ? ` — ${f.gap}` : ''}
+              </p>
+            ) : f.gap ? (
+              <p className="text-[11px] text-gray-400 leading-snug mt-0.5">Бракує: {f.gap}</p>
+            ) : null}
           </div>
         )
       })}
@@ -414,6 +435,245 @@ function Levers({ levers, current, potential }: { levers: Lever[]; current: numb
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Fact-based qualification (the scoring regulation) ─────────────────────────
+
+type QualLead = { id: string; email: string | null; amount: number | null; channel: string | null; qualification?: Qualification | null }
+
+export function qualOf(lead: QualLead, score: LeadScore | undefined) {
+  return qualify(lead, mergeFacts(lead.qualification, score?.facts), score?.win_probability ?? null)
+}
+
+const QUAL_SELECTS: { key: keyof typeof QUAL_OPTIONS; label: string }[] = [
+  { key: 'business_domain', label: 'Наш ICP' },
+  { key: 'entity', label: 'Хто клієнт' },
+  { key: 'company_size', label: 'Розмір компанії' },
+  { key: 'contact_role', label: 'Роль контакту' },
+  { key: 'ready_3w', label: 'Старт за 1–3 тижні' },
+  { key: 'partnership', label: 'Тип відносин' },
+  { key: 'old_client', label: 'Колишній клієнт' },
+  { key: 'old_lead', label: 'Колишній лід' },
+  { key: 'label_high', label: 'Мітка' },
+]
+const QUAL_TEXTS: { key: 'linkedin' | 'country' | 'kpi' | 'research' | 'scope' | 'expectations'; label: string; placeholder: string; long?: boolean }[] = [
+  { key: 'linkedin', label: 'LinkedIn компанії', placeholder: 'https://linkedin.com/company/…' },
+  { key: 'country', label: 'Країна', placeholder: 'UK, USA, Germany…' },
+  { key: 'kpi', label: 'KPI клієнта для проєкту', placeholder: 'Який бізнес-результат йому потрібен' },
+  { key: 'research', label: 'Ресерч', placeholder: 'Що знаємо про компанію: оборот, інвестиції, продукт…', long: true },
+  { key: 'scope', label: 'Обсяг робіт', placeholder: 'Що треба задизайнити чи розробити', long: true },
+  { key: 'expectations', label: '«Що ви очікуєте від цього проєкту?»', placeholder: 'Відповідь клієнта дослівно', long: true },
+]
+
+export function LeadQualificationCard({ lead, score, onSave }: {
+  lead: QualLead
+  score: LeadScore | undefined
+  onSave: (q: Qualification) => void
+}) {
+  const manual = lead.qualification ?? {}
+  const facts = mergeFacts(manual, score?.facts)
+  const result = qualify(lead, facts, score?.win_probability ?? null)
+  const st = QUAL_STATUS[result.status]
+  const [open, setOpen] = useState(result.status === 'incomplete' || result.missing.length > 0)
+  const [breakdown, setBreakdown] = useState(false)
+  const [draft, setDraft] = useState<Record<string, string>>({})
+
+  useEffect(() => { setDraft({}); setBreakdown(false) }, [lead.id])
+
+  const set = (patch: Partial<Qualification>) => {
+    const next: Record<string, unknown> = { ...manual, ...patch }
+    for (const k of Object.keys(next)) if (next[k] === '' || next[k] === undefined || next[k] === false) delete next[k]
+    onSave(next as Qualification)
+  }
+  const fromAi = (k: keyof Qualification) => !manual[k] && !!score?.facts?.[k]
+  const aiTag = <span className="text-[9px] font-semibold text-violet-700 bg-violet-50 rounded px-1 py-px ml-1" title="Прочитано AI з дзвінків і листів — перевір і підтверди">AI</span>
+  const text = (k: keyof Qualification) => draft[k] ?? String(facts[k] ?? '')
+  const field = 'w-full text-xs text-gray-700 border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400'
+
+  return (
+    <div className="border border-gray-100 rounded-2xl p-4 bg-gray-50/60">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-900"><ClipboardCheck size={13} /> Кваліфікація ліда</p>
+        <button onClick={() => setOpen(v => !v)} className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900">
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Факти
+        </button>
+      </div>
+
+      <div className="flex items-end gap-2.5 mt-3 flex-wrap">
+        <span className="text-3xl font-bold leading-none text-gray-900">{result.score}</span>
+        <span className="text-xs text-gray-400 pb-0.5">зі 100</span>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${st.chip}`}>{st.label}</span>
+        <span className="text-xs text-gray-500 pb-0.5">{st.action}</span>
+      </div>
+
+      {result.negatives.length > 0 && (
+        <div className="mt-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <p className="text-[11px] font-semibold text-red-600 mb-1">
+            {result.overridden ? 'Негативні критерії (є виняток)' : 'Дискваліфікує — будь-який негативний критерій знімає ліда'}
+          </p>
+          <ul className="flex flex-col gap-0.5">
+            {result.negatives.map((n, i) => <li key={i} className="text-xs text-gray-700 leading-snug">− {n}</li>)}
+          </ul>
+          <input
+            value={draft.override_reason ?? manual.override_reason ?? ''}
+            onChange={e => setDraft(d => ({ ...d, override_reason: e.target.value }))}
+            onBlur={e => {
+              const v = e.target.value.trim()
+              if (v !== (manual.override_reason ?? '')) set({ override_reason: v, override_at: v ? new Date().toISOString().slice(0, 10) : '' })
+            }}
+            placeholder="Виняток: чому все одно йдемо на дзвінок і хто вирішив"
+            className={`${field} mt-2`}
+          />
+        </div>
+      )}
+
+      {result.missing.length > 0 && (
+        <p className="text-[11px] text-amber-700 leading-snug mt-3">
+          Не заповнено обовʼязкове: {result.missing.join(' · ')}
+        </p>
+      )}
+
+      {open && (
+        <div className="mt-3 flex flex-col gap-2.5">
+          <div>
+            <p className="text-[11px] text-gray-400 mb-1">Crunchbase</p>
+            <div className="flex items-center gap-2">
+              <input
+                value={text('crunchbase')} disabled={!!manual.crunchbase_not_found}
+                onChange={e => setDraft(d => ({ ...d, crunchbase: e.target.value }))}
+                onBlur={e => { if (e.target.value.trim() !== (manual.crunchbase ?? '')) set({ crunchbase: e.target.value.trim() }) }}
+                placeholder="https://crunchbase.com/organization/…" className={`${field} disabled:bg-gray-50`}
+              />
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-500 whitespace-nowrap" title="Після перевірки щонайменше трьох джерел">
+                <input type="checkbox" checked={!!manual.crunchbase_not_found} onChange={e => set({ crunchbase_not_found: e.target.checked, ...(e.target.checked ? { crunchbase: '' } : {}) })} />
+                перевірено, не знайдено
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {QUAL_SELECTS.map(f => (
+              <label key={f.key} className="flex flex-col gap-1">
+                <span className="text-[11px] text-gray-400">{f.label}{fromAi(f.key) && aiTag}</span>
+                <select value={String(facts[f.key] ?? '')} onChange={e => set({ [f.key]: e.target.value })} className={field}>
+                  <option value="">—</option>
+                  {QUAL_OPTIONS[f.key].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {QUAL_TEXTS.map(f => (
+              <label key={f.key} className={`flex flex-col gap-1 ${f.long ? 'sm:col-span-2' : ''}`}>
+                <span className="text-[11px] text-gray-400">{f.label}{fromAi(f.key) && aiTag}</span>
+                {f.long ? (
+                  <textarea
+                    rows={2} value={text(f.key)} placeholder={f.placeholder}
+                    onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                    onBlur={e => { if (e.target.value.trim() !== String(manual[f.key] ?? '')) set({ [f.key]: e.target.value.trim() }) }}
+                    className={`${field} resize-y leading-relaxed`}
+                  />
+                ) : (
+                  <input
+                    value={text(f.key)} placeholder={f.placeholder}
+                    onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
+                    onBlur={e => { if (e.target.value.trim() !== String(manual[f.key] ?? '')) set({ [f.key]: e.target.value.trim() }) }}
+                    className={field}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 leading-snug">
+            Джерело, email і сума беруться з полів ліда вище. Поля з позначкою AI прочитані з дзвінків і листів — зміни їх, якщо вони неточні.
+          </p>
+        </div>
+      )}
+
+      <button onClick={() => setBreakdown(v => !v)} className="mt-3 flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900">
+        {breakdown ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Звідки бал
+      </button>
+      {breakdown && (
+        <div className="mt-2 flex flex-col gap-1">
+          {result.positives.map((p, i) => (
+            <p key={i} className="text-xs text-gray-700 flex gap-2"><span className="font-semibold text-green-700 w-8 flex-shrink-0 tabular-nums">+{p.points}</span>{p.label}</p>
+          ))}
+          {result.negatives.map((n, i) => (
+            <p key={`n${i}`} className="text-xs text-gray-700 flex gap-2"><span className="font-semibold text-red-600 w-8 flex-shrink-0 tabular-nums">−10</span>{n}</p>
+          ))}
+          <p className="text-[11px] text-gray-400 mt-1 leading-snug">
+            Разом {result.raw} з 450 можливих → {result.score} зі 100. Від 75 — Hot, від 50 — Qualified, від 30 — Nurture, нижче — Disqualified.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pipeline analytics above the board ────────────────────────────────────────
+
+const SYM: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
+const shortNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(Math.round(n)))
+
+export function PipelineStats({ leads, insights }: {
+  leads: (QualLead & { status: string; currency: string })[]
+  insights: Insights | null
+}) {
+  if (!insights) return null
+  const open = leads.filter(l => l.status !== 'won' && l.status !== 'lost')
+  if (open.length === 0) return null
+
+  const weighted: Record<string, number> = {}
+  const total: Record<string, number> = {}
+  let sumP = 0, scored = 0, up = 0, down = 0
+  const bands = { hot: 0, qualified: 0, nurture: 0, disqualified: 0, incomplete: 0 }
+  for (const l of open) {
+    const s = insights.scores[l.id]
+    bands[qualOf(l, s).status]++
+    if (l.amount != null) total[l.currency] = (total[l.currency] ?? 0) + l.amount
+    if (!s) continue
+    scored++
+    sumP += s.win_probability
+    if (l.amount != null) weighted[l.currency] = (weighted[l.currency] ?? 0) + (l.amount * s.win_probability) / 100
+    if ((s.delta ?? 0) > 0) up++
+    if ((s.delta ?? 0) < 0) down++
+  }
+  const money = (m: Record<string, number>) =>
+    Object.entries(m).filter(([, v]) => v > 0).map(([c, v]) => `${SYM[c] ?? ''}${shortNum(v)}`).join(' + ') || '—'
+  const cell = 'bg-white border border-gray-100 rounded-2xl px-4 py-3 min-w-0'
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
+      <div className={cell}>
+        <p className="text-[11px] text-gray-400 mb-1">Зважена воронка</p>
+        <p className="text-xl font-bold text-gray-900 leading-tight truncate">{money(weighted)}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5 truncate">з {money(total)} у відкритих угодах</p>
+      </div>
+      <div className={cell}>
+        <p className="text-[11px] text-gray-400 mb-1">Середній шанс закриття</p>
+        <p className="text-xl font-bold text-gray-900 leading-tight">{scored > 0 ? `${Math.round(sumP / scored)}%` : '—'}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">оцінено {scored} з {open.length} лідів</p>
+      </div>
+      <div className={cell}>
+        <p className="text-[11px] text-gray-400 mb-1">Рух з минулої оцінки</p>
+        <p className="text-xl font-bold leading-tight">
+          <span className="text-green-700">↑ {up}</span> <span className="text-gray-200 font-normal">/</span> <span className="text-red-600">↓ {down}</span>
+        </p>
+        <p className="text-[11px] text-gray-400 mt-0.5">шанс зріс / впав</p>
+      </div>
+      <div className={`${cell} col-span-2 md:col-span-3 xl:col-span-2`}>
+        <p className="text-[11px] text-gray-400 mb-2">Кваліфікація відкритих лідів</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(['hot', 'qualified', 'nurture', 'disqualified', 'incomplete'] as const).map(k => (
+            <span key={k} className={`text-xs font-semibold px-2 py-1 rounded-md ${QUAL_STATUS[k].chip}`}>
+              {QUAL_STATUS[k].label} · {bands[k]}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -539,7 +799,7 @@ export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChan
         setOverview(d.overview)
         setMeetings(d.meetings)
         // No overview yet, or one from before the call plan / materials existed
-        if ((!d.overview || (d.overview.version ?? 1) < 3) && autoFor.current !== leadId) {
+        if ((!d.overview || (d.overview.version ?? 1) < OVERVIEW_VERSION) && autoFor.current !== leadId) {
           autoFor.current = leadId
           regenerate()
         }
@@ -637,8 +897,8 @@ export function LeadInsightPanel({ leadId, onChanged }: { leadId: string; onChan
                       </div>
                     )}
                     <p className="text-[11px] text-gray-400 mt-2 leading-snug">
-                      Відсоток — це сума балів: кожен фактор оцінено від 0 до 100 за тим, що клієнт сказав і зробив, і помножено на його вагу.
-                      Це структурована оцінка, а не статистика по твоїх минулих угодах.
+                      Відсоток — це сума балів. У кожного фактора є сходинки з чіткими умовами: AI лише визначає, якої сходинки
+                      угода досягла за словами й діями клієнта, а бали рахує система. Це структурована оцінка, а не статистика по минулих угодах.
                     </p>
                   </div>
                 )}

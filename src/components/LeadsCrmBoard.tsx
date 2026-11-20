@@ -6,7 +6,10 @@ import {
   Plus, X, Trash2, Mail, Send, ExternalLink, DollarSign, CircleDollarSign, Radio, Calendar, Building2, UserRound,
   Sparkles, Video,
 } from 'lucide-react'
-import { FellowBar, Insights, LeadInsightPanel, scoreTone } from '@/components/leads/LeadInsights'
+import {
+  FellowBar, Insights, LeadInsightPanel, LeadQualificationCard, LeadScore, PipelineStats, qualOf, scoreTone,
+} from '@/components/leads/LeadInsights'
+import { QUAL_STATUS, Qualification } from '@/lib/leadQualification'
 
 export interface CrmLead {
   id: string
@@ -20,6 +23,7 @@ export interface CrmLead {
   project_id: string | null
   company?: string | null
   contact_name?: string | null
+  qualification?: Qualification | null
   created_at: string
 }
 
@@ -230,6 +234,8 @@ export default function LeadsCrmBoard() {
         onChanged={refresh}
       />
 
+      <PipelineStats leads={leads} insights={insights} />
+
       <div className="flex gap-1.5 overflow-x-auto items-start pb-4">
         {COLUMNS.map(col => {
           const colLeads = leads.filter(l => l.status === col.key)
@@ -257,6 +263,10 @@ export default function LeadsCrmBoard() {
                   const score = insights?.scores[lead.id]
                   const calls = insights?.meetingStats[lead.id]
                   const tone = score ? scoreTone(score.win_probability) : null
+                  const qual = qualOf(lead, score)
+                  const delta = score?.delta ?? 0
+                  // Untouched cards stay clean; the chip appears once qualification has started
+                  const showQual = qual.status !== 'incomplete' || Object.keys(lead.qualification ?? {}).length > 0
                   return (
                     <div
                       key={lead.id}
@@ -294,11 +304,24 @@ export default function LeadsCrmBoard() {
                           </span>
                         </Row>
                       )}
-                      {(score || calls) && (
-                        <div className="flex items-center gap-2 pt-1.5 border-t border-gray-50">
+                      {(score || calls || showQual) && (
+                        <div className="flex items-center gap-2 pt-1.5 border-t border-gray-50 flex-wrap">
                           {score && tone && (
-                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${tone.bg} ${tone.text}`} title={score.next_step || 'AI-оцінка шансу виграти'}>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${tone.bg} ${tone.text}`} title={score.next_step || 'Шанс закриття угоди'}>
                               <Sparkles size={10} /> {score.win_probability}%
+                              {delta !== 0 && <span className={delta > 0 ? 'text-green-700' : 'text-red-600'}>{delta > 0 ? `↑${delta}` : `↓${-delta}`}</span>}
+                            </span>
+                          )}
+                          {showQual && (
+                            <span
+                              className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${QUAL_STATUS[qual.status].chip}`}
+                              title={
+                                qual.negatives.length > 0 ? `Дискваліфікує: ${qual.negatives.join('; ')}`
+                                  : qual.missing.length > 0 ? `Не заповнено: ${qual.missing.join(', ')}`
+                                  : `Кваліфікація ${qual.score} зі 100`
+                              }
+                            >
+                              {qual.status === 'incomplete' ? `бракує ${qual.missing.length}` : `${QUAL_STATUS[qual.status].label} ${qual.score}`}
                             </span>
                           )}
                           {calls && (
@@ -344,6 +367,7 @@ export default function LeadsCrmBoard() {
           onMove={status => moveLead(selected.id, status)}
           onDelete={() => deleteLead(selected.id)}
           onInsightsChanged={refresh}
+          score={insights?.scores[selected.id]}
         />
       )}
     </div>
@@ -391,7 +415,8 @@ function AddLeadForm({ onSave, onCancel }: {
 
 // ── Lead drawer ────────────────────────────────────────────────────────────────
 
-function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChanged }: {
+function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChanged, score }: {
+  score: LeadScore | undefined
   lead: CrmLead
   onClose: () => void
   onUpdate: (patch: Partial<CrmLead>) => void
@@ -550,6 +575,8 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
             />
           </div>
         </div>
+
+        <LeadQualificationCard lead={lead} score={score} onSave={q => onUpdate({ qualification: q })} />
 
         <LeadInsightPanel leadId={lead.id} onChanged={onInsightsChanged} />
 

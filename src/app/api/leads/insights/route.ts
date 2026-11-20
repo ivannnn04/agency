@@ -67,13 +67,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: missingTable(error.message) ? MIGRATION_HINT : error.message, needsMigration: missingTable(error.message) }, { status: 400 })
   }
 
-  const scores: Record<string, { win_probability: number; confidence: string; next_step: string; generated_at: string }> = {}
+  const scores: Record<string, {
+    win_probability: number; confidence: string; next_step: string; generated_at: string
+    facts: Record<string, unknown>; delta: number | null
+  }> = {}
   for (const o of overviews ?? []) {
+    const history = (Array.isArray(o.data?.history) ? o.data.history : []) as { p: number }[]
     scores[o.lead_id] = {
       win_probability: o.data?.win_probability ?? 0,
       confidence: o.data?.confidence ?? 'low',
       next_step: o.data?.next_step ?? '',
       generated_at: o.generated_at,
+      facts: o.data?.facts ?? {},
+      // Change since the previous evaluation of this lead
+      delta: history.length >= 2 ? history[history.length - 1].p - history[history.length - 2].p : null,
     }
   }
   const meetingStats: Record<string, { count: number; last: string | null }> = {}

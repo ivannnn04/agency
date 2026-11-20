@@ -146,6 +146,12 @@ export default function PortalLoginPage() {
             {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
         </form>
+
+        <p className="text-center text-xs text-gray-500 mt-6">
+          <a href="/privacy" className="hover:text-white transition-colors">Privacy Policy</a>
+          <span className="mx-2">·</span>
+          <a href="/terms" className="hover:text-white transition-colors">Terms of Service</a>
+        </p>
       </div>
     </div>
   )

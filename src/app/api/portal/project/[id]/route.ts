@@ -91,6 +91,7 @@ export async function GET(
   return NextResponse.json({
     project: { ...project, start_date: dates?.start_date ?? null, deadline: dates?.deadline ?? null },
     phases: phases ?? [],
+    lang: client.lang === 'uk' ? 'uk' : 'en',
     columns: columns ?? [],
     tasks: tasks ?? [],
     assigneesByTask,

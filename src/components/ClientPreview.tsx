@@ -15,21 +15,49 @@ export default function ClientPreview({ projectId }: { projectId: string }) {
   const [clientId, setClientId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [nonce, setNonce] = useState(0)
+  const [lang, setLang] = useState<'en' | 'uk'>('en')
+  // Without a client on the project the language is preview-only
+  const [langOverride, setLangOverride] = useState<'en' | 'uk' | null>(null)
+  const [activeClient, setActiveClient] = useState<string | null>(null)
+  const [savingLang, setSavingLang] = useState(false)
 
   useEffect(() => {
     let alive = true
-    fetch(`/api/projects/portal-preview?project=${projectId}${clientId ? `&client=${clientId}` : ''}`)
+    const q = `project=${projectId}${clientId ? `&client=${clientId}` : ''}${langOverride ? `&lang=${langOverride}` : ''}`
+    fetch(`/api/projects/portal-preview?${q}`)
       .then(async res => {
         const d = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
         if (!alive) return
         setUrl(d.url)
         setClients(d.clients ?? [])
+        setActiveClient(d.client_id ?? null)
+        setLang(d.lang === 'uk' ? 'uk' : 'en')
         setError('')
       })
       .catch(e => { if (alive) setError((e as Error).message) })
     return () => { alive = false }
-  }, [projectId, clientId, nonce])
+  }, [projectId, clientId, nonce, langOverride])
+
+  // Saves the workspace language for this client (they see it on next load)
+  async function chooseLang(next: 'en' | 'uk') {
+    if (next === lang || savingLang) return
+    if (!activeClient) { setLangOverride(next); return }
+    setSavingLang(true)
+    const res = await fetch('/api/projects/portal-preview', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: activeClient, lang: next }),
+    })
+    setSavingLang(false)
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setError(d.error ?? `HTTP ${res.status}`)
+      return
+    }
+    setLangOverride(null)
+    setNonce(n => n + 1)
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -50,6 +78,24 @@ export default function ClientPreview({ projectId }: { projectId: string }) {
         )}
         <span className="text-xs text-gray-400">лише перегляд: звідси нічого не надсилається від імені клієнта</span>
         <div className="ml-auto flex items-center gap-3">
+          <div
+            className="flex items-center gap-1.5"
+            title={activeClient ? 'Мова кабінету цього клієнта — зберігається одразу' : 'Клієнта ще не додано — мова лише для цього перегляду'}
+          >
+            <span className="text-xs text-gray-400">Мова кабінету</span>
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+              {([['en', 'English'], ['uk', 'Українська']] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => chooseLang(k)}
+                  disabled={savingLang}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${lang === k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <button onClick={() => setNonce(n => n + 1)} className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900">
             <RefreshCw size={11} /> Оновити
           </button>

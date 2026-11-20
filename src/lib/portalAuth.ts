@@ -12,13 +12,18 @@ const PREVIEW_TTL_MS = 2 * 60 * 60 * 1000
 const previewSecret = () => process.env.NEXTAUTH_SECRET ?? ''
 const sign = (payload: string) => createHmac('sha256', previewSecret()).update(payload).digest('base64url')
 
-interface PreviewClaims { p: string; c: string | null; n: string | null; e: string; exp: number }
+interface PreviewClaims { p: string; c: string | null; n: string | null; e: string; l?: string; exp: number }
 
-export function mintPreviewToken(projectId: string, client: { id: string; email: string; name: string | null } | null): string {
+export function mintPreviewToken(
+  projectId: string,
+  client: { id: string; email: string; name: string | null } | null,
+  lang: string = 'en',
+): string {
   const claims: PreviewClaims = {
     p: projectId,
     c: client?.id ?? null,
     n: client?.name ?? null,
+    l: lang,
     e: client?.email ?? 'client@preview',
     exp: Date.now() + PREVIEW_TTL_MS,
   }
@@ -49,6 +54,7 @@ export interface PortalClient {
   email: string
   name: string | null
   auth_user_id: string | null
+  lang?: string | null
 }
 
 // Verifies the Supabase access token from the Authorization header and
@@ -69,7 +75,7 @@ export async function getPortalUser(req: NextRequest): Promise<{
     if (!claims || req.method !== 'GET') return { email: null, client: null }
     return {
       email: claims.e,
-      client: { id: claims.c ?? previewId(claims.p), email: claims.e, name: claims.n, auth_user_id: null },
+      client: { id: claims.c ?? previewId(claims.p), email: claims.e, name: claims.n, auth_user_id: null, lang: claims.l ?? 'en' },
     }
   }
 

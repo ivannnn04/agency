@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     email,
     client: { id: client.id, email: client.email, name: client.name },
+    lang: client.lang === 'uk' ? 'uk' : 'en',
     projects,
   })
 }

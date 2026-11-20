@@ -20,10 +20,39 @@ export async function GET(req: NextRequest) {
     .filter((c): c is { id: string; email: string; name: string | null } => !!c)
 
   const client = clients.find(c => c.id === wanted) ?? clients[0] ?? null
-  const token = mintPreviewToken(projectId, client)
+
+  // The client's language setting; `lang` in the query previews the other
+  // one without saving. Read separately: the column comes with a migration.
+  let lang = 'en'
+  if (client) {
+    const { data } = await supabaseAdmin.from('clients').select('lang').eq('id', client.id).maybeSingle()
+    if (data?.lang === 'uk') lang = 'uk'
+  }
+  const override = req.nextUrl.searchParams.get('lang')
+  if (override === 'uk' || override === 'en') lang = override
+
+  const token = mintPreviewToken(projectId, client, lang)
   return NextResponse.json({
     url: `/portal/project/${projectId}?preview=${encodeURIComponent(token)}`,
     clients,
     client_id: client?.id ?? null,
+    lang,
   })
+}
+
+// Set the language of a client's workspace
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => null)
+  const clientId = typeof body?.clientId === 'string' ? body.clientId : ''
+  const lang = body?.lang === 'uk' ? 'uk' : 'en'
+  if (!clientId) return NextResponse.json({ error: 'clientId is required' }, { status: 400 })
+  const { error } = await supabaseAdmin.from('clients').update({ lang }).eq('id', clientId)
+  if (error) {
+    return NextResponse.json({
+      error: /lang|schema cache/i.test(error.message)
+        ? 'Запусти міграцію supabase/client_lang_migration.sql у Supabase SQL Editor'
+        : error.message,
+    }, { status: 400 })
+  }
+  return NextResponse.json({ ok: true, lang })
 }

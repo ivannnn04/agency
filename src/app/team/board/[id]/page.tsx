@@ -11,7 +11,7 @@ import {
   BarChart2, X, Trash2, Clock, MessageSquare, Pencil, Check, NotebookPen,
 } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
-import GanttView from '@/components/GanttView'
+import ProjectProgram from '@/components/ProjectProgram'
 import ProjectChat from '@/components/ProjectChat'
 import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
 import ProjectNotepad from '@/components/ProjectNotepad'
@@ -24,6 +24,8 @@ interface Project {
   id: string
   name: string
   color?: string | null
+  start_date?: string | null
+  deadline?: string | null
 }
 
 interface ActiveTimer {
@@ -131,7 +133,13 @@ export default function TeamBoardPage() {
       supabase.from('team_members').select('id, name, color'),
     ])
 
-    if (proj) setProject(proj)
+    if (proj) {
+      setProject(proj)
+      // Asked for separately: these columns arrive with a later migration,
+      // and the board must still open without them
+      supabase.from('projects').select('start_date, deadline').eq('id', id).maybeSingle()
+        .then(({ data: dates }) => { if (dates) setProject(prev => prev ? { ...prev, ...dates } : prev) })
+    }
     if (cols) setColumns(cols)
     if (mems) setAllMembers(mems)
     if (tx) {
@@ -391,6 +399,12 @@ export default function TeamBoardPage() {
     await updateTask(taskId, patch)
   }
 
+  async function updateProjectDates(patch: { start_date?: string | null; deadline?: string | null }) {
+    setProject(prev => prev ? { ...prev, ...patch } : prev)
+    const { error } = await supabase.from('projects').update(patch).eq('id', id)
+    if (error) alert(`Дати проєкту не збережено: ${error.message}`)
+  }
+
   async function handleLogout() {
     if (activeTimer) await stopTimer()
     await supabase.auth.signOut()
@@ -402,6 +416,10 @@ export default function TeamBoardPage() {
       <p className="text-gray-400 text-sm">Завантаження...</p>
     </div>
   )
+
+  // The last board column is where finished work lands
+  const lastColumnId = columns.length > 0 ? columns[columns.length - 1].id : null
+  const doneIds = new Set(tasks.filter(t => t.column_id === lastColumnId).map(t => t.id))
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
@@ -430,7 +448,7 @@ export default function TeamBoardPage() {
             onClick={() => setView('gantt')}
             className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'gantt' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
           >
-            Гант
+            Програма
           </button>
         </div>
 
@@ -697,7 +715,16 @@ export default function TeamBoardPage() {
           </div>
         ) : (
           <div className="flex-1 overflow-hidden">
-            <GanttView tasks={tasks} onUpdate={updateTaskDates} />
+            <ProjectProgram
+              projectId={id}
+              startDate={project?.start_date ?? null}
+              deadline={project?.deadline ?? null}
+              tasks={tasks}
+              doneIds={doneIds}
+              onProjectDates={updateProjectDates}
+              onTaskDates={updateTaskDates}
+              onOpenTask={taskId => setSelectedTask(tasks.find(t => t.id === taskId) ?? null)}
+            />
           </div>
         )}
 

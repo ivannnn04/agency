@@ -13,6 +13,7 @@ import {
 import TeamNotificationBell from '@/components/TeamNotificationBell'
 import GanttView from '@/components/GanttView'
 import ProjectChat from '@/components/ProjectChat'
+import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
@@ -825,6 +826,7 @@ function TaskPanel({
   onMove: (colId: string) => void
   onMoveProject: (projectId: string) => void
 }) {
+  const { width: panelWidth, startResize } = usePanelWidth('taskPanelWidth', 400, 340)
   const isMine = !!member && assigneeIds.includes(member.id)
   const assignedMembers = assigneeIds
     .map(mid => allMembers.find(m => m.id === mid))
@@ -859,7 +861,11 @@ function TaskPanel({
   const overEstimate = estimateSec !== null && trackedSeconds > estimateSec
 
   return (
-    <div className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-[400px] md:min-w-[400px] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shadow-xl">
+    <div
+      className="fixed inset-0 z-40 md:relative md:inset-auto md:z-auto w-full md:w-[var(--pw)] md:min-w-[var(--pw)] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shadow-xl"
+      style={{ '--pw': `${panelWidth}px` } as React.CSSProperties}
+    >
+      <ChatResizeHandle onMouseDown={startResize} className="hidden md:block" />
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
         {currentCol && (

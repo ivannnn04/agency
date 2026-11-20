@@ -14,6 +14,7 @@ import {
 import ProjectProgram from '@/components/ProjectProgram'
 import ProjectOverview from '@/components/ProjectOverview'
 import ProjectChat from '@/components/ProjectChat'
+import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import ProjectInvoices from '@/components/ProjectInvoices'
 import ProjectReport from '@/components/ProjectReport'
@@ -1293,6 +1294,7 @@ function TaskDetailPanel({
   onMove: (colId: string) => void
   onMoveProject: (projectId: string) => void
 }) {
+  const { width: panelWidth, startResize } = usePanelWidth('taskPanelWidth', 480, 380)
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc]   = useState(task.description ?? '')
   const [changeRequests, setChangeRequests] = useState<ChangeRequestRow[]>([])
@@ -1323,7 +1325,11 @@ function TaskDetailPanel({
   const unassignedMembers = members.filter(m => !assigneeIds.includes(m.id))
 
   return (
-    <div className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-[480px] md:min-w-[480px] border-l border-gray-100 bg-white flex flex-col h-full overflow-hidden">
+    <div
+      className="fixed inset-0 z-40 md:relative md:inset-auto md:z-auto w-full md:w-[var(--pw)] md:min-w-[var(--pw)] border-l border-gray-100 bg-white flex flex-col h-full overflow-hidden"
+      style={{ '--pw': `${panelWidth}px` } as React.CSSProperties}
+    >
+      <ChatResizeHandle onMouseDown={startResize} className="hidden md:block" />
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 text-sm text-gray-500">

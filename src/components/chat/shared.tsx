@@ -8,23 +8,26 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 // ── Resizable drawer width (shared by all chat drawers, persisted) ─────────────
 
 const CHAT_MIN = 320
-const CHAT_MAX = 720
+const PANEL_MAX = 1400
 const CHAT_DEFAULT = 380
 
-export function useChatWidth() {
-  const [width, setWidth] = useState(CHAT_DEFAULT)
+// Width of a right-docked side panel, dragged by its left edge and remembered
+// per panel kind. The panel may grow until a strip of the page stays visible.
+export function usePanelWidth(storageKey: string, initial: number, min: number) {
+  const [width, setWidth] = useState(initial)
 
   useEffect(() => {
-    const saved = Number(localStorage.getItem('chatWidth'))
-    if (saved >= CHAT_MIN && saved <= CHAT_MAX) setWidth(saved)
-  }, [])
+    const saved = Number(localStorage.getItem(storageKey))
+    if (saved >= min && saved <= PANEL_MAX) setWidth(saved)
+  }, [storageKey, min])
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    const clamp = (x: number) => Math.min(CHAT_MAX, Math.max(CHAT_MIN, window.innerWidth - x))
+    const max = Math.max(min, Math.min(PANEL_MAX, window.innerWidth - 120))
+    const clamp = (x: number) => Math.min(max, Math.max(min, window.innerWidth - x))
     const onMove = (ev: MouseEvent) => setWidth(clamp(ev.clientX))
     const onUp = (ev: MouseEvent) => {
-      localStorage.setItem('chatWidth', String(clamp(ev.clientX)))
+      localStorage.setItem(storageKey, String(clamp(ev.clientX)))
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       document.body.style.cursor = ''
@@ -34,18 +37,20 @@ export function useChatWidth() {
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [])
+  }, [storageKey, min])
 
   return { width, startResize }
 }
 
-// Invisible grab strip on the drawer's left edge.
-export function ChatResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+export const useChatWidth = () => usePanelWidth('chatWidth', CHAT_DEFAULT, CHAT_MIN)
+
+// Grab strip on the panel's left edge.
+export function ChatResizeHandle({ onMouseDown, className = '' }: { onMouseDown: (e: React.MouseEvent) => void; className?: string }) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className="absolute left-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-teal-400/50 active:bg-teal-400/70 transition-colors z-10"
-      title="Drag to resize"
+      className={`absolute left-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-teal-400/50 active:bg-teal-400/70 transition-colors z-10 ${className}`}
+      title="Потягни, щоб змінити ширину"
     />
   )
 }

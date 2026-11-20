@@ -10,6 +10,7 @@ import {
   FellowBar, Insights, LeadInsightPanel, LeadQualificationCard, LeadScore, PipelineStats, qualOf, scoreTone,
 } from '@/components/leads/LeadInsights'
 import { QUAL_STATUS, Qualification } from '@/lib/leadQualification'
+import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
 
 export interface CrmLead {
   id: string
@@ -428,6 +429,7 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
   const [email, setEmail] = useState(lead.email ?? '')
   const [amount, setAmount] = useState(lead.amount != null ? String(lead.amount) : '')
   const [channel, setChannel] = useState(lead.channel ?? '')
+  const { width, startResize } = usePanelWidth('leadPanelWidth', 540, 420)
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [company, setCompany] = useState(lead.company ?? '')
   const [contact, setContact] = useState(lead.contact_name ?? '')
@@ -478,7 +480,11 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
   return (
     <>
     <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-    <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[540px] border-l border-gray-100 bg-white flex flex-col overflow-hidden shadow-2xl">
+    <div
+      className="fixed inset-y-0 right-0 z-50 w-full sm:w-[var(--pw)] max-w-full border-l border-gray-100 bg-white flex flex-col overflow-hidden shadow-2xl"
+      style={{ '--pw': `${width}px` } as React.CSSProperties}
+    >
+      <ChatResizeHandle onMouseDown={startResize} className="hidden sm:block" />
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
         <select

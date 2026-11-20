@@ -12,6 +12,18 @@ export default function PortalLoginPage() {
   const [error, setError]       = useState('')
   const [info, setInfo]         = useState('')
   const [loading, setLoading]   = useState(false)
+  // Shown only when the Google provider is switched on in Supabase Auth —
+  // otherwise the button leads to a raw "provider is not enabled" error
+  const [googleOn, setGoogleOn] = useState(false)
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '' },
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setGoogleOn(d?.external?.google === true))
+      .catch(() => {})
+  }, [])
 
   // Already signed in → straight to the dashboard
   useEffect(() => {
@@ -57,24 +69,24 @@ export default function PortalLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#00140c] flex items-center justify-center p-4">
-      <div className="bg-[#0a2a1c] rounded-2xl p-10 w-full max-w-md shadow-2xl">
+    <div className="min-h-screen bg-[#09090b] flex items-center justify-center p-4">
+      <div className="bg-[#18181b] border border-white/[0.06] rounded-2xl p-10 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-xl font-bold text-white">G</span>
+          <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-xl font-bold text-[#09090b]">G</span>
           </div>
           <h1 className="text-xl font-bold text-white">Gudrix — Client Portal</h1>
           <p className="text-gray-400 mt-1 text-sm">Track your projects and talk to the team</p>
         </div>
 
         {/* Login / Register tabs */}
-        <div className="flex bg-[#00140c] rounded-xl p-1 mb-6">
+        <div className="flex bg-[#09090b] rounded-xl p-1 mb-6">
           {([['login', 'Sign in'], ['register', 'Sign up']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => { setMode(key); setError(''); setInfo('') }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === key ? 'bg-teal-500 text-white' : 'text-gray-400 hover:text-white'
+                mode === key ? 'bg-[#27272a] text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
               {label}
@@ -83,9 +95,10 @@ export default function PortalLoginPage() {
         </div>
 
         {/* Google */}
+        {googleOn && <>
         <button
           onClick={googleAuth}
-          className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-medium py-3 px-6 rounded-xl hover:bg-gray-100 transition-colors mb-4"
+          className="w-full flex items-center justify-center gap-3 bg-[#27272a] border border-white/10 text-white font-medium py-3 px-6 rounded-xl hover:bg-[#3f3f46] transition-colors mb-4"
         >
           <svg width="18" height="18" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -101,6 +114,7 @@ export default function PortalLoginPage() {
           <span className="text-xs text-gray-500">or with email</span>
           <div className="flex-1 h-px bg-white/10" />
         </div>
+        </>}
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
@@ -109,7 +123,7 @@ export default function PortalLoginPage() {
               type="email" required
               value={email} onChange={e => setEmail(e.target.value)}
               placeholder="you@company.com"
-              className="w-full bg-[#00140c] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+              className="w-full bg-[#09090b] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-white/40 placeholder-gray-600"
             />
           </div>
           <div>
@@ -118,16 +132,16 @@ export default function PortalLoginPage() {
               type="password" required
               value={password} onChange={e => setPassword(e.target.value)}
               placeholder={mode === 'register' ? 'At least 8 characters' : '••••••••'}
-              className="w-full bg-[#00140c] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 placeholder-gray-600"
+              className="w-full bg-[#09090b] border border-white/10 !text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-white/40 placeholder-gray-600"
             />
           </div>
 
           {error && <p className="text-red-400 text-xs">{error}</p>}
-          {info && <p className="text-teal-400 text-xs">{info}</p>}
+          {info && <p className="text-gray-300 text-xs">{info}</p>}
 
           <button
             type="submit" disabled={loading}
-            className="w-full bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white font-medium py-3 rounded-xl text-sm transition-colors mt-1"
+            className="w-full bg-white hover:bg-gray-200 disabled:opacity-50 text-[#09090b] font-medium py-3 rounded-xl text-sm transition-colors mt-1"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>

@@ -9,11 +9,17 @@ export async function GET(req: NextRequest) {
   // Authenticated but not attached to any project by the admin yet
   if (!client) return NextResponse.json({ email, client: null, projects: [] })
 
-  const { data: links } = await supabaseAdmin
-    .from('project_clients')
-    .select('project_id')
-    .eq('client_id', client.id)
-  const projectIds = (links ?? []).map(l => l.project_id)
+  let projectIds: string[]
+  if (client.id.startsWith('preview:')) {
+    // Admin preview of a project that has no client attached yet
+    projectIds = [client.id.slice('preview:'.length)]
+  } else {
+    const { data: links } = await supabaseAdmin
+      .from('project_clients')
+      .select('project_id')
+      .eq('client_id', client.id)
+    projectIds = (links ?? []).map(l => l.project_id)
+  }
 
   let projects: unknown[] = []
   if (projectIds.length > 0) {

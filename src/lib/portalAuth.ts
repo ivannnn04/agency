@@ -1,5 +1,48 @@
 import { NextRequest } from 'next/server'
+import { createHmac, timingSafeEqual } from 'crypto'
 import supabaseAdmin from '@/lib/supabaseAdmin'
+
+// ── Admin preview ────────────────────────────────────────────────────────────
+// The admin can open the portal exactly as a client sees it. The admin API
+// mints a short-lived signed token; the portal accepts it in place of a
+// client's own session, for reading only.
+
+const PREVIEW_PREFIX = 'gxp.'
+const PREVIEW_TTL_MS = 2 * 60 * 60 * 1000
+const previewSecret = () => process.env.NEXTAUTH_SECRET ?? ''
+const sign = (payload: string) => createHmac('sha256', previewSecret()).update(payload).digest('base64url')
+
+interface PreviewClaims { p: string; c: string | null; n: string | null; e: string; exp: number }
+
+export function mintPreviewToken(projectId: string, client: { id: string; email: string; name: string | null } | null): string {
+  const claims: PreviewClaims = {
+    p: projectId,
+    c: client?.id ?? null,
+    n: client?.name ?? null,
+    e: client?.email ?? 'client@preview',
+    exp: Date.now() + PREVIEW_TTL_MS,
+  }
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+  return `${PREVIEW_PREFIX}${payload}.${sign(payload)}`
+}
+
+function readPreviewToken(token: string): PreviewClaims | null {
+  if (!previewSecret() || !token.startsWith(PREVIEW_PREFIX)) return null
+  const [payload, sig] = token.slice(PREVIEW_PREFIX.length).split('.')
+  if (!payload || !sig) return null
+  const expected = Buffer.from(sign(payload))
+  const given = Buffer.from(sig)
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as PreviewClaims
+    return claims.exp > Date.now() ? claims : null
+  } catch {
+    return null
+  }
+}
+
+// A project previewed without any client attached still needs an identity
+const previewId = (projectId: string) => `preview:${projectId}`
 
 export interface PortalClient {
   id: string
@@ -20,6 +63,16 @@ export async function getPortalUser(req: NextRequest): Promise<{
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null
   if (!token) return { email: null, client: null }
 
+  if (token.startsWith(PREVIEW_PREFIX)) {
+    const claims = readPreviewToken(token)
+    // Looking only: nothing may be posted in the client's name from a preview
+    if (!claims || req.method !== 'GET') return { email: null, client: null }
+    return {
+      email: claims.e,
+      client: { id: claims.c ?? previewId(claims.p), email: claims.e, name: claims.n, auth_user_id: null },
+    }
+  }
+
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user?.email) return { email: null, client: null }
 
@@ -36,6 +89,7 @@ export async function getPortalUser(req: NextRequest): Promise<{
 }
 
 export async function clientHasProject(clientId: string, projectId: string): Promise<boolean> {
+  if (clientId.startsWith('preview:')) return clientId === previewId(projectId)
   const { data } = await supabaseAdmin
     .from('project_clients')
     .select('id')

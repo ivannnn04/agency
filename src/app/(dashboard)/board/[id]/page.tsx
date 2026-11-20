@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import ProjectProgram from '@/components/ProjectProgram'
 import ProjectOverview from '@/components/ProjectOverview'
+import ClientPreview from '@/components/ClientPreview'
 import ProjectChat from '@/components/ProjectChat'
 import { ChatResizeHandle, usePanelWidth } from '@/components/chat/shared'
 import ProjectNotepad from '@/components/ProjectNotepad'
@@ -115,7 +116,7 @@ export default function BoardPage() {
   const [newColName, setNewColName]   = useState('')
   const [newColColor, setNewColColor] = useState('#6B7280')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [view, setView] = useState<'board' | 'gantt' | 'overview'>('board')
+  const [view, setView] = useState<'board' | 'gantt' | 'overview' | 'client'>('board')
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [clientPanelOpen, setClientPanelOpen] = useState(false)
   const [projectClients, setProjectClients] = useState<ClientRow[]>([])
@@ -128,6 +129,7 @@ export default function BoardPage() {
   const [notepadOpen, setNotepadOpen] = useState(false)
   const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const [adminName, setAdminName] = useState('Ivan')
@@ -415,6 +417,17 @@ export default function BoardPage() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
   }
 
+  async function renameProject() {
+    const name = (nameDraft ?? '').trim()
+    setNameDraft(null)
+    if (!project || !name || name === project.name) return
+    const { error } = await supabase.from('projects').update({ name }).eq('id', id)
+    if (error) { setDbError(`Не вдалося перейменувати проєкт: ${error.message}`); return }
+    setProject(prev => prev ? { ...prev, name } : prev)
+    // The sidebar keeps its own list of projects
+    window.dispatchEvent(new Event('gudrix:projects-changed'))
+  }
+
   async function updateProjectDates(patch: { start_date?: string | null; deadline?: string | null }) {
     setProject(prev => prev ? { ...prev, ...patch } : prev)
     const { error } = await supabase.from('projects').update(patch).eq('id', id)
@@ -539,7 +552,20 @@ create policy "team_members_all" on team_members for all using (true) with check
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 flex-shrink-0 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
-            <h1 className="text-base font-semibold text-gray-900">{project?.name}</h1>
+            {/* Click the name to rename the project */}
+            <input
+              value={nameDraft ?? project?.name ?? ''}
+              onChange={e => setNameDraft(e.target.value)}
+              onFocus={e => e.target.select()}
+              onKeyDown={e => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') { setNameDraft(null); e.currentTarget.blur() }
+              }}
+              onBlur={renameProject}
+              title="Натисни, щоб перейменувати проєкт"
+              size={Math.max(4, (nameDraft ?? project?.name ?? '').length)}
+              className="text-base font-semibold text-gray-900 bg-transparent rounded-md px-1 -mx-1 max-w-[46vw] focus:outline-none hover:bg-gray-100 focus:bg-gray-100 focus:ring-2 focus:ring-teal-400 truncate"
+            />
             {/* Tab switcher */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
               <button
@@ -559,6 +585,13 @@ create policy "team_members_all" on team_members for all using (true) with check
                 className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
               >
                 Огляд
+              </button>
+              <button
+                onClick={() => setView('client')}
+                title="Подивитись проєкт очима клієнта"
+                className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'client' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Клієнт
               </button>
             </div>
           </div>
@@ -902,10 +935,12 @@ create policy "team_members_all" on team_members for all using (true) with check
               onOpenTask={taskId => setSelectedTask(tasks.find(t => t.id === taskId) ?? null)}
             />
           </div>
-        ) : (
+        ) : view === 'overview' ? (
           <div className="flex-1 overflow-y-auto">
             <ProjectOverview projectId={id} onOpenProgram={() => setView('gantt')} />
           </div>
+        ) : (
+          <ClientPreview projectId={id} />
         )}
       </div>
 

@@ -26,14 +26,22 @@ export default function PortalDashboardPage() {
   const [notLinked, setNotLinked] = useState(false)
   const [projects, setProjects] = useState<PortalProject[]>([])
   const [loading, setLoading] = useState(true)
+  const [preview, setPreview] = useState<string | null>(null)
 
   useEffect(() => {
     ;(async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.replace('/portal/login'); return }
+      // The admin's preview link carries its own read-only token
+      const previewToken = new URLSearchParams(window.location.search).get('preview')
+      let accessToken = previewToken
+      if (!accessToken) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) { router.replace('/portal/login'); return }
+        accessToken = session.access_token
+      }
+      setPreview(previewToken)
 
       const res = await fetch('/api/portal/me', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (res.status === 401) { router.replace('/portal/login'); return }
       const data = await res.json()
@@ -55,6 +63,11 @@ export default function PortalDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {preview && (
+        <div className="bg-amber-400 text-amber-950 text-xs font-medium px-4 py-1.5 text-center">
+          Режим перегляду — так свій кабінет бачить клієнт.
+        </div>
+      )}
       <header className="bg-[#00140c] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
@@ -100,7 +113,7 @@ export default function PortalDashboardPage() {
                   return (
                     <Link
                       key={p.id}
-                      href={`/portal/project/${p.id}`}
+                      href={`/portal/project/${p.id}${preview ? `?preview=${encodeURIComponent(preview)}` : ''}`}
                       className="bg-white rounded-2xl border border-gray-100 p-5 hover:border-teal-200 hover:shadow-sm transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">

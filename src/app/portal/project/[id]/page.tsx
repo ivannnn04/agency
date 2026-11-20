@@ -37,7 +37,10 @@ interface PortalProjectData {
     contract_amount: number | null; contract_currency: string | null
     show_tracked_hours: boolean
     change_request_limit: number
+    start_date?: string | null
+    deadline?: string | null
   }
+  phases?: { id: string; title: string; start_date: string | null; end_date: string | null; done: boolean }[]
   columns: PortalColumn[]
   tasks: PortalTask[]
   assigneesByTask: Record<string, string[]>
@@ -87,6 +90,10 @@ function OverviewDashboard({ data, sym, onOpenBoard, onOpenChat }: {
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   const taskById: Record<string, PortalTask> = {}
   for (const t of tasks) taskById[t.id] = t
+  const phases = data.phases ?? []
+  const daysLeft = project.deadline
+    ? Math.round((new Date(project.deadline.slice(0, 10) + 'T00:00:00').getTime() - today.getTime()) / 86_400_000)
+    : null
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto flex flex-col gap-4">
@@ -126,6 +133,47 @@ function OverviewDashboard({ data, sym, onOpenBoard, onOpenChat }: {
           Open the board →
         </button>
       </div>
+
+      {/* Programme: dates and roadmap */}
+      {(project.deadline || project.start_date || phases.length > 0) && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <div className="flex items-center gap-x-8 gap-y-3 flex-wrap">
+            <div>
+              <p className="text-xs text-gray-400">Start</p>
+              <p className="text-base font-semibold text-gray-900">{project.start_date ? fmtDate(project.start_date) : '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Deadline</p>
+              <p className="text-base font-semibold text-gray-900">{project.deadline ? fmtDate(project.deadline) : '—'}</p>
+            </div>
+            {daysLeft !== null && (
+              <span className={`text-xs font-medium px-2.5 py-1 rounded-md ${daysLeft < 0 ? 'bg-red-50 text-red-600' : daysLeft <= 7 ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                {daysLeft < 0 ? `${-daysLeft} days past the deadline` : daysLeft === 0 ? 'Due today' : `${daysLeft} days left`}
+              </span>
+            )}
+          </div>
+          {phases.length > 0 && (
+            <div className="mt-4 flex flex-col gap-2">
+              <p className="text-xs text-gray-400">Roadmap</p>
+              {phases.map(ph => {
+                const late = !ph.done && !!ph.end_date && new Date(ph.end_date) < today
+                return (
+                  <div key={ph.id} className="flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ph.done ? 'bg-green-500' : late ? 'bg-red-500' : 'bg-violet-500'}`} />
+                    <span className={`text-sm flex-1 min-w-0 truncate ${ph.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{ph.title}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">
+                      {ph.start_date ? fmtDate(ph.start_date) : '?'} – {ph.end_date ? fmtDate(ph.end_date) : '?'}
+                    </span>
+                    <span className={`text-[11px] font-medium w-16 text-right flex-shrink-0 ${ph.done ? 'text-green-700' : late ? 'text-red-600' : 'text-gray-400'}`}>
+                      {ph.done ? 'Done' : late ? 'Late' : 'Planned'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -254,6 +302,8 @@ export default function PortalProjectPage() {
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [view, setView] = useState<'overview' | 'board' | 'timeline'>('overview')
   const [crTask, setCrTask] = useState<PortalTask | null>(null)
+  // Set when the admin opened this page through a preview link
+  const [preview, setPreview] = useState<string | null>(null)
 
   const refetch = useCallback(async (accessToken: string) => {
     const res = await fetch(`/api/portal/project/${id}`, {
@@ -267,6 +317,13 @@ export default function PortalProjectPage() {
 
   useEffect(() => {
     ;(async () => {
+      const previewToken = new URLSearchParams(window.location.search).get('preview')
+      if (previewToken) {
+        setPreview(previewToken)
+        setToken(previewToken)
+        refetch(previewToken)
+        return
+      }
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.replace('/portal/login'); return }
       setToken(session.access_token)
@@ -289,6 +346,9 @@ export default function PortalProjectPage() {
 
   const { project, columns, tasks, assigneesByTask, timeByTask, changeRequests } = data
   const sym = CURRENCY_SYMBOL[project.contract_currency ?? 'USD']
+  const homeHref = preview ? `/portal?preview=${encodeURIComponent(preview)}` : '/portal'
+  const lastColumnId = columns.length > 0 ? columns[columns.length - 1].id : null
+  const doneTaskIds = new Set(tasks.filter(t => t.column_id === lastColumnId).map(t => t.id))
   const crLimit = project.change_request_limit ?? 3
   const crCountByTask: Record<string, number> = {}
   for (const cr of changeRequests ?? []) {
@@ -297,9 +357,14 @@ export default function PortalProjectPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {preview && (
+        <div className="bg-amber-400 text-amber-950 text-xs font-medium px-4 py-1.5 text-center">
+          Режим перегляду — так цей проєкт бачить клієнт. Надсилання повідомлень, задач і нотаток тут вимкнене.
+        </div>
+      )}
       <header className="bg-[#00140c] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between flex-wrap gap-y-2 gap-x-2">
         <div className="flex items-center gap-3">
-          <Link href="/portal" className="text-gray-400 hover:text-white transition-colors">
+          <Link href={homeHref} className="text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={16} />
           </Link>
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: project.color ?? '#14b8a6' }} />
@@ -328,13 +393,15 @@ export default function PortalProjectPage() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle variant="sidebar" />
-          <button
-            onClick={() => setAddTaskOpen(true)}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            title="Add a task to the backlog"
-          >
-            <Plus size={13} /> <span className="hidden sm:inline">Add task</span>
-          </button>
+          {!preview && (
+            <button
+              onClick={() => setAddTaskOpen(true)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              title="Add a task to the backlog"
+            >
+              <Plus size={13} /> <span className="hidden sm:inline">Add task</span>
+            </button>
+          )}
           <button
             onClick={() => { setChatOpen(false); setNotesOpen(false); setInvoicesOpen(v => !v) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -362,7 +429,16 @@ export default function PortalProjectPage() {
 
       {view === 'timeline' ? (
         <div className="h-[calc(100vh-64px)] bg-white">
-          <GanttView tasks={tasks} onUpdate={() => {}} readOnly />
+          <GanttView
+            tasks={tasks}
+            onUpdate={() => {}}
+            readOnly
+            phases={data.phases ?? []}
+            projectStart={project.start_date ?? null}
+            deadline={project.deadline ?? null}
+            doneIds={doneTaskIds}
+            lang="en"
+          />
         </div>
       ) : view === 'overview' ? (
         <OverviewDashboard

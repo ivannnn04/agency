@@ -62,6 +62,13 @@ interface Props {
   deadline?: string | null
   doneIds?: Set<string>
   onOpenTask?: (taskId: string) => void
+  // The client portal is in English; everything else in Ukrainian
+  lang?: 'uk' | 'en'
+}
+
+const TEXT = {
+  uk: { days: 'Дні', weeks: 'Тижні', phase: 'етап', active: 'у роботі', done: 'готово', overdue: 'прострочено', deadline: 'дедлайн', head: 'Етап / задача', empty: 'Поки немає ні етапів, ні задач — додай їх, і вони зʼявляться на графіку.', locale: 'uk-UA' },
+  en: { days: 'Days', weeks: 'Weeks', phase: 'phase', active: 'in progress', done: 'done', overdue: 'overdue', deadline: 'deadline', head: 'Phase / task', empty: 'No phases or tasks yet.', locale: 'en-US' },
 }
 
 function toDateStr(d: Date): string {
@@ -89,8 +96,9 @@ function parseDate(s: string | null | undefined): Date | null {
 const PRIORITY_COLOR: Record<string, string> = { low: '#9CA3AF', medium: '#F59E0B', high: '#EF4444' }
 
 export default function GanttView({
-  tasks, onUpdate, readOnly = false, phases, onPhaseUpdate, projectStart, deadline, doneIds, onOpenTask,
+  tasks, onUpdate, readOnly = false, phases, onPhaseUpdate, projectStart, deadline, doneIds, onOpenTask, lang = 'uk',
 }: Props) {
+  const tx = TEXT[lang]
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
   const todayStr = toDateStr(today)
   const [zoom, setZoom] = useState<'day' | 'week'>('day')
@@ -223,16 +231,16 @@ export default function GanttView({
               onClick={() => setZoom(z)}
               className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors ${zoom === z ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
             >
-              {z === 'day' ? 'Дні' : 'Тижні'}
+              {z === 'day' ? tx.days : tx.weeks}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-3 text-[11px] text-gray-400 flex-wrap">
-          {(phases?.length ?? 0) > 0 && <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block" /> етап</span>}
-          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-teal-500 inline-block" /> у роботі</span>
-          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" /> готово</span>
-          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" /> прострочено</span>
-          {deadline && <span className="flex items-center gap-1"><i className="w-0.5 h-3 bg-red-500 inline-block" /> дедлайн</span>}
+          {(phases?.length ?? 0) > 0 && <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block" /> {tx.phase}</span>}
+          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-teal-500 inline-block" /> {tx.active}</span>
+          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" /> {tx.done}</span>
+          <span className="flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" /> {tx.overdue}</span>
+          {deadline && <span className="flex items-center gap-1"><i className="w-0.5 h-3 bg-red-500 inline-block" /> {tx.deadline}</span>}
         </div>
       </div>
 
@@ -244,7 +252,7 @@ export default function GanttView({
               className="sticky left-0 z-40 bg-gray-50 border-r border-gray-100 flex items-center px-4 flex-shrink-0"
               style={{ width: SIDEBAR_WIDTH }}
             >
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Етап / задача</span>
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{tx.head}</span>
             </div>
             {days.map((day, i) => {
               const isToday = toDateStr(day) === todayStr
@@ -260,7 +268,7 @@ export default function GanttView({
                 >
                   {showMonth && (i === 0 || day.getDate() === 1 || zoom === 'day') && (
                     <span className="text-[9px] text-gray-400 leading-none mb-0.5 whitespace-nowrap">
-                      {day.toLocaleDateString('uk-UA', { month: 'short' })}
+                      {day.toLocaleDateString(tx.locale, { month: 'short' })}
                     </span>
                   )}
                   {showNum && (
@@ -291,7 +299,7 @@ export default function GanttView({
 
             {rows.length === 0 && (
               <p className="text-sm text-gray-400 px-4 py-10 sticky left-0" style={{ width: 420 }}>
-                Поки немає ні етапів, ні задач — додай їх, і вони зʼявляться на графіку.
+                {tx.empty}
               </p>
             )}
 

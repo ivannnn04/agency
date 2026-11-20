@@ -36,6 +36,17 @@ export async function GET(
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Programme: overall dates and roadmap phases. Read separately because
+  // they arrive with a later migration and the portal must work without them.
+  const [{ data: dates }, { data: phases }] = await Promise.all([
+    supabaseAdmin.from('projects').select('start_date, deadline').eq('id', id).maybeSingle(),
+    supabaseAdmin
+      .from('project_milestones')
+      .select('id, title, start_date, end_date, done')
+      .eq('project_id', id)
+      .order('position'),
+  ])
+
   const taskIds = (tasks ?? []).map(t => t.id)
 
   // Assignee display names per task
@@ -78,7 +89,8 @@ export async function GET(
   ]
 
   return NextResponse.json({
-    project,
+    project: { ...project, start_date: dates?.start_date ?? null, deadline: dates?.deadline ?? null },
+    phases: phases ?? [],
     columns: columns ?? [],
     tasks: tasks ?? [],
     assigneesByTask,

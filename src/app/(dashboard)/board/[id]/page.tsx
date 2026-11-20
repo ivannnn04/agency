@@ -11,7 +11,8 @@ import {
   Tag, User, ChevronRight, AlignLeft, CheckSquare, UserPlus,
   Link2, Copy, MessageSquare, Clock, Send, Loader2, NotebookPen, ReceiptText, BarChart2,
 } from 'lucide-react'
-import GanttView from '@/components/GanttView'
+import ProjectProgram from '@/components/ProjectProgram'
+import ProjectOverview from '@/components/ProjectOverview'
 import ProjectChat from '@/components/ProjectChat'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import ProjectInvoices from '@/components/ProjectInvoices'
@@ -113,7 +114,7 @@ export default function BoardPage() {
   const [newColName, setNewColName]   = useState('')
   const [newColColor, setNewColColor] = useState('#6B7280')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [view, setView] = useState<'board' | 'gantt'>('board')
+  const [view, setView] = useState<'board' | 'gantt' | 'overview'>('board')
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [clientPanelOpen, setClientPanelOpen] = useState(false)
   const [projectClients, setProjectClients] = useState<ClientRow[]>([])
@@ -207,6 +208,7 @@ export default function BoardPage() {
       status: 'todo',
       priority: patch.priority ?? 'medium',
       team_member_id: primary,
+      start_date: patch.start_date ?? null,
       due_date: patch.due_date ?? null,
       description: null,
     }
@@ -412,6 +414,12 @@ export default function BoardPage() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t))
   }
 
+  async function updateProjectDates(patch: { start_date?: string | null; deadline?: string | null }) {
+    setProject(prev => prev ? { ...prev, ...patch } : prev)
+    const { error } = await supabase.from('projects').update(patch).eq('id', id)
+    if (error) setDbError(`Дати проєкту не збережено — запусти міграцію project_program_migration.sql (${error.message})`)
+  }
+
   async function regenerateClientLink() {
     const token = crypto.randomUUID()
     const { error } = await supabase.from('projects').update({ client_access_token: token }).eq('id', id)
@@ -520,6 +528,10 @@ create policy "team_members_all" on team_members for all using (true) with check
     </div>
   )
 
+  // The last board column is where finished work lands
+  const lastColumnId = columns.length > 0 ? columns[columns.length - 1].id : null
+  const doneIds = new Set(tasks.filter(t => t.column_id === lastColumnId).map(t => t.id))
+
   return (
     <div className="flex h-full overflow-hidden bg-white">
       {/* Board area */}
@@ -539,7 +551,13 @@ create policy "team_members_all" on team_members for all using (true) with check
                 onClick={() => setView('gantt')}
                 className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'gantt' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
               >
-                Гант
+                Програма
+              </button>
+              <button
+                onClick={() => setView('overview')}
+                className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${view === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Огляд
               </button>
             </div>
           </div>
@@ -870,9 +888,22 @@ create policy "team_members_all" on team_members for all using (true) with check
               )}
             </div>
           </div>
-        ) : (
+        ) : view === 'gantt' ? (
           <div className="flex-1 overflow-hidden">
-            <GanttView tasks={tasks} onUpdate={updateTaskDates} />
+            <ProjectProgram
+              projectId={id}
+              startDate={project?.start_date ?? null}
+              deadline={project?.deadline ?? null}
+              tasks={tasks}
+              doneIds={doneIds}
+              onProjectDates={updateProjectDates}
+              onTaskDates={updateTaskDates}
+              onOpenTask={taskId => setSelectedTask(tasks.find(t => t.id === taskId) ?? null)}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <ProjectOverview projectId={id} onOpenProgram={() => setView('gantt')} />
           </div>
         )}
       </div>
@@ -1027,9 +1058,9 @@ function AddTaskForm({ members, onSave, onCancel }: {
 }) {
   const [title, setTitle]             = useState('')
   const [priority, setPriority]       = useState<'low'|'medium'|'high'|null>(null)
+  const [startDate, setStartDate]     = useState('')
   const [dueDate, setDueDate]         = useState('')
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
-  const dateRef = useRef<HTMLInputElement>(null)
 
   function toggleMember(memberId: string) {
     setSelectedMemberIds(prev =>
@@ -1042,10 +1073,11 @@ function AddTaskForm({ members, onSave, onCancel }: {
     onSave({
       title: title.trim(),
       priority: priority ?? 'medium',
+      start_date: startDate || null,
       due_date: dueDate || null,
       team_member_ids: selectedMemberIds,
     })
-    setTitle(''); setPriority(null); setDueDate(''); setSelectedMemberIds([])
+    setTitle(''); setPriority(null); setStartDate(''); setDueDate(''); setSelectedMemberIds([])
   }
 
   return (
@@ -1099,15 +1131,19 @@ function AddTaskForm({ members, onSave, onCancel }: {
       </div>
 
       <div className="flex items-center gap-3 mt-2">
-        {/* Due date */}
-        <button
-          onClick={() => dateRef.current?.showPicker?.()}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          <Calendar size={13} />
-          {dueDate ? new Date(dueDate).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }) : 'Add dates'}
-        </button>
-        <input ref={dateRef} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="sr-only" />
+        {/* Start → end: both dates put the task on the programme */}
+        <Calendar size={13} className="text-gray-400 flex-shrink-0" />
+        <input
+          type="date" value={startDate} max={dueDate || undefined} title="Початок"
+          onChange={e => setStartDate(e.target.value)}
+          className="text-xs text-gray-500 bg-transparent focus:outline-none cursor-pointer w-[104px]"
+        />
+        <span className="text-gray-300 text-xs">→</span>
+        <input
+          type="date" value={dueDate} min={startDate || undefined} title="Кінець"
+          onChange={e => setDueDate(e.target.value)}
+          className="text-xs text-gray-500 bg-transparent focus:outline-none cursor-pointer w-[104px]"
+        />
       </div>
 
       <div className="flex items-center gap-3 mt-2">
@@ -1186,8 +1222,12 @@ function TaskCard({
             className={`flex items-center gap-1 text-[11px] ${isOverdue ? 'text-red-500' : 'text-gray-400'} hover:text-gray-600 transition-colors`}
           >
             <Calendar size={11} />
-            {task.due_date
-              ? new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })
+            {task.start_date || task.due_date
+              ? <>
+                  {task.start_date ? new Date(task.start_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }) : '?'}
+                  {' → '}
+                  {task.due_date ? new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }) : '?'}
+                </>
               : <span className="opacity-40">—</span>
             }
           </button>
@@ -1402,7 +1442,18 @@ function TaskDetailPanel({
               <Calendar size={13} />
               <input
                 type="date"
+                title="Початок"
+                value={task.start_date ? task.start_date.split('T')[0] : ''}
+                max={task.due_date ? task.due_date.split('T')[0] : undefined}
+                onChange={e => onUpdate({ start_date: e.target.value || null })}
+                className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
+              />
+              <span className="text-gray-300">→</span>
+              <input
+                type="date"
+                title="Кінець"
                 value={task.due_date ? task.due_date.split('T')[0] : ''}
+                min={task.start_date ? task.start_date.split('T')[0] : undefined}
                 onChange={e => onUpdate({ due_date: e.target.value || null })}
                 className="text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
               />

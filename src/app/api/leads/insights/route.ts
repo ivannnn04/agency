@@ -45,13 +45,24 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const [{ data: overviews, error }, { data: meetings }] = await Promise.all([
-    supabaseAdmin.from('lead_ai_overviews').select('lead_id, data, generated_at'),
-    supabaseAdmin
+  const { data: overviews, error } = await supabaseAdmin.from('lead_ai_overviews').select('lead_id, data, generated_at')
+  type MeetingRow = { id: string; lead_id: string | null; project_id?: string | null; title: string; started_at: string | null; attendees: string[]; ignored: boolean }
+  let meetings: MeetingRow[] | null = null
+  {
+    const full = await supabaseAdmin
       .from('lead_meetings')
-      .select('id, lead_id, title, started_at, attendees, ignored')
-      .order('started_at', { ascending: false }),
-  ])
+      .select('id, lead_id, project_id, title, started_at, attendees, ignored')
+      .order('started_at', { ascending: false })
+    meetings = full.data as MeetingRow[] | null
+    if (full.error) {
+      // project_id is added by a later migration
+      const basic = await supabaseAdmin
+        .from('lead_meetings')
+        .select('id, lead_id, title, started_at, attendees, ignored')
+        .order('started_at', { ascending: false })
+      meetings = basic.data as MeetingRow[] | null
+    }
+  }
   if (error) {
     return NextResponse.json({ error: missingTable(error.message) ? MIGRATION_HINT : error.message, needsMigration: missingTable(error.message) }, { status: 400 })
   }
@@ -73,7 +84,7 @@ export async function GET(req: NextRequest) {
     if (m.started_at && (!s.last || m.started_at > s.last)) s.last = m.started_at
   }
   const unmatched = (meetings ?? [])
-    .filter(m => !m.lead_id && !m.ignored)
+    .filter(m => !m.lead_id && !m.project_id && !m.ignored)
     .map(m => ({ id: m.id, title: m.title, started_at: m.started_at, attendees: m.attendees }))
 
   const state = await getFellowState().catch(() => ({}) as Awaited<ReturnType<typeof getFellowState>>)

@@ -68,6 +68,8 @@ export interface Project {
   show_tracked_hours?: boolean
   change_request_limit?: number
   notes?: string | null
+  start_date?: string | null
+  deadline?: string | null
   created_at: string
 }
 

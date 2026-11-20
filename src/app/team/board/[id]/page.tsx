@@ -582,6 +582,7 @@ export default function TeamBoardPage() {
                               {task.due_date && (
                                 <span className={`flex items-center gap-1 text-[11px] ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
                                   <Calendar size={11} />
+                                  {task.start_date ? `${new Date(task.start_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })} → ` : ''}
                                   {new Date(task.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}
                                 </span>
                               )}

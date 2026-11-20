@@ -6,8 +6,9 @@ export async function GET(req: NextRequest) {
   const { email, client } = await getPortalUser(req)
   if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Authenticated but not attached to any project by the admin yet
-  if (!client) return NextResponse.json({ email, client: null, projects: [] })
+  // The workspace is by invitation: an account whose email the admin has not
+  // added to the client list is turned away, however it signed in
+  if (!client) return NextResponse.json({ error: 'not_invited', email }, { status: 403 })
 
   let projectIds: string[]
   if (client.id.startsWith('preview:')) {

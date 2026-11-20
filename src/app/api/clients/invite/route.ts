@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { decode } from 'next-auth/jwt'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
 import { mailFrom } from '@/lib/mailer'
+import { requireAdmin } from '@/lib/adminAuth'
+import { clientInviteEmail } from '@/lib/clientInviteEmail'
 
 // Sends a portal client an email invitation from the corporate mailbox.
 // Same own-token flow as team invites: the link carries our single-use token,
@@ -15,16 +15,6 @@ function adminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-}
-
-async function requireAdmin() {
-  const jar = await cookies()
-  const sessionToken =
-    jar.get('__Secure-next-auth.session-token')?.value ??
-    jar.get('next-auth.session-token')?.value
-  if (!sessionToken) return false
-  const token = await decode({ token: sessionToken, secret: process.env.NEXTAUTH_SECRET! })
-  return token?.role === 'admin'
 }
 
 export async function POST(req: NextRequest) {
@@ -104,41 +94,33 @@ export async function POST(req: NextRequest) {
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   })
 
-  const firstName = (client.name ?? '').split(' ')[0]
-  const projectLine = projectName
-    ? `You now have access to the <b>${projectName}</b> project — track progress, see the timeline, and chat with the team.`
-    : 'Track your project progress, see the timeline, and chat with the team.'
+  // Which project(s) this client is starting: the caller's hint, else the
+  // projects they are attached to
+  let projectNames: string[] = typeof projectName === 'string' && projectName.trim() ? [projectName.trim()] : []
+  if (projectNames.length === 0) {
+    const { data: links } = await admin.from('project_clients').select('projects(name)').eq('client_id', clientId)
+    projectNames = ((links ?? []) as unknown as { projects: { name: string } | null }[])
+      .map(l => l.projects?.name)
+      .filter((n): n is string => !!n)
+  }
+  // The letter speaks the language of the client's workspace
+  const { data: langRow } = await admin.from('clients').select('lang').eq('id', clientId).maybeSingle()
+  const letter = clientInviteEmail({
+    firstName: (client.name ?? '').trim().split(/\s+/)[0] ?? '',
+    projectNames,
+    inviteUrl,
+    loginUrl: `${origin}/portal/login`,
+    email: client.email,
+    lang: langRow?.lang === 'uk' ? 'uk' : 'en',
+  })
 
   try {
     await transporter.sendMail({
       from: mailFrom(),
       to: client.email,
-      subject: 'Your Gudrix client portal access',
-      html: `
-        <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
-            <div style="width:36px;height:36px;background:#14b8a6;border-radius:10px;color:#fff;font-weight:bold;text-align:center;line-height:36px;font-size:16px">G</div>
-            <span style="font-size:16px;font-weight:600;color:#111827">&nbsp;Gudrix — Client Portal</span>
-          </div>
-          <p style="font-size:15px;color:#111827">Hi${firstName ? ` ${firstName}` : ''},</p>
-          <p style="font-size:14px;color:#374151;line-height:1.6">
-            Welcome to the Gudrix client portal! ${projectLine}
-          </p>
-          <p style="font-size:14px;color:#374151;line-height:1.6">
-            Click the button below to set your password and sign in:
-          </p>
-          <p style="margin:28px 0">
-            <a href="${inviteUrl}"
-               style="background:#14b8a6;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;display:inline-block">
-              Activate my access
-            </a>
-          </p>
-          <p style="font-size:12px;color:#9ca3af;line-height:1.6">
-            From then on, sign in at ${origin}/portal/login with ${client.email} and your password.<br/>
-            If you weren’t expecting this email, you can safely ignore it.
-          </p>
-        </div>
-      `,
+      subject: letter.subject,
+      html: letter.html,
+      text: letter.text,
     })
   } catch (e) {
     return NextResponse.json({ error: `Не вдалося надіслати лист: ${e instanceof Error ? e.message : 'SMTP error'}` }, { status: 502 })

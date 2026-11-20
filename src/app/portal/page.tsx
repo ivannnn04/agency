@@ -52,6 +52,12 @@ export default function PortalDashboardPage() {
       })
       if (res.status === 401) { router.replace('/portal/login'); return }
       const data = await res.json()
+      if (res.status === 403 && !previewToken) {
+        // Signed in, but this email is not on the client list
+        await supabase.auth.signOut()
+        router.replace(`/portal/login?denied=${encodeURIComponent(data.email ?? '')}`)
+        return
+      }
       setEmail(data.email ?? '')
       setLang(portalLang(data.lang))
       if (!previewToken) { try { localStorage.setItem(LANG_KEY, portalLang(data.lang)) } catch { /* storage unavailable */ } }

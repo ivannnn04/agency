@@ -29,7 +29,9 @@ export default withAuth(
 export const config = {
   // Everything is NextAuth-protected EXCEPT:
   // - /login (admin + manager sign-in)
-  // - /team/* (designer area — its own Supabase auth)
+  // - /team/* (designer area — its own Supabase auth); the trailing slash
+  //   matters: a bare "team"/"client" prefix also let /team-admin and
+  //   /clients through without the admin login
   // - /portal/* (client portal — its own Supabase auth)
   // - /client/* (public read-only project link)
   // - /r/* + /api/recordings/* (public screen-recording share links)
@@ -40,5 +42,5 @@ export const config = {
   // - /api/outreach (browser Claude agents post proposals with an API key)
   // - /photo-demo + /api/photo-card (public AI postcard demo for a client)
   // - /privacy + /terms (public legal pages, linked from Google sign-in)
-  matcher: ['/((?!login|start|team|portal|client|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/outreach|api/fellow/webhook|photo-demo|api/photo-card|privacy|terms|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
+  matcher: ['/((?!login|start|team/|team$|portal|client/|r/|api/recordings|api/auth|api/team|api/portal|api/clients/accept-invite|api/cron|api/push|api/outreach|api/fellow/webhook|photo-demo|api/photo-card|privacy|terms|api/seed-olga|_next/static|_next/image|favicon.ico|sw.js|icons/|manifest.webmanifest).*)'],
 }

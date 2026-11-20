@@ -443,12 +443,14 @@ export default function BoardPage() {
   async function addClient() {
     const email = newClientEmail.trim().toLowerCase()
     if (!email) return
-    let { data: client } = await supabase.from('clients').select('id, email, name').eq('email', email).single()
+    let { data: client } = await supabase.from('clients').select('id, email, name, invited_at').eq('email', email).single()
+    // Someone who has never been invited gets the welcome letter right away
+    const firstTime = !client?.invited_at
     if (!client) {
       const { data: created } = await supabase
         .from('clients')
         .insert({ email, name: newClientName.trim() || null })
-        .select('id, email, name')
+        .select('id, email, name, invited_at')
         .single()
       client = created
     }
@@ -458,6 +460,7 @@ export default function BoardPage() {
       setProjectClients(prev => [...prev, client!])
     }
     setNewClientEmail(''); setNewClientName('')
+    if (firstTime) inviteClient(client.id)
   }
 
   async function removeClient(clientId: string) {
@@ -739,8 +742,8 @@ create policy "team_members_all" on team_members for all using (true) with check
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-400 mb-3">
-                  Додай клієнта і натисни «Запросити» — йому прийде лист, він сам встановить пароль
-                  і потрапить у свій портал. Вхід надалі: <span className="font-medium text-gray-600">/portal/login</span>.
+                  Новому клієнту одразу йде вітальний лист: він сам встановить пароль
+                  і потрапить у свій кабінет. Увійти можуть лише додані емейли. Вхід надалі: <span className="font-medium text-gray-600">/portal/login</span>.
                 </p>
 
                 {/* Tracked hours toggle */}

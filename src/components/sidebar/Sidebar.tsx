@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset, Contact,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -32,7 +32,7 @@ const financeNav = [
 ]
 
 function isPMPath(p: string) {
-  return p.startsWith('/board') || p.startsWith('/team-admin') || p.startsWith('/chats') || p.startsWith('/workload')
+  return p.startsWith('/board') || p.startsWith('/team-admin') || p.startsWith('/clients') || p.startsWith('/chats') || p.startsWith('/workload')
 }
 
 const SIDEBAR_MIN = 200
@@ -573,6 +573,17 @@ export default function Sidebar() {
               >
                 <Users size={13} className="flex-shrink-0" />
                 <span>Команда</span>
+              </button>
+
+              {/* Who may sign in to the client workspace */}
+              <button
+                onClick={() => router.push('/clients')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-2 text-left ${
+                  pathname.startsWith('/clients') ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <Contact size={13} className="flex-shrink-0" />
+                <span>Клієнти</span>
               </button>
 
               {/* Per-member task queues with estimates */}

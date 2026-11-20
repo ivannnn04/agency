@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { ArrowUpRight, FolderKanban, LogOut, Mail } from 'lucide-react'
+import { ArrowUpRight, FolderKanban, LogOut, Mail, Play } from 'lucide-react'
 import { PortalHeader, PortalPreviewBanner } from '@/components/portal/PortalChrome'
 import { PORTAL_TEXT, PortalLang, portalLang } from '@/lib/portalI18n'
+import { PortalTourCard, PortalTourModal, usePortalTour } from '@/components/portal/PortalTour'
 
 interface PortalProject {
   id: string
@@ -77,6 +78,7 @@ export default function PortalDashboardPage() {
   }
 
   const firstName = (clientName ?? '').trim().split(/\s+/)[0] ?? ''
+  const tour = usePortalTour()
 
   return (
     <div className="min-h-screen bg-white">
@@ -109,7 +111,16 @@ export default function PortalDashboardPage() {
             <h1 className="text-3xl sm:text-4xl font-semibold text-gray-900 tracking-tight">{t.welcome(firstName)}</h1>
             <p className="text-gray-500 mt-2">{t.homeSub}</p>
 
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-gray-400 mt-12 mb-4">{t.yourProjects}</p>
+            {!tour.hidden && <PortalTourCard t={t} onPlay={() => tour.setOpen(true)} onHide={tour.hide} />}
+
+            <div className="flex items-center justify-between gap-4 mt-12 mb-4">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-gray-400">{t.yourProjects}</p>
+              {tour.hidden && (
+                <button onClick={() => tour.setOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors">
+                  <Play size={11} fill="currentColor" /> {t.tourAgain}
+                </button>
+              )}
+            </div>
             {projects.length === 0 ? (
               <div className="py-16 border border-gray-100 rounded-3xl text-center text-gray-400">
                 <FolderKanban size={32} className="mx-auto mb-3 opacity-30" />
@@ -146,6 +157,7 @@ export default function PortalDashboardPage() {
           </>
         )}
       </main>
+      {tour.open && <PortalTourModal onClose={() => tour.setOpen(false)} />}
     </div>
   )
 }

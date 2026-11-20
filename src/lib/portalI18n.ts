@@ -65,6 +65,9 @@ const en = {
   chatEmpty: 'Write the first message — the team will see it right away',
   chatPlaceholder: 'Message… (@ to mention)', fileTooBig: (mb: number) => `File is too big — ${mb} MB max`,
   bookMeeting: 'Book a meeting with Gudrix', you: 'You',
+  tourEyebrow: 'New here?', tourTitle: 'Take the 60-second tour',
+  tourSub: 'A quick narrated walkthrough: your progress and deadline, the roadmap, the board, the timeline, and where to reach the team.',
+  tourWatch: 'Watch the tour', tourHide: 'Hide', tourAgain: 'Watch the workspace tour',
 }
 
 const uk: typeof en = {
@@ -119,6 +122,9 @@ const uk: typeof en = {
   chatEmpty: 'Напишіть перше повідомлення — команда побачить його одразу',
   chatPlaceholder: 'Повідомлення… (@ щоб згадати)', fileTooBig: mb => `Файл завеликий — максимум ${mb} МБ`,
   bookMeeting: 'Забронювати зустріч із Gudrix', you: 'Ви',
+  tourEyebrow: 'Вперше тут?', tourTitle: 'Подивіться 60-секундний тур',
+  tourSub: 'Коротке відео з озвучкою (англійською): прогрес і дедлайн, роадмап, дошка, таймлайн і де написати команді.',
+  tourWatch: 'Дивитися тур', tourHide: 'Сховати', tourAgain: 'Подивитися тур кабінетом',
 }
 
 export type PortalText = typeof en

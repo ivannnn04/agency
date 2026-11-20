@@ -37,6 +37,16 @@ interface LeadEmail {
   to_email: string | null
   from_email: string | null
   sent_at: string
+  ai_review?: {
+    verdict?: 'strong' | 'ok' | 'weak'; note?: string; better?: string
+    signal?: string; reply_tip?: string; reply_draft?: string
+  } | null
+}
+
+const VERDICT: Record<string, { label: string; chip: string }> = {
+  strong: { label: 'Доречно', chip: 'bg-green-100 text-green-700' },
+  ok: { label: 'Нормально', chip: 'bg-amber-50 text-amber-700' },
+  weak: { label: 'Слабко', chip: 'bg-red-50 text-red-600' },
 }
 
 const COLUMNS: { key: CrmLead['status']; label: string; chip: string }[] = [
@@ -440,6 +450,11 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [reviewing, setReviewing] = useState(false)
+  const [reviewError, setReviewError] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const autoReviewed = useRef<string | null>(null)
+  const composeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setName(lead.name)
@@ -450,10 +465,48 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
     setCompany(lead.company ?? '')
     setContact(lead.contact_name ?? '')
     setComposeOpen(false); setSubject(''); setBody(''); setSendError('')
-    supabase.from('lead_emails').select('*').eq('lead_id', lead.id).order('sent_at', { ascending: false })
-      .then(({ data }) => { if (data) setEmails(data as LeadEmail[]) })
+    setEmails([]); setReviewError(''); setExpanded(null)
+    loadEmails().then(list => {
+      // Letters that have no AI review yet get one the first time the card opens
+      if (list.some(m => !m.ai_review) && autoReviewed.current !== lead.id) {
+        autoReviewed.current = lead.id
+        reviewEmails(false)
+      }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id])
+
+  async function loadEmails(): Promise<LeadEmail[]> {
+    const { data } = await supabase.from('lead_emails').select('*').eq('lead_id', lead.id).order('sent_at', { ascending: false })
+    const list = (data ?? []) as LeadEmail[]
+    setEmails(list)
+    return list
+  }
+
+  async function reviewEmails(force: boolean) {
+    setReviewing(true)
+    setReviewError('')
+    try {
+      const res = await fetch('/api/leads/email-review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: lead.id, force }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+      await loadEmails()
+    } catch (e) {
+      setReviewError((e as Error).message)
+    }
+    setReviewing(false)
+  }
+
+  function replyWith(m: LeadEmail, draft: string) {
+    const subj = m.subject ?? ''
+    setSubject(/^re:/i.test(subj) ? subj : `Re: ${subj}`)
+    setBody(draft)
+    setSendError('')
+    setComposeOpen(true)
+    composeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   async function sendEmail() {
     if (!email.trim() || !subject.trim() || !body.trim()) return
@@ -603,6 +656,16 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Листування</p>
+            {emails.length > 0 && (
+              <button
+                onClick={() => reviewEmails(true)}
+                disabled={reviewing}
+                title="AI оцінить кожен надісланий лист і підкаже, як відповісти на вхідні"
+                className="ml-auto mr-3 flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 disabled:opacity-50 font-medium"
+              >
+                <Sparkles size={12} className={reviewing ? 'animate-pulse' : ''} /> {reviewing ? 'Розбираю листи…' : 'AI-розбір листів'}
+              </button>
+            )}
             <button
               onClick={() => setComposeOpen(v => !v)}
               disabled={!email.trim()}
@@ -613,8 +676,9 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
             </button>
           </div>
 
+          {reviewError && <p className="text-xs text-red-500 mb-2">{reviewError}</p>}
           {composeOpen && (
-            <div className="border border-gray-200 rounded-xl p-3 mb-2 flex flex-col gap-2 bg-gray-50/50">
+            <div ref={composeRef} className="border border-gray-200 rounded-xl p-3 mb-2 flex flex-col gap-2 bg-gray-50/50">
               <p className="text-[11px] text-gray-400">Кому: <span className="text-gray-600">{email}</span></p>
               <input
                 value={subject} onChange={e => setSubject(e.target.value)}
@@ -655,7 +719,49 @@ function LeadDrawer({ lead, onClose, onUpdate, onMove, onDelete, onInsightsChang
                   </span>
                 </div>
                 <p className="text-sm font-medium text-gray-800">{m.subject}</p>
-                {m.body && <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap line-clamp-4">{m.body}</p>}
+                {m.body && (
+                  <p
+                    onClick={() => setExpanded(expanded === m.id ? null : m.id)}
+                    className={`text-xs text-gray-500 mt-1 whitespace-pre-wrap cursor-pointer ${expanded === m.id ? '' : 'line-clamp-4'}`}
+                    title={expanded === m.id ? 'Згорнути' : 'Показати повністю'}
+                  >
+                    {m.body}
+                  </p>
+                )}
+
+                {m.ai_review && m.direction === 'out' && (m.ai_review.note || m.ai_review.better) && (
+                  <div className="mt-2.5 bg-gray-50 rounded-lg px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 mb-1">
+                      <Sparkles size={11} /> Наскільки це доречно
+                      <span className={`px-1.5 py-0.5 rounded-md ${VERDICT[m.ai_review.verdict ?? 'ok'].chip}`}>{VERDICT[m.ai_review.verdict ?? 'ok'].label}</span>
+                    </p>
+                    {m.ai_review.note && <p className="text-xs text-gray-700 leading-snug">{m.ai_review.note}</p>}
+                    {m.ai_review.better && <p className="text-xs text-gray-500 leading-snug mt-1"><span className="font-semibold text-gray-700">Краще:</span> {m.ai_review.better}</p>}
+                  </div>
+                )}
+
+                {m.ai_review && m.direction === 'in' && (m.ai_review.signal || m.ai_review.reply_tip) && (
+                  <div className="mt-2.5 bg-gray-50 rounded-lg px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 mb-1"><Sparkles size={11} /> Як краще відповісти</p>
+                    {m.ai_review.signal && <p className="text-xs text-gray-700 leading-snug"><span className="font-semibold">Сигнал:</span> {m.ai_review.signal}</p>}
+                    {m.ai_review.reply_tip && <p className="text-xs text-gray-700 leading-snug mt-1">{m.ai_review.reply_tip}</p>}
+                    {m.ai_review.reply_draft && (
+                      <>
+                        <div className="bg-white border border-gray-100 rounded-lg px-2.5 py-2 mt-2 text-xs text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          {m.ai_review.reply_draft}
+                        </div>
+                        <button
+                          onClick={() => replyWith(m, m.ai_review!.reply_draft!)}
+                          disabled={!email.trim()}
+                          className="mt-2 flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 disabled:opacity-40"
+                        >
+                          <Send size={11} /> Відповісти цим текстом
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {!m.ai_review && reviewing && <p className="text-[11px] text-gray-300 mt-2">AI розбирає цей лист…</p>}
               </div>
             ))}
           </div>

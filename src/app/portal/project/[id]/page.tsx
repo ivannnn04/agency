@@ -163,7 +163,7 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
       </Card>
 
       {/* Deadline */}
-      <section className="col-span-12 xl:col-span-4 rounded-3xl bg-[#00140c] text-white p-6 lg:p-8 flex flex-col">
+      <section className="col-span-12 xl:col-span-4 on-dark rounded-3xl bg-[#00140c] text-white p-6 lg:p-8 flex flex-col">
         <p className="text-xs font-medium uppercase tracking-[0.12em] text-white/40">{t.deadline}</p>
         <p className="text-4xl lg:text-5xl font-semibold tracking-tight leading-none mt-3">
           {project.deadline ? fmtLong(project.deadline) : <span className="text-white/30">{t.notSet}</span>}
@@ -329,7 +329,7 @@ function PortalInvoices({ projectId, token, t, lang }: { projectId: string; toke
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card className="!p-6"><Eyebrow>{t.invBilled}</Eyebrow><p className="text-3xl font-semibold tracking-tight text-gray-900 mt-3">{sumBy(invoices)}</p></Card>
         <Card className="!p-6"><Eyebrow>{t.invPaid}</Eyebrow><p className="text-3xl font-semibold tracking-tight text-gray-900 mt-3">{sumBy(paid)}</p></Card>
-        <section className="rounded-3xl bg-[#00140c] text-white p-6">
+        <section className="on-dark rounded-3xl bg-[#00140c] text-white p-6">
           <p className="text-xs font-medium uppercase tracking-[0.12em] text-white/40">{t.invOutstanding}</p>
           <p className="text-3xl font-semibold tracking-tight mt-3">{sumBy(due)}</p>
         </section>

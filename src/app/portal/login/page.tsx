@@ -69,7 +69,7 @@ export default function PortalLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex items-center justify-center p-4">
+    <div className="on-dark min-h-screen bg-[#09090b] flex items-center justify-center p-4">
       <div className="bg-[#18181b] border border-white/[0.06] rounded-2xl p-10 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -141,7 +141,7 @@ export default function PortalLoginPage() {
 
           <button
             type="submit" disabled={loading}
-            className="w-full bg-white hover:bg-gray-200 disabled:opacity-50 text-[#09090b] font-medium py-3 rounded-xl text-sm transition-colors mt-1"
+            className="w-full bg-white hover:bg-[#e4e4e7] disabled:opacity-50 text-[#09090b] font-medium py-3 rounded-xl text-sm transition-colors mt-1"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>

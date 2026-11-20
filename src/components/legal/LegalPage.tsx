@@ -16,7 +16,7 @@ export default function LegalPage({ title, intro, sections }: {
 }) {
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      <header className="bg-[#09090b]">
+      <header className="on-dark bg-[#09090b]">
         <div className="px-5 sm:px-8 lg:px-12 h-16 flex items-center justify-between gap-4">
           <Link href="/portal/login" className="text-white font-extrabold text-xl tracking-tight leading-none lowercase">
             gudrix<span className="text-[#2affaa]">.</span>

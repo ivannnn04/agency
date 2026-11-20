@@ -191,6 +191,11 @@ body {
   --color-orange-600: #fb923c;
 }
 
+/* Surfaces that are dark in both themes (workspace header, dark cards,
+   client sign-in): inside them "white" must stay literal white, otherwise
+   text-white/50, bg-white/10 and bg-white turn into the dark card colour. */
+.dark .on-dark { --color-white: #ffffff; }
+
 /* Utilities whose meaning must survive the remap. Same-or-higher specificity
    than the generated utility, so these win inside .dark. */
 .dark .text-white { color: #ffffff; }

@@ -17,7 +17,7 @@ export function PortalHeader({ label, backHref, right }: {
   right?: React.ReactNode
 }) {
   return (
-    <header className="bg-[#00140c] border-b border-white/5">
+    <header className="on-dark bg-[#00140c] border-b border-white/5">
       <div className="px-5 sm:px-8 lg:px-12 h-16 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
           {backHref && (

@@ -32,7 +32,7 @@ const financeNav = [
 ]
 
 function isPMPath(p: string) {
-  return p.startsWith('/board') || p.startsWith('/team-admin') || p.startsWith('/clients') || p.startsWith('/chats') || p.startsWith('/workload')
+  return p.startsWith('/board') || p.startsWith('/team-admin') || p.startsWith('/chats') || p.startsWith('/workload')
 }
 
 const SIDEBAR_MIN = 200
@@ -225,8 +225,9 @@ export default function Sidebar() {
   const onOverview = pathname.startsWith('/overview')
   const onLeads = pathname.startsWith('/leads')
   const onSales = pathname.startsWith('/sales-ai')
+  const onClients = pathname.startsWith('/clients')
   // Pages with their own full-width layout show only the icon rail
-  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview || onLeads || onSales
+  const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview || onLeads || onSales || onClients
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
   const railItems = [
     {
@@ -236,7 +237,7 @@ export default function Sidebar() {
     },
     {
       key: 'finance', label: 'Фінанси', icon: TrendingUp,
-      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach && !onOverview && !onLeads && !onSales,
+      active: section === 'finance' && !onDaily && !onProfile && !onRecord && !onDocs && !onOutreach && !onOverview && !onLeads && !onSales && !onClients,
       go: () => { setSection('finance'); router.push('/') },
     },
     {
@@ -246,8 +247,14 @@ export default function Sidebar() {
     },
     {
       key: 'projects', label: 'Проєкти', icon: FolderKanban,
-      active: section === 'projects' && !onChats,
+      active: section === 'projects' && !onChats && !onClients,
       go: () => { setSection('projects'); router.push('/board') },
+    },
+    {
+      // Who may sign in to the client workspace: emails, projects, invitations
+      key: 'clients', label: 'Клієнти', icon: Contact,
+      active: onClients,
+      go: () => router.push('/clients'),
     },
     {
       key: 'chats', label: 'Чати', icon: MessageSquare,
@@ -573,17 +580,6 @@ export default function Sidebar() {
               >
                 <Users size={13} className="flex-shrink-0" />
                 <span>Команда</span>
-              </button>
-
-              {/* Who may sign in to the client workspace */}
-              <button
-                onClick={() => router.push('/clients')}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-2 text-left ${
-                  pathname.startsWith('/clients') ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Contact size={13} className="flex-shrink-0" />
-                <span>Клієнти</span>
               </button>
 
               {/* Per-member task queues with estimates */}

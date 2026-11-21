@@ -14,11 +14,11 @@ const ukPlural = (n: number, one: string, few: string, many: string) => {
 }
 
 const en = {
-  workspace: 'Client workspace',
+  workspace: 'Platform',
   signOut: 'Sign out',
   loading: 'Loading…',
   welcome: (name: string) => (name ? `Welcome back, ${name}` : 'Welcome back'),
-  homeSub: 'Everything on your projects with Gudrix, in one place.',
+  homeSub: 'Everything on your projects, in one place — the Gudrix Platform.',
   yourProjects: 'Your projects',
   noProjects: 'No projects yet',
   notLinkedTitle: 'Your account is ready — no projects yet',
@@ -71,11 +71,11 @@ const en = {
 }
 
 const uk: typeof en = {
-  workspace: 'Кабінет клієнта',
+  workspace: 'Platform',
   signOut: 'Вийти',
   loading: 'Завантаження…',
   welcome: name => (name ? `З поверненням, ${name}` : 'З поверненням'),
-  homeSub: 'Усе про ваші проєкти з Gudrix — в одному місці.',
+  homeSub: 'Усе про ваші проєкти в одному місці — Gudrix Platform.',
   yourProjects: 'Ваші проєкти',
   noProjects: 'Проєктів ще немає',
   notLinkedTitle: 'Акаунт готовий — проєктів ще немає',

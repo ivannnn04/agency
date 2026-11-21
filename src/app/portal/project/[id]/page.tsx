@@ -383,6 +383,9 @@ function PortalInvoices({ projectId, token, t, lang }: { projectId: string; toke
 
 type PortalView = 'overview' | 'board' | 'timeline' | 'invoices'
 
+// Sign-in link that returns the visitor to the page they came for (email links)
+const loginHref = () => `/portal/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+
 export default function PortalProjectPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -398,12 +401,14 @@ export default function PortalProjectPage() {
   // Set when the admin opened this page through a preview link
   const [preview, setPreview] = useState<string | null>(null)
   const [savedLang, setSavedLang] = useState<PortalLang>('en')
+  // Task an email link points at (?task=…): shown with a ring on the board
+  const [focusTask, setFocusTask] = useState<string | null>(null)
 
   const refetch = useCallback(async (accessToken: string) => {
     const res = await fetch(`/api/portal/project/${id}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
-    if (res.status === 401) { router.replace('/portal/login'); return }
+    if (res.status === 401) { router.replace(loginHref()); return }
     if (!res.ok) { setDenied(true); setLoading(false); return }
     setData(await res.json())
     setLoading(false)
@@ -412,7 +417,13 @@ export default function PortalProjectPage() {
   useEffect(() => {
     ;(async () => {
       try { setSavedLang(portalLang(localStorage.getItem(LANG_KEY))) } catch { /* storage unavailable */ }
-      const previewToken = new URLSearchParams(window.location.search).get('preview')
+      const params = new URLSearchParams(window.location.search)
+      // Links from emails: ?chat=1 opens the chat, ?view=board&task=… the task
+      const wantView = params.get('view')
+      if (wantView === 'board' || wantView === 'timeline' || wantView === 'invoices') setView(wantView)
+      if (params.get('task')) { setFocusTask(params.get('task')); setView('board') }
+      if (params.get('chat')) setChatOpen(true)
+      const previewToken = params.get('preview')
       if (previewToken) {
         setPreview(previewToken)
         setToken(previewToken)
@@ -420,11 +431,18 @@ export default function PortalProjectPage() {
         return
       }
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.replace('/portal/login'); return }
+      if (!session) { router.replace(loginHref()); return }
       setToken(session.access_token)
       refetch(session.access_token)
     })()
   }, [id, router, refetch])
+
+  // Bring the task from the email into view once the board is on screen
+  useEffect(() => {
+    if (!focusTask || !data || view !== 'board') return
+    const el = document.getElementById(`task-${focusTask}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+  }, [focusTask, data, view])
 
   const lang: PortalLang = data ? portalLang(data.lang) : savedLang
   const t = PORTAL_TEXT[lang]
@@ -554,7 +572,11 @@ export default function PortalProjectPage() {
                       const secs = timeByTask?.[task.id]
                       const used = crCountByTask[task.id] ?? 0
                       return (
-                        <div key={task.id} className="border border-gray-100 rounded-2xl p-4 bg-white">
+                        <div
+                          key={task.id}
+                          id={`task-${task.id}`}
+                          className={`border rounded-2xl p-4 bg-white transition-shadow ${task.id === focusTask ? 'border-[#2affaa] shadow-[0_0_0_4px_rgba(42,255,170,0.25)]' : 'border-gray-100'}`}
+                        >
                           <p className="text-[15px] text-gray-900 leading-snug font-medium">{task.title}</p>
                           {task.description && <p className="text-sm text-gray-400 mt-1.5 line-clamp-2">{task.description}</p>}
                           <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-3 text-xs">

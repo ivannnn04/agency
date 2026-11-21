@@ -19,6 +19,7 @@ import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
+import { isClientReviewColumn } from '@/lib/reviewColumn'
 
 interface Project {
   id: string
@@ -380,6 +381,10 @@ export default function TeamBoardPage() {
     await supabase.from('pm_tasks').update({ column_id: toColumnId }).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, column_id: toColumnId } : t))
     setSelectedTask(prev => prev?.id === taskId ? { ...prev, column_id: toColumnId } : prev)
+    // Work that reaches a client-review column is announced to the client by email
+    if (isClientReviewColumn(columns.find(c => c.id === toColumnId)?.name)) {
+      fetch('/api/team/task-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId }) }).catch(() => {})
+    }
   }
 
   async function updateTask(taskId: string, patch: Partial<PMTask>) {

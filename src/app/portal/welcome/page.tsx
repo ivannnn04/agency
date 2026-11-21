@@ -73,7 +73,7 @@ function WelcomeInner() {
           </div>
           <div>
             <p className="font-semibold text-sm text-gray-900">Gudrix</p>
-            <p className="text-xs text-gray-400">Client Portal</p>
+            <p className="text-xs text-gray-400">Platform</p>
           </div>
         </div>
 
@@ -96,7 +96,7 @@ function WelcomeInner() {
               Welcome{name ? `, ${name.split(' ')[0]}` : ''}! 👋
             </h1>
             <p className="text-sm text-gray-400 mb-6">
-              Just set a password to access your client portal
+              Just set a password to enter the Gudrix Platform
             </p>
 
             <form onSubmit={submit} className="flex flex-col gap-4">

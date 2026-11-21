@@ -12,6 +12,9 @@ function LoginForm() {
   const [error, setError]       = useState('')
   // ?denied=<email> — a signed-in account was turned away: not a client
   const [dismissed, setDismissed] = useState(false)
+  // Where to land after signing in — an email link to a task or the chat
+  const nextParam = searchParams.get('next') ?? ''
+  const next = /^\/portal(\/|\?|$)/.test(nextParam) && !nextParam.startsWith('/portal/login') ? nextParam : '/portal'
   const denied = dismissed ? null : searchParams.get('denied')
   const [loading, setLoading]   = useState(false)
   // Shown only when the Google provider is switched on in Supabase Auth —
@@ -31,9 +34,9 @@ function LoginForm() {
   useEffect(() => {
     if (searchParams.get('denied') !== null) return
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/portal')
+      if (session) router.replace(next)
     })
-  }, [router, searchParams])
+  }, [router, searchParams, next])
 
   // Access is by invitation only — there is no self-registration here.
   // An invited client sets a password from the link in the invitation email.
@@ -44,14 +47,14 @@ function LoginForm() {
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
     if (err) { setError('Invalid email or password. First time here? Use the link in your invitation email to set a password.'); return }
-    router.push('/portal')
+    router.push(next)
   }
 
   async function googleAuth() {
     setError('')
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/portal` },
+      options: { redirectTo: `${window.location.origin}${next}` },
     })
   }
 
@@ -62,7 +65,7 @@ function LoginForm() {
           <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-xl font-bold text-[#09090b]">G</span>
           </div>
-          <h1 className="text-xl font-bold text-white">Gudrix — Client Portal</h1>
+          <h1 className="text-xl font-bold text-white">Gudrix Platform</h1>
           <p className="text-gray-400 mt-1 text-sm">Track your projects and talk to the team</p>
         </div>
 

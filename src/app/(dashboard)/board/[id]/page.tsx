@@ -24,6 +24,7 @@ import { suggestEstimate } from '@/lib/preEstimate'
 import { getAdminProfile } from '@/lib/adminProfile'
 import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
+import { isClientReviewColumn } from '@/lib/reviewColumn'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -286,6 +287,10 @@ export default function BoardPage() {
     await supabase.from('pm_tasks').update({ column_id: toColumnId }).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, column_id: toColumnId } : t))
     setOpenMenu(null)
+    // Work that reaches a client-review column is announced to the client by email
+    if (isClientReviewColumn(columns.find(c => c.id === toColumnId)?.name)) {
+      fetch('/api/team/task-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId }) }).catch(() => {})
+    }
   }
 
   async function deleteTask(taskId: string) {

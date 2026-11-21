@@ -33,19 +33,19 @@ interface Copy {
 const COPY: Record<'en' | 'uk', Copy> = {
   en: {
     subject: p => (p ? `🚀 Buckle up — ${p} is taking off` : '🚀 Buckle up — your project with Gudrix is taking off'),
-    preheader: 'Congratulations on the kickoff! Your client workspace is ready — come on in.',
+    preheader: 'Congratulations on the kickoff! Your space on the Gudrix Platform is ready — come on in.',
     eyebrow: 'Kickoff day',
     headline: n => (n ? `Buckle up, ${n}.<br>We’re taking off.` : 'Buckle up.<br>We’re taking off.'),
     intro: p => (p
       ? `Congratulations on the start of <b style="color:#ffffff">${p}</b>! We’re genuinely excited to build this with you — and today it officially begins.`
       : 'Congratulations on the start of your project! We’re genuinely excited to build this with you — and today it officially begins.'),
-    ready: 'Your private workspace is ready. Everything about the project lives there, from the first step to the final handoff:',
+    ready: 'Your private space on the Gudrix Platform is ready. Everything about the project lives there, from the first step to the final handoff:',
     features: [
       ['Onboarding & roadmap', 'what happens, in what order, and when'],
       ['Live progress', 'tasks, timeline and deadlines, always up to date'],
       ['A direct line to the team', 'chat, notes, change requests and invoices in one place'],
     ],
-    cta: 'Enter your workspace',
+    cta: 'Enter the platform',
     ctaNote: 'One click to set your password — it takes ten seconds.',
     after: (url, email) => `After that, sign in any time at <a href="${url}" style="color:#9ca3af">${url.replace(/^https?:\/\//, '')}</a> with <b style="color:#d1d5db">${email}</b> and your password, or with Google using the same address.`,
     signoff: 'Let’s make something great.',
@@ -54,19 +54,19 @@ const COPY: Record<'en' | 'uk', Copy> = {
   },
   uk: {
     subject: p => (p ? `🚀 Пристебніться — ${p} злітає` : '🚀 Пристебніться — ваш проєкт із Gudrix злітає'),
-    preheader: 'Вітаємо зі стартом! Ваш кабінет клієнта вже готовий — заходьте.',
+    preheader: 'Вітаємо зі стартом! Ваш простір на Gudrix Platform уже готовий — заходьте.',
     eyebrow: 'День старту',
     headline: n => (n ? `Пристебніться, ${n}.<br>Ми злітаємо.` : 'Пристебніться.<br>Ми злітаємо.'),
     intro: p => (p
       ? `Вітаємо зі стартом проєкту <b style="color:#ffffff">${p}</b>! Ми щиро раді працювати над ним разом із вами — і сьогодні все офіційно починається.`
       : 'Вітаємо зі стартом вашого проєкту! Ми щиро раді працювати над ним разом із вами — і сьогодні все офіційно починається.'),
-    ready: 'Ваш особистий кабінет уже готовий. У ньому — все про проєкт, від першого кроку до фінальної передачі:',
+    ready: 'Ваш особистий простір на Gudrix Platform уже готовий. У ньому — все про проєкт, від першого кроку до фінальної передачі:',
     features: [
       ['Онбординг і роадмап', 'що відбувається, в якому порядку і коли'],
       ['Прогрес наживо', 'задачі, таймлайн і дедлайни — завжди актуальні'],
       ['Прямий звʼязок із командою', 'чат, нотатки, запити на правки й рахунки в одному місці'],
     ],
-    cta: 'Увійти в кабінет',
+    cta: 'Увійти в платформу',
     ctaNote: 'Один клік, щоб встановити пароль — це десять секунд.',
     after: (url, email) => `Надалі входьте на <a href="${url}" style="color:#9ca3af">${url.replace(/^https?:\/\//, '')}</a> з адресою <b style="color:#d1d5db">${email}</b> і паролем — або через Google з цією ж адресою.`,
     signoff: 'Зробімо щось круте.',
@@ -112,6 +112,7 @@ export function clientInviteEmail(input: ClientInviteInput): { subject: string; 
         <tr>
           <td style="padding:0 4px 20px 4px;font-family:${FONT};font-size:22px;font-weight:800;letter-spacing:-0.5px;color:#ffffff">
             gudrix<span style="color:#2affaa">.</span>
+            <span style="font-size:12px;font-weight:500;letter-spacing:0;color:#71717a">&nbsp;&nbsp;Platform</span>
           </td>
         </tr>
         <tr>

@@ -1,12 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import webpush from 'web-push'
 import supabaseAdmin from '@/lib/supabaseAdmin'
+import { notifyClientMessage } from '@/lib/clientNotify'
 
 // Supabase Database Webhook target: fires on INSERT into `notifications`
 // and `project_messages`, resolves who should hear about it and sends
 // Web Push to every subscribed device of those people. This is the only
 // place that covers ALL message sources — chats insert rows straight from
 // the browser, so no app code path sees them.
+// The same event also emails the project's clients when the team writes to
+// them in the client chat (clients have no push subscription).
 
 export const dynamic = 'force-dynamic'
 
@@ -59,13 +62,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const body: WebhookBody = await req.json().catch(() => ({}))
+  if (body.type !== 'INSERT' || !body.record) return NextResponse.json({ ok: true, skipped: true })
+
+  // Team → client message: email the client. Runs after the response so the
+  // webhook is answered at once, and does not depend on push being set up.
+  if (body.table === 'project_messages') {
+    const record = body.record
+    const origin = req.nextUrl.origin
+    after(async () => {
+      try {
+        const r = await notifyClientMessage(record, origin)
+        if (r.error) console.error('[client-mail] message mail failed:', r.error)
+      } catch (e) {
+        console.error('[client-mail]', e)
+      }
+    })
+  }
+
   const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   const priv = process.env.VAPID_PRIVATE_KEY
   if (!pub || !priv) return NextResponse.json({ error: 'VAPID keys not configured' }, { status: 500 })
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:gudrix.corporate@gmail.com', pub, priv)
-
-  const body: WebhookBody = await req.json().catch(() => ({}))
-  if (body.type !== 'INSERT' || !body.record) return NextResponse.json({ ok: true, skipped: true })
 
   let keys: string[] = []
   let title = 'Gudrix'

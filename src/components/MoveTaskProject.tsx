@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ArrowRightLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-// "Move task to another project" select for task panels (team + admin boards).
-// The parent handles the actual move; this just picks the target project.
+// "Move task to another project" for task panels (team + admin boards). A
+// rare action, so it sits as a quiet link under the task fields instead of
+// taking a row of its own. The parent handles the actual move.
 export default function MoveTaskProject({ currentProjectId, onMove }: {
   currentProjectId: string
   onMove: (projectId: string) => void
@@ -26,8 +28,8 @@ export default function MoveTaskProject({ currentProjectId, onMove }: {
   if (others.length === 0) return null
 
   return (
-    <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
-      <span className="text-sm text-gray-400 w-28 flex-shrink-0">Проєкт</span>
+    <label className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 cursor-pointer mt-1 px-2 -mx-2">
+      <ArrowRightLeft size={11} />
       <select
         value=""
         onChange={e => {
@@ -37,13 +39,13 @@ export default function MoveTaskProject({ currentProjectId, onMove }: {
           if (window.confirm(`Перенести задачу в проєкт «${name}»?`)) onMove(pid)
           else e.target.value = ''
         }}
-        className="flex-1 text-sm text-gray-600 focus:outline-none bg-transparent cursor-pointer"
+        className="text-xs text-inherit focus:outline-none bg-transparent cursor-pointer"
       >
-        <option value="">Перенести в інший проєкт...</option>
+        <option value="">Перенести в інший проєкт…</option>
         {others.map(p => (
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
-    </div>
+    </label>
   )
 }

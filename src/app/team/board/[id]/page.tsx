@@ -21,11 +21,13 @@ import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
+import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
 
 interface Project {
   id: string
   name: string
   color?: string | null
+  contract_currency?: string | null
   start_date?: string | null
   deadline?: string | null
 }
@@ -129,7 +131,7 @@ export default function TeamBoardPage() {
     setMember(mem)
 
     const [{ data: proj }, { data: cols }, { data: tx }, { data: mems }] = await Promise.all([
-      supabase.from('projects').select('id, name, color').eq('id', id).single(),
+      supabase.from('projects').select('id, name, color, contract_currency').eq('id', id).single(),
       supabase.from('pm_columns').select('*').eq('project_id', id).order('position'),
       supabase.from('pm_tasks').select('*').eq('finance_project_id', id).order('created_at'),
       supabase.from('team_members').select('id, name, color'),
@@ -526,6 +528,7 @@ export default function TeamBoardPage() {
               tasks={tasks}
               columns={columns}
               byName={member?.name ?? 'команда'}
+              currency={project?.contract_currency}
               canApprove={false}
               onTaskChange={u => setTasks(prev => prev.map(t => t.id === u.id ? u : t))}
               onTaskRemoved={tid => setTasks(prev => prev.filter(t => t.id !== tid))}
@@ -625,6 +628,8 @@ export default function TeamBoardPage() {
                               {task.priority && (
                                 <Flag size={11} style={{ color: PRIORITY_COLOR[task.priority] ?? '#9CA3AF' }} />
                               )}
+
+                              <TaskEstimateChip task={task} currency={project?.contract_currency} />
 
                               {/* Tracked time */}
                               {tracked > 0 && (
@@ -747,6 +752,7 @@ export default function TeamBoardPage() {
         {selectedTask && (
           <TaskPanel
             task={selectedTask}
+            currency={project?.contract_currency}
             columns={columns}
             member={member}
             allMembers={allMembers}
@@ -844,8 +850,9 @@ function TaskPanel({
   task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
   canAssignOthers, onAssignMember, onRemoveMember,
   trackedSeconds, isTimerActive, otherTimerActive, elapsed,
-  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove, onMoveProject,
+  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove, onMoveProject, currency,
 }: {
+  currency?: string | null
   task: PMTask
   columns: PMColumn[]
   member: TeamMember | null
@@ -875,12 +882,10 @@ function TaskPanel({
     .filter((m): m is Pick<TeamMember, 'id' | 'name' | 'color'> => !!m)
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc] = useState(task.description ?? '')
-  const [estimate, setEstimate] = useState(task.estimate_hours != null ? String(task.estimate_hours) : '')
 
   useEffect(() => {
     setTitle(task.title)
     setDesc(task.description ?? '')
-    setEstimate(task.estimate_hours != null ? String(task.estimate_hours) : '')
   }, [task.id])
 
   function saveTitle() {
@@ -890,12 +895,6 @@ function TaskPanel({
   function saveDesc() {
     const d = desc.trim()
     if (d !== (task.description ?? '')) onUpdate({ description: d || null })
-  }
-  function saveEstimate() {
-    const v = estimate.trim() === '' ? null : Number(estimate)
-    if (v !== task.estimate_hours && !(v !== null && isNaN(v))) {
-      onUpdate({ estimate_hours: v })
-    }
   }
 
   const currentCol = columns.find(c => c.id === task.column_id)
@@ -935,6 +934,11 @@ function TaskPanel({
             className="w-full text-lg font-semibold text-gray-900 resize-none focus:outline-none leading-snug placeholder-gray-300"
             placeholder="Назва задачі"
           />
+        </div>
+
+        {/* Estimate — the same block everyone on the task sees */}
+        <div className="px-5 pb-3">
+          <TaskEstimateBlock key={task.id} task={task} currency={currency} onUpdate={onUpdate} />
         </div>
 
         {/* Timer block */}
@@ -1057,11 +1061,6 @@ function TaskPanel({
             </select>
           </div>
 
-          {/* Move to another project */}
-          {task.finance_project_id && (
-            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
-          )}
-
           {/* Priority */}
           <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
             <span className="text-sm text-gray-400 w-28 flex-shrink-0">Пріоритет</span>
@@ -1104,25 +1103,10 @@ function TaskPanel({
             </div>
           </div>
 
-          {/* Estimate */}
-          <div className="flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
-            <span className="text-sm text-gray-400 w-28 flex-shrink-0">Естімейт</span>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock size={13} className="text-gray-400" />
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={estimate}
-                onChange={e => setEstimate(e.target.value)}
-                onBlur={saveEstimate}
-                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                placeholder="—"
-                className="w-16 text-sm focus:outline-none bg-transparent border-b border-transparent focus:border-gray-300"
-              />
-              <span className="text-xs text-gray-400">год</span>
-            </div>
-          </div>
+          {/* Rarely needed: move the task to another project */}
+          {task.finance_project_id && (
+            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
+          )}
         </div>
 
         {/* Description — links are clickable, click elsewhere to edit */}

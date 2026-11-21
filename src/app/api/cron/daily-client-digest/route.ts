@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
+import { isInvoiceColumn } from '@/lib/clientColumns'
 
 // Runs every morning via Vercel Cron. For each active project that has portal
 // clients, Gudrix AI reads the last day of task activity + chat and drafts a
@@ -83,7 +84,8 @@ export async function GET(req: Request) {
     const taskList = (tasks ?? []) as Task[]
     if (taskList.length === 0) { skipped.push(project.name); continue }
 
-    const colName = new Map((columns ?? []).map(c => [c.id, c.name as string]))
+    // The client never hears about invoicing: those tasks are simply done
+    const colName = new Map((columns ?? []).map(c => [c.id, isInvoiceColumn(c.name as string) ? 'DONE' : (c.name as string)]))
     const taskIds = taskList.map(t => t.id)
 
     // Last-24h signals: tracked work, chat, change requests, new tasks
@@ -158,7 +160,7 @@ ${upcoming.map(t => `- "${t.title}" — due ${t.due_date}`).join('\n') || '(none
 Rules:
 - Write in English, warm but professional, 60–120 words.
 - Structure: one-line greeting, "What we worked on" and "What's next" (short bullet lists), closing line.
-- NEVER reveal internal details: no tracked hours, no rates or money, no internal team chat quotes, no team disagreements. Internal chat is context for you only.
+- NEVER reveal internal details: no tracked hours, no rates or money, no invoicing or billing status, no internal team chat quotes, no team disagreements. Internal chat is context for you only.
 - Mention client change requests only to confirm they were received / are in progress.
 - If there was little visible activity, focus on what is planned next — never apologize or say "no work was done".
 - Output ONLY the message text, no preamble, no subject line, no markdown headers (plain text with simple "•" bullets is fine).`

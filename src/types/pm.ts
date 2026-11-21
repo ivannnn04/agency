@@ -53,6 +53,7 @@ export interface PMTask {
   estimate_by?: string | null;
   // Client-requested tasks: estimate → client approval → To-Do
   estimate_status?: "needed" | "sent" | "changes" | "approved" | null;
+  estimate_rate?: number | null;   // hourly rate; cost = hours × rate
   estimate_cost?: number | null;
   estimate_note?: string | null;
   estimate_sent_at?: string | null;

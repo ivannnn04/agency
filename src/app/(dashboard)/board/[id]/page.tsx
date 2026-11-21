@@ -26,6 +26,7 @@ import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
+import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -889,6 +890,7 @@ create policy "team_members_all" on team_members for all using (true) with check
                 <KanbanColumn
                   key={col.id}
                   col={col}
+                  currency={project?.contract_currency}
                   tasks={colTasks}
                   columns={columns}
                   members={members}
@@ -1004,6 +1006,7 @@ create policy "team_members_all" on team_members for all using (true) with check
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
+          currency={project?.contract_currency}
           columns={columns}
           members={members}
           assigneeIds={assigneesByTask[selectedTask.id] ?? []}
@@ -1025,8 +1028,9 @@ create policy "team_members_all" on team_members for all using (true) with check
 function KanbanColumn({
   col, tasks, columns, members, assigneesByTask, isAdding, onStartAdd, onCancelAdd, onAddTask,
   onSelectTask, onMoveTask, onDeleteTask, onDeleteColumn,
-  openMenu, onOpenMenu, menuRef, dragOverCol, onDragOverCol,
+  openMenu, onOpenMenu, menuRef, dragOverCol, onDragOverCol, currency,
 }: {
+  currency?: string | null
   col: PMColumn
   tasks: PMTask[]
   columns: PMColumn[]
@@ -1083,6 +1087,7 @@ function KanbanColumn({
           <TaskCard
             key={task.id}
             task={task}
+            currency={currency}
             columns={columns}
             members={members}
             assigneeIds={assigneesByTask[task.id] ?? []}
@@ -1238,8 +1243,9 @@ function AddTaskForm({ members, onSave, onCancel }: {
 // ── Task card ──────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, columns, members, assigneeIds, isMenuOpen, onOpenMenu, onSelect, onMove, onDelete, menuRef,
+  task, columns, members, assigneeIds, isMenuOpen, onOpenMenu, onSelect, onMove, onDelete, menuRef, currency,
 }: {
+  currency?: string | null
   task: PMTask
   columns: PMColumn[]
   members: TeamMember[]
@@ -1275,9 +1281,11 @@ function TaskCard({
 
       {/* Icon row */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {/* Assignee avatars */}
           <AvatarStack memberIds={assigneeIds} members={members} />
+
+          <TaskEstimateChip task={task} currency={currency} />
 
           {/* Due date */}
           <button
@@ -1342,8 +1350,9 @@ function TaskCard({
 // ── Task detail panel ──────────────────────────────────────────────────────────
 
 function TaskDetailPanel({
-  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove, onMoveProject,
+  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove, onMoveProject, currency,
 }: {
+  currency?: string | null
   task: PMTask
   columns: PMColumn[]
   members: TeamMember[]
@@ -1425,6 +1434,11 @@ function TaskDetailPanel({
           />
         </div>
 
+        {/* Estimate — the same block everyone on the task sees */}
+        <div className="px-6 pb-3">
+          <TaskEstimateBlock key={task.id} task={task} currency={currency} onUpdate={onUpdate} />
+        </div>
+
         {/* Tracked time (who + how much) */}
         <TaskTrackedTime taskId={task.id} members={members} />
 
@@ -1442,11 +1456,6 @@ function TaskDetailPanel({
               {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-
-          {/* Move to another project */}
-          {task.finance_project_id && (
-            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
-          )}
 
           {/* Assignees */}
           <div className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
@@ -1473,16 +1482,18 @@ function TaskDetailPanel({
                   </button>
                 </div>
               ))}
-              {assignedMembers.length === 0 && (
-                <span className="text-sm text-gray-400 pt-1">Не призначено</span>
+              {assignedMembers.length === 0 && unassignedMembers.length === 0 && (
+                <span className="text-sm text-gray-300 pt-1">—</span>
               )}
               {unassignedMembers.length > 0 && (
                 <select
                   value=""
                   onChange={e => { if (e.target.value) onAddAssignee(e.target.value) }}
-                  className="text-sm text-gray-400 focus:outline-none bg-transparent cursor-pointer hover:text-gray-600"
+                  className={assignedMembers.length === 0
+                    ? 'text-sm text-gray-700 border border-dashed border-gray-300 rounded-full px-3 py-1 bg-white cursor-pointer hover:border-gray-900 focus:outline-none'
+                    : 'text-sm text-gray-400 focus:outline-none bg-transparent cursor-pointer hover:text-gray-600'}
                 >
-                  <option value="">+ Додати</option>
+                  <option value="">{assignedMembers.length === 0 ? '+ Призначити виконавця' : '+ Додати'}</option>
                   {unassignedMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               )}
@@ -1527,6 +1538,11 @@ function TaskDetailPanel({
               />
             </div>
           </div>
+
+          {/* Rarely needed: move the task to another project */}
+          {task.finance_project_id && (
+            <MoveTaskProject currentProjectId={task.finance_project_id} onMove={onMoveProject} />
+          )}
         </div>
 
         <div className="border-t border-gray-100 mx-6" />

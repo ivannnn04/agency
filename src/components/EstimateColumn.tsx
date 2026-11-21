@@ -26,6 +26,8 @@ export default function EstimateColumn({ tasks, columns, currency, byName, canAp
 }) {
   const pending = tasks.filter(isEstimatePending)
   if (pending.length === 0) return null
+  // A new estimate starts from the rate last used on this project
+  const lastRate = [...tasks].reverse().find(t => Number(t.estimate_rate) > 0)?.estimate_rate ?? null
 
   return (
     <div className="flex-shrink-0 w-[300px] flex flex-col rounded-xl bg-violet-50/60 border border-violet-100 p-2.5">
@@ -42,6 +44,7 @@ export default function EstimateColumn({ tasks, columns, currency, byName, canAp
           <EstimateCard
             key={task.id}
             task={task}
+            defaultRate={lastRate}
             columns={columns}
             symbol={SYMBOL[currency ?? 'USD'] ?? ''}
             byName={byName}
@@ -55,8 +58,9 @@ export default function EstimateColumn({ tasks, columns, currency, byName, canAp
   )
 }
 
-function EstimateCard({ task, columns, symbol, byName, canApprove, onTaskChange, onTaskRemoved }: {
+function EstimateCard({ task, defaultRate, columns, symbol, byName, canApprove, onTaskChange, onTaskRemoved }: {
   task: PMTask
+  defaultRate: number | null
   columns: PMColumn[]
   symbol: string
   byName: string
@@ -65,21 +69,33 @@ function EstimateCard({ task, columns, symbol, byName, canApprove, onTaskChange,
   onTaskRemoved: (taskId: string) => void
 }) {
   const [hours, setHours] = useState(task.estimate_hours != null ? String(task.estimate_hours) : '')
-  const [cost, setCost] = useState(task.estimate_cost != null ? String(task.estimate_cost) : '')
+  // The rate: the task's own, else what an older total implies, else the project's last one
+  const impliedRate = task.estimate_cost && task.estimate_hours ? Math.round((task.estimate_cost / task.estimate_hours) * 100) / 100 : null
+  const [rate, setRate] = useState(String(task.estimate_rate ?? impliedRate ?? defaultRate ?? ''))
   const [note, setNote] = useState(task.estimate_note ?? '')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const num = (v: string) => { const n = Number(v.replace(',', '.')); return v.trim() && Number.isFinite(n) && n > 0 ? n : null }
-  const draft = { estimate_hours: num(hours), estimate_cost: num(cost), estimate_note: note.trim() || null }
+  const h = num(hours), r = num(rate)
+  // Hours × hourly rate is the total the client approves
+  const total = h != null && r != null ? Math.round(h * r * 100) / 100 : null
+  const draft = { estimate_hours: h, estimate_rate: r, estimate_cost: total, estimate_note: note.trim() || null }
   const dirty = draft.estimate_hours !== (task.estimate_hours ?? null)
+    || draft.estimate_rate !== (task.estimate_rate ?? null)
     || draft.estimate_cost !== (task.estimate_cost ?? null)
     || draft.estimate_note !== (task.estimate_note ?? null)
-  const canSend = draft.estimate_hours != null || draft.estimate_cost != null
+  const canSend = draft.estimate_hours != null
 
   async function save(): Promise<boolean> {
     if (!dirty) return true
-    const { error } = await supabase.from('pm_tasks').update({ ...draft, estimate_by: byName }).eq('id', task.id)
+    let { error } = await supabase.from('pm_tasks').update({ ...draft, estimate_by: byName }).eq('id', task.id)
+    if (error && /estimate_rate/i.test(error.message)) {
+      // The rate column comes with a later migration; the total is saved either way
+      const { estimate_rate: _rate, ...rest } = draft
+      void _rate
+      ;({ error } = await supabase.from('pm_tasks').update({ ...rest, estimate_by: byName }).eq('id', task.id))
+    }
     if (error) {
       setMsg({ ok: false, text: /estimate_|schema cache/i.test(error.message) ? 'Запусти міграцію supabase/estimate_flow_migration.sql' : error.message })
       return false
@@ -111,8 +127,9 @@ function EstimateCard({ task, columns, symbol, byName, canApprove, onTaskChange,
     if (!target) { setMsg({ ok: false, text: 'На дошці немає колонок' }); return }
     if (!confirm(`Перенести «${task.title}» у ${target.name} без погодження клієнта?`)) return
     setBusy(true)
+    if (!await save()) { setBusy(false); return }
     const patch = { ...draft, estimate_status: 'approved' as const, estimate_decided_at: new Date().toISOString(), column_id: target.id }
-    const { error } = await supabase.from('pm_tasks').update(patch).eq('id', task.id)
+    const { error } = await supabase.from('pm_tasks').update({ estimate_status: patch.estimate_status, estimate_decided_at: patch.estimate_decided_at, column_id: patch.column_id }).eq('id', task.id)
     setBusy(false)
     if (error) { setMsg({ ok: false, text: error.message }); return }
     // A priced estimate extends the project budget, same as a client approval
@@ -175,9 +192,13 @@ function EstimateCard({ task, columns, symbol, byName, canApprove, onTaskChange,
           <input value={hours} onChange={e => setHours(e.target.value)} onBlur={save} inputMode="decimal" placeholder="8" className={field} />
         </label>
         <label className="block">
-          <span className="block text-[10px] font-medium text-gray-500 mb-0.5">Вартість{symbol ? `, ${symbol}` : ''}</span>
-          <input value={cost} onChange={e => setCost(e.target.value)} onBlur={save} inputMode="decimal" placeholder="необовʼязково" className={field} />
+          <span className="block text-[10px] font-medium text-gray-500 mb-0.5">Рейт, {symbol || ''}/год</span>
+          <input value={rate} onChange={e => setRate(e.target.value)} onBlur={save} inputMode="decimal" placeholder="50" className={field} />
         </label>
+      </div>
+      <div className="flex items-center justify-between mt-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+        <span className="text-[11px] text-gray-500">{h != null && r != null ? `${h} год × ${symbol}${r}` : 'Години × рейт'}</span>
+        <span className="text-sm font-bold text-gray-900">{total != null ? `${symbol}${total.toLocaleString('en-US')}` : '—'}</span>
       </div>
       <label className="block mt-2">
         <span className="block text-[10px] font-medium text-gray-500 mb-0.5">Коментар для клієнта</span>

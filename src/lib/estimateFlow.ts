@@ -24,6 +24,7 @@ interface FlowTask {
   finance_project_id: string | null
   estimate_status: string | null
   estimate_hours: number | null
+  estimate_rate?: number | null
   estimate_cost: number | null
   estimate_note: string | null
   estimate_sent_at: string | null
@@ -32,7 +33,7 @@ interface FlowTask {
 async function loadTask(taskId: string): Promise<FlowTask | null> {
   const { data } = await supabaseAdmin
     .from('pm_tasks')
-    .select('id, title, description, finance_project_id, estimate_status, estimate_hours, estimate_cost, estimate_note, estimate_sent_at')
+    .select('*')   // tolerant of estimate columns that arrive with later migrations
     .eq('id', taskId)
     .maybeSingle()
   return (data as FlowTask | null) ?? null
@@ -94,8 +95,10 @@ export async function sendEstimate(taskId: string, origin?: string): Promise<{ o
   const task = await loadTask(taskId)
   if (!task?.finance_project_id) return { ok: false, error: 'Задачу не знайдено' }
   if (!ESTIMATE_PENDING.includes(task.estimate_status ?? '')) return { ok: false, error: 'Ця задача не чекає на оцінку' }
-  const hours = Number(task.estimate_hours ?? 0), cost = Number(task.estimate_cost ?? 0)
-  if (!(hours > 0) && !(cost > 0)) return { ok: false, error: 'Вкажи години або вартість' }
+  const hours = Number(task.estimate_hours ?? 0), rate = Number(task.estimate_rate ?? 0)
+  if (!(hours > 0)) return { ok: false, error: 'Вкажи години' }
+  // Hours × hourly rate; a total without a rate (older estimates) is kept as is
+  const cost = rate > 0 ? Math.round(hours * rate * 100) / 100 : Number(task.estimate_cost ?? 0)
   // A double click must not send two letters
   if (task.estimate_status === 'sent' && task.estimate_sent_at && Date.now() - new Date(task.estimate_sent_at).getTime() < 60_000) {
     return { ok: true, sent: 0 }
@@ -108,7 +111,7 @@ export async function sendEstimate(taskId: string, origin?: string): Promise<{ o
   const revised = task.estimate_status === 'changes' || !!task.estimate_sent_at
   const { error } = await supabaseAdmin
     .from('pm_tasks')
-    .update({ estimate_status: 'sent', estimate_sent_at: new Date().toISOString() })
+    .update({ estimate_status: 'sent', estimate_sent_at: new Date().toISOString(), estimate_cost: cost > 0 ? cost : null })
     .eq('id', task.id)
   if (error) return { ok: false, error: error.message }
 
@@ -118,7 +121,8 @@ export async function sendEstimate(taskId: string, origin?: string): Promise<{ o
     firstName: firstName(rcp.name),
     projectName: project.name,
     taskTitle: task.title,
-    hours: hours > 0 ? hours : null,
+    hours,
+    rate: rate > 0 ? money(rate, project.currency) : null,
     cost: cost > 0 ? money(cost, project.currency) : null,
     note: task.estimate_note ?? '',
     revised,

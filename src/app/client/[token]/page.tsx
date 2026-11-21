@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fetchAssigneesByTask } from '@/lib/assignees'
 import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
+import { clientBoard } from '@/lib/clientColumns'
 import { Calendar, Flag, AlignLeft, FolderKanban } from 'lucide-react'
 
 interface ClientProject {
@@ -56,8 +57,10 @@ export default function ClientStatusPage() {
         supabase.from('pm_tasks').select('*').eq('finance_project_id', proj.id).order('created_at'),
         supabase.from('team_members').select('id, name, color'),
       ])
-      setColumns(cols ?? [])
-      setTasks(tx ?? [])
+      // 'To be invoiced' is internal: on the client's side those tasks are Done
+      const view = clientBoard(cols ?? [], tx ?? [])
+      setColumns(view.columns)
+      setTasks(view.tasks)
       setMembers((mems ?? []) as TeamMember[])
       if (tx) setAssigneesByTask(await fetchAssigneesByTask(tx.map(t => t.id)))
       setLoading(false)

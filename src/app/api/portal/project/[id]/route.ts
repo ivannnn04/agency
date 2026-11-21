@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
+import { clientBoard } from '@/lib/clientColumns'
 
 export async function GET(
   req: NextRequest,
@@ -50,7 +51,7 @@ export async function GET(
   // Estimates for client-requested tasks; the columns come with a later migration
   const { data: estimates } = await supabaseAdmin
     .from('pm_tasks')
-    .select('id, estimate_status, estimate_hours, estimate_cost, estimate_note, estimate_client_comment, estimate_sent_at')
+    .select('*')
     .eq('finance_project_id', id)
     .not('estimate_status', 'is', null)
   const estimateById = new Map((estimates ?? []).map(e => [e.id as string, e]))
@@ -63,6 +64,7 @@ export async function GET(
       estimate_status: e.estimate_status,
       // The numbers are shown to the client only once the team has sent them
       estimate_hours: waiting || e.estimate_status === 'approved' ? e.estimate_hours : null,
+      estimate_rate: waiting ? (e.estimate_rate ?? null) : null,
       estimate_cost: waiting || e.estimate_status === 'approved' ? e.estimate_cost : null,
       estimate_note: waiting ? e.estimate_note : null,
       estimate_client_comment: e.estimate_status === 'changes' ? e.estimate_client_comment : null,
@@ -114,8 +116,8 @@ export async function GET(
     project: { ...project, start_date: dates?.start_date ?? null, deadline: dates?.deadline ?? null },
     phases: phases ?? [],
     lang: client.lang === 'uk' ? 'uk' : 'en',
-    columns: columns ?? [],
-    tasks: tasksOut,
+    // 'To be invoiced' is internal: the client sees those tasks as Done
+    ...clientBoard(columns ?? [], tasksOut),
     assigneesByTask,
     timeByTask,
     people,

@@ -186,7 +186,8 @@ export function clientEstimateEmail(o: {
   projectName: string
   taskTitle: string
   hours: number | null
-  cost: string | null        // already formatted with currency
+  rate?: string | null       // hourly rate, already formatted with currency
+  cost: string | null        // total, already formatted with currency
   note: string
   revised: boolean
   taskUrl: string
@@ -197,7 +198,11 @@ export function clientEstimateEmail(o: {
   const hoursText = o.hours ? (uk ? `${o.hours} год` : `${o.hours} h`) : null
   const cell = (label: string, value: string) =>
     `<td valign="top" style="padding:0 28px 0 0"><div style="font-family:${FONT};font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#71717a">${label}</div><div style="margin-top:4px;font-family:${FONT};font-size:24px;line-height:30px;font-weight:700;color:#ffffff">${esc(value)}</div></td>`
-  const figures = [hoursText ? cell(uk ? 'Час' : 'Time', hoursText) : '', o.cost ? cell(uk ? 'Вартість' : 'Cost', o.cost) : ''].join('')
+  const figures = [
+    hoursText ? cell(uk ? 'Час' : 'Time', hoursText) : '',
+    o.rate ? cell(uk ? 'Рейт' : 'Rate', `${o.rate}${uk ? '/год' : '/h'}`) : '',
+    o.cost ? cell(uk ? 'Разом' : 'Total', o.cost) : '',
+  ].join('')
 
   const card = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px"><tr>
       <td bgcolor="#09090b" style="background:#09090b;border:1px solid #27272a;border-radius:16px;padding:18px 20px">

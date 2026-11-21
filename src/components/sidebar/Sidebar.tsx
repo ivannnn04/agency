@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset, Contact,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset, Contact, ReceiptText,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -27,6 +27,7 @@ const financeNav = [
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },
+  { label: 'До інвойсу', href: '/invoicing',  icon: ReceiptText },
   { label: 'Зарплата',  href: '/payroll',     icon: DollarSign },
   { label: 'To-Do',     href: '/todo',        icon: CheckSquare },
 ]

@@ -25,6 +25,7 @@ interface PortalTask {
   // A task the client asked for, on its way through estimate → approval
   estimate_status?: 'needed' | 'sent' | 'changes' | 'approved' | null
   estimate_hours?: number | null
+  estimate_rate?: number | null
   estimate_cost?: number | null
   estimate_note?: string | null
   estimate_client_comment?: string | null
@@ -357,7 +358,7 @@ function EstimateCard({ task, projectId, token, readOnly, focused, sym, t, onDec
   }
 
   const sent = task.estimate_status === 'sent'
-  const hours = task.estimate_hours ?? 0, cost = task.estimate_cost ?? 0
+  const hours = task.estimate_hours ?? 0, rate = task.estimate_rate ?? 0, cost = task.estimate_cost ?? 0
 
   return (
     <div
@@ -381,11 +382,17 @@ function EstimateCard({ task, projectId, token, readOnly, focused, sym, t, onDec
       ) : (
         <>
           <span className="inline-block text-xs font-medium text-white bg-teal-500 rounded-full px-2.5 py-1 mt-3">{t.estReady}</span>
-          <div className="flex items-end gap-8 mt-3">
+          <div className="flex items-end gap-x-7 gap-y-2 flex-wrap mt-3">
             {hours > 0 && (
               <div>
                 <p className="text-[11px] uppercase tracking-[0.12em] text-gray-400">{t.estTime}</p>
                 <p className="text-2xl font-semibold text-gray-900 tracking-tight">{t.estHours(hours)}</p>
+              </div>
+            )}
+            {rate > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-gray-400">{t.estRate}</p>
+                <p className="text-2xl font-semibold text-gray-900 tracking-tight">{sym}{rate.toLocaleString('en-US')}<span className="text-sm text-gray-400 font-normal">{t.estPerHour}</span></p>
               </div>
             )}
             {cost > 0 && (

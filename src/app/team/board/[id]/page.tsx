@@ -20,6 +20,7 @@ import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
+import EstimateColumn from '@/components/EstimateColumn'
 
 interface Project {
   id: string
@@ -520,6 +521,15 @@ export default function TeamBoardPage() {
       <div className="flex-1 flex overflow-hidden">
         {view === 'board' ? (
           <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
+            {/* Client-requested tasks waiting for an estimate; hidden when empty */}
+            <EstimateColumn
+              tasks={tasks}
+              columns={columns}
+              byName={member?.name ?? 'команда'}
+              canApprove={false}
+              onTaskChange={u => setTasks(prev => prev.map(t => t.id === u.id ? u : t))}
+              onTaskRemoved={tid => setTasks(prev => prev.filter(t => t.id !== tid))}
+            />
             {columns.map(col => {
               const colTasks = tasks.filter(t => t.column_id === col.id)
               return (

@@ -25,6 +25,7 @@ import { getAdminProfile } from '@/lib/adminProfile'
 import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
+import EstimateColumn from '@/components/EstimateColumn'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -872,6 +873,16 @@ create policy "team_members_all" on team_members for all using (true) with check
 
         {view === 'board' ? (
           <div className="flex gap-4 p-5 overflow-x-auto flex-1 items-start">
+            {/* Client-requested tasks waiting for an estimate; hidden when empty */}
+            <EstimateColumn
+              tasks={tasks}
+              columns={columns}
+              currency={project?.contract_currency}
+              byName={adminName}
+              canApprove
+              onTaskChange={u => setTasks(prev => prev.map(t => t.id === u.id ? u : t))}
+              onTaskRemoved={tid => setTasks(prev => prev.filter(t => t.id !== tid))}
+            />
             {columns.map(col => {
               const colTasks = tasks.filter(t => t.column_id === col.id)
               return (
@@ -978,7 +989,15 @@ create policy "team_members_all" on team_members for all using (true) with check
 
       {/* Admin-only report drawer */}
       {reportOpen && project && (
-        <ProjectReport project={project} members={members} onClose={() => setReportOpen(false)} />
+        <ProjectReport
+          project={project}
+          members={members}
+          onClose={() => setReportOpen(false)}
+          onBudgetChange={(total, currency) => {
+            setProject(prev => prev ? { ...prev, contract_amount: total, contract_currency: currency } : prev)
+            window.dispatchEvent(new Event('gudrix:projects-changed'))
+          }}
+        />
       )}
 
       {/* Task detail drawer */}

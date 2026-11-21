@@ -1,15 +1,15 @@
 import nodemailer from 'nodemailer'
 import supabaseAdmin from '@/lib/supabaseAdmin'
-import { mailFrom } from '@/lib/mailer'
+import { mailFrom, mailFromAddress } from '@/lib/mailer'
 import { clientMessageEmail, clientReviewEmail, BuiltMail, MailLang } from '@/lib/clientEmails'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 
 // Emails to a project's clients so they never miss what happens on the
 // Gudrix Platform: a team message in the client chat, a task ready for review.
 
-interface Recipient { email: string; name: string | null; lang: MailLang }
+export interface Recipient { email: string; name: string | null; lang: MailLang }
 
-async function projectRecipients(projectId: string): Promise<Recipient[]> {
+export async function projectRecipients(projectId: string): Promise<Recipient[]> {
   const { data: links } = await supabaseAdmin
     .from('project_clients')
     .select('clients(*)')
@@ -24,11 +24,11 @@ export function appOrigin(fallback?: string): string {
   return (process.env.NEXT_PUBLIC_APP_URL || fallback || process.env.NEXTAUTH_URL || '').replace(/\/$/, '')
 }
 
-const firstName = (name: string | null) => (name ?? '').trim().split(/\s+/)[0] ?? ''
+export const firstName = (name: string | null) => (name ?? '').trim().split(/\s+/)[0] ?? ''
 
 export interface NotifyResult { sent: number; error?: string; skipped?: string }
 
-async function deliver(to: Recipient[], build: (r: Recipient) => BuiltMail): Promise<NotifyResult> {
+export async function deliver(to: Recipient[], build: (r: Recipient) => BuiltMail): Promise<NotifyResult> {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return { sent: 0, error: 'SMTP is not configured' }
   if (to.length === 0) return { sent: 0 }
@@ -49,6 +49,14 @@ async function deliver(to: Recipient[], build: (r: Recipient) => BuiltMail): Pro
     }
   }))
   return { sent, error }
+}
+
+// The agency's own inbox for platform events: the admin sign-in addresses,
+// or the sending mailbox when none are configured.
+export async function mailAdmins(mail: BuiltMail): Promise<NotifyResult> {
+  const list = (process.env.ALLOWED_EMAIL ?? '').split(',').map(e => e.trim()).filter(Boolean)
+  const to = (list.length ? list : [mailFromAddress()]).map(email => ({ email, name: null, lang: 'uk' as MailLang }))
+  return deliver(to, () => mail)
 }
 
 // A row inserted into project_messages. Only what the team writes in the

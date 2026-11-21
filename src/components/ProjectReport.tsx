@@ -6,6 +6,7 @@ import { useRates } from '@/lib/use-rates'
 import { Project, TeamMember } from '@/types'
 import { BarChart2, X, Clock } from 'lucide-react'
 import { useChatWidth, ChatResizeHandle } from '@/components/chat/shared'
+import ProjectBudget from '@/components/ProjectBudget'
 
 // Admin-only project report: every task with who worked on it, tracked hours
 // and labor cost by member rates, next to the project budget and actual money.
@@ -13,8 +14,6 @@ import { useChatWidth, ChatResizeHandle } from '@/components/chat/shared'
 
 interface TaskRow { id: string; title: string; estimate_hours?: number | null; estimate_by?: string | null }
 interface EntryRow { task_id: string; team_member_id: string; duration_seconds: number | null }
-
-const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 function fmtDur(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -27,10 +26,11 @@ function fmtDur(seconds: number): string {
 const fmtEUR = (n: number) =>
   '€' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
-export default function ProjectReport({ project, members, onClose }: {
+export default function ProjectReport({ project, members, onClose, onBudgetChange }: {
   project: Project
   members: TeamMember[]
   onClose: () => void
+  onBudgetChange?: (total: number, currency: string) => void
 }) {
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [entries, setEntries] = useState<EntryRow[]>([])
@@ -105,7 +105,6 @@ export default function ProjectReport({ project, members, onClose }: {
   let laborCost = 0
   for (const [mid, secs] of byMember) laborCost += costOf(mid, secs)
 
-  const contractSym = CURRENCY_SYMBOL[project.contract_currency ?? 'USD'] ?? '$'
   const sortedTasks = [...tasks].sort((a, b) => {
     const sa = [...(byTask.get(a.id)?.values() ?? [])].reduce((x, y) => x + y, 0)
     const sb = [...(byTask.get(b.id)?.values() ?? [])].reduce((x, y) => x + y, 0)
@@ -164,12 +163,13 @@ export default function ProjectReport({ project, members, onClose }: {
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
           {/* KPIs */}
           <div className="grid grid-cols-2 gap-2">
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Бюджет (контракт)</p>
-              <p className="text-lg font-bold text-gray-900">
-                {project.contract_amount ? `${contractSym}${Number(project.contract_amount).toLocaleString('en-US')}` : '—'}
-              </p>
-            </div>
+            {/* Editable: starting amount, later additions, currency */}
+            <ProjectBudget
+              projectId={project.id}
+              fallbackAmount={Number(project.contract_amount ?? 0)}
+              fallbackCurrency={project.contract_currency ?? 'USD'}
+              onChange={(total, currency) => onBudgetChange?.(total, currency)}
+            />
             <div className="bg-teal-50 rounded-xl p-3">
               <p className="text-[10px] text-teal-500 uppercase tracking-wide mb-0.5">Отримано</p>
               <p className="text-lg font-bold text-teal-600">{fmtEUR(income)}</p>

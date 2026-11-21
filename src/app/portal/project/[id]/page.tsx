@@ -22,7 +22,16 @@ interface PortalTask {
   id: string; title: string; description: string | null
   column_id: string | null; priority: string | null
   start_date: string | null; due_date: string | null
+  // A task the client asked for, on its way through estimate → approval
+  estimate_status?: 'needed' | 'sent' | 'changes' | 'approved' | null
+  estimate_hours?: number | null
+  estimate_cost?: number | null
+  estimate_note?: string | null
+  estimate_client_comment?: string | null
 }
+
+// Not on the board yet: waiting for the team's estimate or the client's answer
+const isEstimatePending = (x: PortalTask) => ['needed', 'sent', 'changes'].includes(x.estimate_status ?? '')
 interface ChangeRequest {
   id: string
   task_id: string
@@ -89,7 +98,10 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
   onOpenBoard: () => void
   onOpenChat: () => void
 }) {
-  const { project, columns, tasks, assigneesByTask, timeByTask, people, changeRequests } = data
+  const { project, columns, assigneesByTask, timeByTask, people, changeRequests } = data
+  // Tasks still being estimated are not part of the plan yet
+  const tasks = data.tasks.filter(x => !isEstimatePending(x))
+  const toApprove = data.tasks.filter(x => x.estimate_status === 'sent').length
   const lastCol = columns.length > 0 ? columns[columns.length - 1] : null
   const doneIds = new Set(tasks.filter(x => x.column_id === lastCol?.id).map(x => x.id))
   const total = tasks.length
@@ -132,6 +144,22 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
 
   return (
     <div className="px-5 sm:px-8 lg:px-12 py-8 grid grid-cols-12 gap-5">
+      {/* An estimate is waiting for the client's answer */}
+      {toApprove > 0 && (
+        <button
+          onClick={onOpenBoard}
+          className="col-span-12 text-left border border-[#2affaa] bg-[#2affaa]/10 rounded-3xl px-6 lg:px-8 py-5 flex items-center justify-between gap-4 flex-wrap hover:bg-[#2affaa]/20 transition-colors"
+        >
+          <span>
+            <span className="block text-lg font-semibold text-gray-900 tracking-tight">{t.estWaiting(toApprove)}</span>
+            <span className="block text-sm text-gray-500 mt-0.5">{t.estWaitingSub}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 bg-teal-500 text-white px-4 py-2 rounded-full text-sm font-medium">
+            {t.estReview} <ArrowUpRight size={15} />
+          </span>
+        </button>
+      )}
+
       {/* Progress */}
       <Card className="col-span-12 xl:col-span-8">
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -289,6 +317,119 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
           </div>
         )}
       </Card>
+    </div>
+  )
+}
+
+// ── A client-requested task on its way through estimate → approval ───────────
+
+function EstimateCard({ task, projectId, token, readOnly, focused, sym, t, onDecided }: {
+  task: PortalTask
+  projectId: string
+  token: string | null
+  readOnly: boolean
+  focused: boolean
+  sym: string
+  t: PortalText
+  onDecided: () => void
+}) {
+  const [commenting, setCommenting] = useState(false)
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function decide(action: 'approve' | 'comment') {
+    if (!token || busy || readOnly) return
+    if (action === 'comment' && !comment.trim()) return
+    setBusy(true); setError('')
+    const res = await fetch(`/api/portal/project/${projectId}/tasks/${task.id}/estimate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, comment }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setError(d.error ?? t.somethingWrong)
+      return
+    }
+    onDecided()
+  }
+
+  const sent = task.estimate_status === 'sent'
+  const hours = task.estimate_hours ?? 0, cost = task.estimate_cost ?? 0
+
+  return (
+    <div
+      id={`task-${task.id}`}
+      className={`border rounded-2xl p-4 bg-white transition-shadow ${focused ? 'border-[#2affaa] shadow-[0_0_0_4px_rgba(42,255,170,0.25)]' : sent ? 'border-gray-900' : 'border-gray-100'}`}
+    >
+      <p className="text-[15px] text-gray-900 leading-snug font-medium">{task.title}</p>
+      {task.description && <p className="text-sm text-gray-400 mt-1.5 line-clamp-3">{task.description}</p>}
+
+      {!sent ? (
+        <>
+          <span className="inline-block text-xs font-medium text-violet-700 bg-violet-50 rounded-full px-2.5 py-1 mt-3">
+            {task.estimate_status === 'changes' ? t.estRevising : t.estNeeded}
+          </span>
+          {task.estimate_status === 'changes' && task.estimate_client_comment ? (
+            <p className="text-sm text-gray-500 mt-2.5"><span className="text-gray-400">{t.estYourComment}:</span> {task.estimate_client_comment}</p>
+          ) : (
+            <p className="text-sm text-gray-400 mt-2.5 leading-relaxed">{t.estNeededSub}</p>
+          )}
+        </>
+      ) : (
+        <>
+          <span className="inline-block text-xs font-medium text-white bg-teal-500 rounded-full px-2.5 py-1 mt-3">{t.estReady}</span>
+          <div className="flex items-end gap-8 mt-3">
+            {hours > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-gray-400">{t.estTime}</p>
+                <p className="text-2xl font-semibold text-gray-900 tracking-tight">{t.estHours(hours)}</p>
+              </div>
+            )}
+            {cost > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-gray-400">{t.estCost}</p>
+                <p className="text-2xl font-semibold text-gray-900 tracking-tight">{sym}{cost.toLocaleString('en-US')}</p>
+              </div>
+            )}
+          </div>
+          {task.estimate_note && <p className="text-sm text-gray-500 mt-3 whitespace-pre-line leading-relaxed">{task.estimate_note}</p>}
+          {cost > 0 && <p className="text-xs text-gray-400 mt-3">{t.estBudgetNote(`${sym}${cost.toLocaleString('en-US')}`)}</p>}
+
+          {commenting ? (
+            <div className="mt-4">
+              <textarea
+                autoFocus
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                rows={3}
+                placeholder={t.estCommentPh}
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-900 resize-none"
+              />
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => { setCommenting(false); setError('') }} className="flex-1 border border-gray-200 text-gray-600 rounded-full py-2 text-sm font-medium hover:border-gray-900 transition-colors">
+                  {t.cancel}
+                </button>
+                <button onClick={() => decide('comment')} disabled={busy || !comment.trim()} className="flex-1 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-full py-2 text-sm font-medium transition-colors">
+                  {busy ? t.submitting : t.estSend}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => decide('approve')} disabled={busy || readOnly} className="flex-1 flex items-center justify-center gap-1.5 bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white rounded-full py-2 text-sm font-medium transition-colors">
+                <CircleCheck size={14} /> {busy ? t.submitting : t.estApprove}
+              </button>
+              <button onClick={() => setCommenting(true)} disabled={busy || readOnly} className="flex-1 border border-gray-200 text-gray-700 rounded-full py-2 text-sm font-medium hover:border-gray-900 disabled:opacity-40 transition-colors">
+                {t.estAskChanges}
+              </button>
+            </div>
+          )}
+          {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+        </>
+      )}
     </div>
   )
 }
@@ -464,7 +605,9 @@ export default function PortalProjectPage() {
     </div>
   )
 
-  const { project, columns, tasks, assigneesByTask, timeByTask, changeRequests } = data
+  const { project, columns, assigneesByTask, timeByTask, changeRequests } = data
+  const estimating = data.tasks.filter(isEstimatePending)
+  const tasks = data.tasks.filter(x => !isEstimatePending(x))
   const sym = CURRENCY_SYMBOL[project.contract_currency ?? 'USD']
   const homeHref = preview ? `/portal?preview=${encodeURIComponent(preview)}` : '/portal'
   const lastColumnId = columns.length > 0 ? columns[columns.length - 1].id : null
@@ -557,6 +700,31 @@ export default function PortalProjectPage() {
         <div className="px-5 sm:px-8 lg:px-12 py-8">
           {/* The board fills the screen: columns share the width */}
           <div className="flex gap-5 overflow-x-auto pb-4">
+            {/* Tasks you asked for that are still being estimated; hidden when empty */}
+            {estimating.length > 0 && (
+              <div className="flex-1 min-w-[280px] max-w-[420px] flex flex-col">
+                <div className="flex items-center gap-2.5 pb-3 mb-3 border-b border-gray-100">
+                  <span className="w-2 h-2 rounded-full bg-violet-600" />
+                  <span className="text-xs font-medium uppercase tracking-[0.12em] text-gray-500 truncate">{t.estColumn}</span>
+                  <span className="text-xs text-gray-300 tabular-nums ml-auto">{estimating.length}</span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {estimating.map(task => (
+                    <EstimateCard
+                      key={task.id}
+                      task={task}
+                      projectId={project.id}
+                      token={token}
+                      readOnly={!!preview}
+                      focused={task.id === focusTask}
+                      sym={sym}
+                      t={t}
+                      onDecided={() => { if (token) refetch(token) }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             {columns.map(col => {
               const colTasks = tasks.filter(x => x.column_id === col.id)
               return (

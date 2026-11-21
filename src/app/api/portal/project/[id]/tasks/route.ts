@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
 import { suggestEstimate } from '@/lib/preEstimate'
+import { announceClientTask } from '@/lib/estimateFlow'
 
-// Clients can add tasks — but only into the project's Backlog column.
+// Clients can add tasks. A new task first goes to the team for an estimate
+// and reaches the board only after the client approves it.
 
 export async function POST(
   req: NextRequest,
@@ -20,6 +22,42 @@ export async function POST(
   const { title, description } = await req.json()
   const cleanTitle = String(title ?? '').trim()
   if (!cleanTitle) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
+
+  const clientName = client.name || client.email
+  const fields = 'id, title, description, column_id, priority, start_date, due_date, created_at'
+  const core = {
+    title: cleanTitle.slice(0, 200),
+    description: String(description ?? '').trim().slice(0, 4000) || null,
+    finance_project_id: id,
+    priority: 'medium',
+  }
+
+  // The task waits for an estimate outside the board columns; it reaches
+  // To-Do only after the client approves the estimate. The auto pre-estimate
+  // gives the team a starting number.
+  const { data: pending, error: flowErr } = await supabaseAdmin
+    .from('pm_tasks')
+    .insert({
+      ...core,
+      column_id: null,
+      estimate_status: 'needed',
+      requested_by_client_id: client.id.startsWith('preview:') ? null : client.id,
+      estimate_hours: suggestEstimate(core.title),
+      estimate_by: 'авто',
+    })
+    .select(fields)
+    .single()
+  if (pending) {
+    const origin = req.nextUrl.origin
+    after(async () => {
+      try { await announceClientTask(pending.id, clientName, origin) } catch (e) { console.error('[estimate] announce', e) }
+    })
+    return NextResponse.json({ ...pending, estimate_status: 'needed' })
+  }
+  // Before the estimate migration is run the old behaviour stays: Backlog
+  if (!/estimate_|requested_by|schema cache/i.test(flowErr?.message ?? '')) {
+    return NextResponse.json({ error: flowErr?.message ?? 'insert failed' }, { status: 400 })
+  }
 
   // Find the backlog column; create one if the board doesn't have it yet
   const { data: columns } = await supabaseAdmin
@@ -42,14 +80,7 @@ export async function POST(
     backlog = created
   }
 
-  const clientName = client.name || client.email
-  const baseTask = {
-    title: cleanTitle.slice(0, 200),
-    description: String(description ?? '').trim().slice(0, 4000) || null,
-    finance_project_id: id,
-    column_id: backlog.id,
-    priority: 'medium',
-  }
+  const baseTask = { ...core, column_id: backlog.id }
   // Auto pre-estimate from the title; falls back if the column isn't migrated yet
   let { data: task, error } = await supabaseAdmin
     .from('pm_tasks')

@@ -177,3 +177,95 @@ export function clientReviewEmail(o: {
   ].join('\n')
   return { subject, html, text: plain }
 }
+
+// ── An estimate for a task the client asked for ──────────────────────────────
+
+export function clientEstimateEmail(o: {
+  lang: MailLang
+  firstName: string
+  projectName: string
+  taskTitle: string
+  hours: number | null
+  cost: string | null        // already formatted with currency
+  note: string
+  revised: boolean
+  taskUrl: string
+  chatUrl: string
+}): BuiltMail {
+  const uk = o.lang === 'uk'
+  const note = o.note.trim()
+  const hoursText = o.hours ? (uk ? `${o.hours} год` : `${o.hours} h`) : null
+  const cell = (label: string, value: string) =>
+    `<td valign="top" style="padding:0 28px 0 0"><div style="font-family:${FONT};font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#71717a">${label}</div><div style="margin-top:4px;font-family:${FONT};font-size:24px;line-height:30px;font-weight:700;color:#ffffff">${esc(value)}</div></td>`
+  const figures = [hoursText ? cell(uk ? 'Час' : 'Time', hoursText) : '', o.cost ? cell(uk ? 'Вартість' : 'Cost', o.cost) : ''].join('')
+
+  const card = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px"><tr>
+      <td bgcolor="#09090b" style="background:#09090b;border:1px solid #27272a;border-radius:16px;padding:18px 20px">
+        <div style="font-family:${FONT};font-size:17px;line-height:24px;font-weight:600;color:#ffffff">${esc(o.taskTitle)}</div>
+        ${figures ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr>${figures}</tr></table>` : ''}
+        ${note ? `<div style="margin-top:14px;font-family:${FONT};font-size:14px;line-height:21px;color:#a1a1aa">${esc(note).replace(/\r?\n/g, '<br>')}</div>` : ''}
+      </td>
+    </tr></table>`
+
+  const subject = uk
+    ? `${o.revised ? 'Оновлена оцінка' : 'Оцінка готова'}: ${o.taskTitle}`
+    : `${o.revised ? 'Updated estimate' : 'Your estimate is ready'}: ${o.taskTitle}`
+  const headline = uk
+    ? (o.revised ? 'Ми оновили оцінку' : 'Оцінка готова ✨')
+    : (o.revised ? 'We’ve updated the estimate' : 'Your estimate is ready ✨')
+  const lead = uk
+    ? `${o.firstName ? `${esc(o.firstName)}, ми` : 'Ми'} оцінили задачу, яку ви додали в проєкт <b style="color:#ffffff">${esc(o.projectName)}</b>.`
+    : `${o.firstName ? `${esc(o.firstName)}, we’ve` : 'We’ve'} estimated the task you added to <b style="color:#ffffff">${esc(o.projectName)}</b>.`
+  const hint = (uk
+    ? 'Погодьте — і задача одразу піде в роботу. Якщо щось не так, залиште коментар, і ми переглянемо оцінку.'
+    : 'Approve it and the task goes straight into work. If something looks off, leave a comment and we’ll revise it.')
+    + (o.cost ? (uk ? ` Погодження додасть ${o.cost} до бюджету проєкту.` : ` Approving adds ${o.cost} to the project budget.`) : '')
+  const cta = uk ? 'Переглянути оцінку' : 'Review the estimate'
+  const second = uk ? 'Написати команді' : 'Message the team'
+
+  const html = shell({
+    lang: o.lang,
+    preheader: [hoursText, o.cost].filter(Boolean).join(' · ') || o.taskTitle,
+    eyebrow: uk ? 'Оцінка задачі' : 'Task estimate',
+    headline,
+    body: p(lead) + card + p(hint, '#a1a1aa'),
+    cta: { label: cta, url: o.taskUrl },
+    secondary: { label: second, url: o.chatUrl },
+    footer: FOOTER[o.lang](o.projectName),
+  })
+  const plain = [
+    `${headline.replace(' ✨', '')} — ${o.projectName}`, '', o.taskTitle,
+    ...([hoursText, o.cost].filter(Boolean).length ? [[hoursText, o.cost].filter(Boolean).join(' · ')] : []),
+    ...(note ? [note] : []), '', hint, '', `${cta}: ${o.taskUrl}`,
+  ].join('\n')
+  return { subject, html, text: plain }
+}
+
+// ── A notice for the agency itself (Ukrainian, same look) ────────────────────
+
+export function agencyNoticeEmail(o: {
+  subject: string
+  eyebrow: string
+  headline: string
+  lines: string[]
+  quote?: string
+  cta: { label: string; url: string }
+}): BuiltMail {
+  const quote = o.quote?.trim()
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr>
+        <td width="3" bgcolor="#2affaa" style="background:#2affaa;border-radius:3px"></td>
+        <td style="padding:2px 0 2px 16px;font-family:${FONT};font-size:16px;line-height:26px;color:#ffffff">${esc(o.quote.trim()).replace(/\r?\n/g, '<br>')}</td>
+      </tr></table>`
+    : ''
+  const html = shell({
+    lang: 'uk',
+    preheader: o.lines[0] ?? o.headline,
+    eyebrow: o.eyebrow,
+    headline: esc(o.headline),
+    body: o.lines.map(l => p(esc(l))).join('') + quote,
+    cta: o.cta,
+    footer: 'Службове сповіщення Gudrix Platform для команди.',
+  })
+  const text = [o.headline, '', ...o.lines, ...(o.quote?.trim() ? ['', `«${o.quote.trim()}»`] : []), '', `${o.cta.label}: ${o.cta.url}`].join('\n')
+  return { subject: o.subject, html, text }
+}

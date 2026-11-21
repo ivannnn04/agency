@@ -30,7 +30,7 @@ const en = {
   backToProjects: 'Back to your projects',
 
   overview: 'Overview', board: 'Board', timeline: 'Timeline', invoices: 'Invoices', notes: 'Notes',
-  addTask: 'Add task', addTaskHint: 'Add a task to the backlog', messageTeam: 'Message the team', teamChat: 'Team chat',
+  addTask: 'Add task', addTaskHint: 'Ask the team for something new', messageTeam: 'Message the team', teamChat: 'Team chat',
 
   progress: 'Project progress',
   tasksDone: (done: number, total: number) => `${done} of ${total} tasks done`,
@@ -53,9 +53,9 @@ const en = {
   invPaid: 'Paid', invDue: 'To be paid', invPaidOn: (d: string) => `Paid ${d}`, invDownload: 'Download', invNone: 'No invoices yet',
   invBilled: 'Total billed', invOutstanding: 'Outstanding',
 
-  addTaskTitle: 'Add a task', addTaskSub: 'It lands in the Backlog — the team will review and schedule it',
+  addTaskTitle: 'Add a task', addTaskSub: 'The team will estimate it and send the estimate for your approval — then it goes into work',
   fieldTitle: 'Title', fieldTitlePh: 'What needs to be done?', fieldDetails: 'Details (optional)', fieldDetailsPh: 'Anything that helps the team understand the request',
-  cancel: 'Cancel', adding: 'Adding…', addToBacklog: 'Add to Backlog', somethingWrong: 'Something went wrong',
+  cancel: 'Cancel', adding: 'Adding…', addToBacklog: 'Send for an estimate', somethingWrong: 'Something went wrong',
   crOf: (n: number, limit: number) => `${n} of ${limit}`, crPlaceholder: 'Describe what you’d like to change…',
   attach: (mb: number) => `Attach images or files (up to 5, ${mb} MB each)`,
   tooBig: (name: string, mb: number) => `“${name}” is too big — ${mb} MB max`,
@@ -68,6 +68,13 @@ const en = {
   tourEyebrow: 'New here?', tourTitle: 'Take the 60-second tour',
   tourSub: 'A quick narrated walkthrough: your progress and deadline, the roadmap, the board, the timeline, and where to reach the team.',
   tourWatch: 'Watch the tour', tourHide: 'Hide', tourAgain: 'Watch the workspace tour',
+  estColumn: 'To be estimated', estNeeded: 'Being estimated', estNeededSub: 'The team is working out the estimate. You’ll get an email when it’s ready.',
+  estRevising: 'Estimate being revised', estYourComment: 'Your comment', estReady: 'Estimate ready',
+  estTime: 'Time', estCost: 'Cost', estHours: (n: number) => `${n} h`,
+  estApprove: 'Approve', estAskChanges: 'Ask for changes', estCommentPh: 'What would you like us to reconsider?', estSend: 'Send comment',
+  estWaiting: (n: number) => (n === 1 ? '1 estimate is waiting for your approval' : `${n} estimates are waiting for your approval`),
+  estWaitingSub: 'Approve it and the task goes straight into work.', estReview: 'Review',
+  estBudgetNote: (cost: string) => `Approving adds ${cost} to the project budget.`,
 }
 
 const uk: typeof en = {
@@ -87,7 +94,7 @@ const uk: typeof en = {
   backToProjects: 'До ваших проєктів',
 
   overview: 'Огляд', board: 'Дошка', timeline: 'Таймлайн', invoices: 'Рахунки', notes: 'Нотатки',
-  addTask: 'Додати задачу', addTaskHint: 'Додати задачу в беклог', messageTeam: 'Написати команді', teamChat: 'Чат з командою',
+  addTask: 'Додати задачу', addTaskHint: 'Попросити команду про щось нове', messageTeam: 'Написати команді', teamChat: 'Чат з командою',
 
   progress: 'Прогрес проєкту',
   tasksDone: (done, total) => `Готово ${done} з ${total} задач`,
@@ -110,9 +117,9 @@ const uk: typeof en = {
   invPaid: 'Оплачено', invDue: 'До оплати', invPaidOn: d => `Оплачено ${d}`, invDownload: 'Завантажити', invNone: 'Рахунків ще немає',
   invBilled: 'Усього виставлено', invOutstanding: 'До оплати',
 
-  addTaskTitle: 'Додати задачу', addTaskSub: 'Вона потрапить у беклог — команда перегляне й запланує її',
+  addTaskTitle: 'Додати задачу', addTaskSub: 'Команда оцінить її й надішле оцінку вам на погодження — після цього вона піде в роботу',
   fieldTitle: 'Назва', fieldTitlePh: 'Що потрібно зробити?', fieldDetails: 'Деталі (необовʼязково)', fieldDetailsPh: 'Усе, що допоможе команді зрозуміти запит',
-  cancel: 'Скасувати', adding: 'Додаю…', addToBacklog: 'Додати в беклог', somethingWrong: 'Щось пішло не так',
+  cancel: 'Скасувати', adding: 'Додаю…', addToBacklog: 'Надіслати на оцінку', somethingWrong: 'Щось пішло не так',
   crOf: (n, limit) => `${n} з ${limit}`, crPlaceholder: 'Опишіть, що хочете змінити…',
   attach: mb => `Прикріпити зображення чи файли (до 5, по ${mb} МБ)`,
   tooBig: (name, mb) => `«${name}» завеликий — максимум ${mb} МБ`,
@@ -125,6 +132,13 @@ const uk: typeof en = {
   tourEyebrow: 'Вперше тут?', tourTitle: 'Подивіться 60-секундний тур',
   tourSub: 'Коротке відео з озвучкою (англійською): прогрес і дедлайн, роадмап, дошка, таймлайн і де написати команді.',
   tourWatch: 'Дивитися тур', tourHide: 'Сховати', tourAgain: 'Подивитися тур кабінетом',
+  estColumn: 'На оцінці', estNeeded: 'Оцінюємо', estNeededSub: 'Команда готує оцінку. Коли вона буде готова, ви отримаєте лист.',
+  estRevising: 'Переглядаємо оцінку', estYourComment: 'Ваш коментар', estReady: 'Оцінка готова',
+  estTime: 'Час', estCost: 'Вартість', estHours: n => `${n} год`,
+  estApprove: 'Погодити', estAskChanges: 'Попросити змінити', estCommentPh: 'Що варто переглянути?', estSend: 'Надіслати коментар',
+  estWaiting: n => (n === 1 ? '1 оцінка чекає на ваше погодження' : `Оцінок, що чекають на погодження: ${n}`),
+  estWaitingSub: 'Погодьте — і задача одразу піде в роботу.', estReview: 'Переглянути',
+  estBudgetNote: cost => `Погодження додасть ${cost} до бюджету проєкту.`,
 }
 
 export type PortalText = typeof en

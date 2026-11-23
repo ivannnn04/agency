@@ -319,7 +319,7 @@ export function documentLetterDefault(o: {
     ].join('\n')
   }
   return [
-    o.firstName ? `Hi ${o.firstName},` : 'Hi,',
+    o.firstName ? `Hello ${o.firstName},` : 'Hello,',
     '',
     `We’ve wrapped up the next piece of work on ${o.projectName} and would love your eyes on it. ${!o.hasFiles
       ? 'Everything you need for the review is right below.'

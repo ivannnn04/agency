@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
             <div style="width:36px;height:36px;background:#14b8a6;border-radius:10px;color:#fff;font-weight:bold;text-align:center;line-height:36px;font-size:16px">G</div>
             <span style="font-size:16px;font-weight:600;color:#111827">&nbsp;Gudrix Cowork Space</span>
           </div>
-          <p style="font-size:15px;color:#111827">Hi${firstName ? ` ${firstName}` : ''},</p>
+          <p style="font-size:15px;color:#111827">Hello${firstName ? ` ${firstName}` : ''},</p>
           <p style="font-size:14px;color:#374151;line-height:1.6">
             You’ve been invited to the Gudrix team workspace. This is where you’ll see your
             projects and tasks, and chat with the team.

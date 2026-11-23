@@ -47,6 +47,9 @@ export interface PMTask {
   priority: PMTaskPriority;
   assignee_id: string | null;
   team_member_id: string | null;
+  // The admin took this task themselves (their display name); not a team member,
+  // so it never touches payroll or team workload
+  admin_assignee?: string | null;
   start_date: string | null;
   due_date: string | null;
   estimate_hours: number | null;

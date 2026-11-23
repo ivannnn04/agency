@@ -16,3 +16,6 @@ alter table admin_time_entries enable row level security;
 
 -- Per task: does the admin's time on it go on the client's invoice
 alter table pm_tasks add column if not exists admin_time_billable boolean not null default false;
+
+-- The admin can take a task themselves (stores their display name)
+alter table pm_tasks add column if not exists admin_assignee text;

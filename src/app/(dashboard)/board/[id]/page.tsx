@@ -66,14 +66,17 @@ function memberInitial(m: TeamMember) {
 }
 
 // Overlapping stack of assignee avatars (up to `max`, then "+N")
-function AvatarStack({ memberIds, members, max = 3 }: {
+function AvatarStack({ memberIds, members, admin, max = 3 }: {
   memberIds: string[]
   members: TeamMember[]
+  admin?: string | null
   max?: number
 }) {
-  const assigned = memberIds
+  const assigned: Pick<TeamMember, 'id' | 'name' | 'color'>[] = memberIds
     .map(mid => members.find(m => m.id === mid))
     .filter((m): m is TeamMember => !!m)
+  // The admin, when they took the task themselves, comes first
+  if (admin) assigned.unshift({ id: 'admin', name: admin, color: '#09090b' })
   if (assigned.length === 0) {
     return (
       <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
@@ -202,6 +205,10 @@ export default function BoardPage() {
     if (tx) {
       setTasks(tx)
       setAssigneesByTask(await fetchAssigneesByTask(tx.map(t => t.id)))
+      // Deep link from the dashboard: /board/<project>?task=<id> opens that task
+      const wanted = new URLSearchParams(window.location.search).get('task')
+      const hit = wanted ? (tx as PMTask[]).find(t => t.id === wanted) : null
+      if (hit) setSelectedTask(hit)
     }
     setLoading(false)
   }
@@ -388,6 +395,10 @@ export default function BoardPage() {
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
     if ('estimate_hours' in patch) patch = { ...patch, estimate_by: 'Адмін' }
     let { error: upErr } = await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    if (upErr && 'admin_assignee' in patch) {
+      alert('Щоб призначати себе, запусти міграцію supabase/admin_time_migration.sql у Supabase SQL Editor.')
+      return
+    }
     if (upErr && upErr.message.includes('estimate_by')) {
       const { estimate_by: _skip, ...rest } = patch
       void _skip
@@ -1286,7 +1297,7 @@ function TaskCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Assignee avatars */}
-          <AvatarStack memberIds={assigneeIds} members={members} />
+          <AvatarStack memberIds={assigneeIds} members={members} admin={task.admin_assignee} />
 
           <TaskEstimateChip task={task} currency={currency} />
 
@@ -1470,6 +1481,17 @@ function TaskDetailPanel({
           <div className="flex items-start gap-3 py-2 hover:bg-gray-50 rounded-lg px-2 -mx-2">
             <span className="text-sm text-gray-400 w-32 flex-shrink-0 pt-1">Assignees</span>
             <div className="flex items-center flex-wrap gap-1.5">
+              {task.admin_assignee && (
+                <div className="flex items-center gap-1.5 pl-0.5 pr-1.5 py-0.5 rounded-full border border-gray-900 bg-white">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium bg-[#09090b] on-dark">
+                    {task.admin_assignee.charAt(0)}
+                  </div>
+                  <span className="text-xs text-gray-900 font-medium">{task.admin_assignee} (я)</span>
+                  <button onClick={() => onUpdate({ admin_assignee: null })} className="text-gray-300 hover:text-red-400 transition-colors" title="Зняти з себе">
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
               {assignedMembers.map(m => (
                 <div
                   key={m.id}
@@ -1491,18 +1513,21 @@ function TaskDetailPanel({
                   </button>
                 </div>
               ))}
-              {assignedMembers.length === 0 && unassignedMembers.length === 0 && (
-                <span className="text-sm text-gray-300 pt-1">—</span>
+              {!task.admin_assignee && (
+                <button onClick={() => onUpdate({ admin_assignee: uploaderName || 'Admin' })}
+                  className="text-sm text-gray-700 border border-dashed border-gray-300 rounded-full px-3 py-1 bg-white hover:border-gray-900 transition-colors">
+                  + Я
+                </button>
               )}
               {unassignedMembers.length > 0 && (
                 <select
                   value=""
                   onChange={e => { if (e.target.value) onAddAssignee(e.target.value) }}
-                  className={assignedMembers.length === 0
+                  className={assignedMembers.length === 0 && !task.admin_assignee
                     ? 'text-sm text-gray-700 border border-dashed border-gray-300 rounded-full px-3 py-1 bg-white cursor-pointer hover:border-gray-900 focus:outline-none'
                     : 'text-sm text-gray-400 focus:outline-none bg-transparent cursor-pointer hover:text-gray-600'}
                 >
-                  <option value="">{assignedMembers.length === 0 ? '+ Призначити виконавця' : '+ Додати'}</option>
+                  <option value="">{assignedMembers.length === 0 && !task.admin_assignee ? '+ Призначити виконавця' : '+ Додати'}</option>
                   {unassignedMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               )}

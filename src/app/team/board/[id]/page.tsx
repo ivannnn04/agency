@@ -614,6 +614,7 @@ export default function TeamBoardPage() {
                                 memberIds={taskAssignees}
                                 allMembers={allMembers}
                                 currentMemberId={member?.id}
+                                admin={task.admin_assignee}
                               />
 
                               {/* Due date */}
@@ -804,15 +805,18 @@ export default function TeamBoardPage() {
 
 // ── Overlapping stack of assignee avatars (highlights current member) ────────────
 
-function AssigneeStack({ memberIds, allMembers, currentMemberId, max = 3 }: {
+function AssigneeStack({ memberIds, allMembers, currentMemberId, admin, max = 3 }: {
   memberIds: string[]
   allMembers: Pick<TeamMember, 'id' | 'name' | 'color'>[]
   currentMemberId?: string
+  admin?: string | null
   max?: number
 }) {
   const assigned = memberIds
     .map(mid => allMembers.find(m => m.id === mid))
     .filter((m): m is Pick<TeamMember, 'id' | 'name' | 'color'> => !!m)
+  // The admin took this task themselves
+  if (admin) assigned.unshift({ id: 'admin', name: admin, color: '#09090b' })
   if (assigned.length === 0) {
     return (
       <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center" title="Не призначено">
@@ -998,6 +1002,14 @@ function TaskPanel({
           <div className="flex items-start gap-3 py-2 px-2 -mx-2">
             <span className="text-sm text-gray-400 w-28 flex-shrink-0 pt-1">Виконавці</span>
             <div className="flex-1 flex flex-col gap-1.5">
+              {task.admin_assignee && (
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0 bg-[#09090b] on-dark">
+                    {task.admin_assignee.charAt(0)}
+                  </div>
+                  <span className="text-sm text-gray-600">{task.admin_assignee} <span className="text-gray-400">· адмін</span></span>
+                </div>
+              )}
               {assignedMembers.length > 0 ? (
                 assignedMembers.map(m => (
                   <div key={m.id} className="flex items-center gap-2 group/assignee">
@@ -1021,9 +1033,9 @@ function TaskPanel({
                     )}
                   </div>
                 ))
-              ) : (
+              ) : !task.admin_assignee ? (
                 <span className="text-sm text-gray-400 pt-1">Не призначено</span>
-              )}
+              ) : null}
               <button
                 onClick={isMine ? onRemoveSelf : onAddSelf}
                 className={`mt-1 self-start text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${

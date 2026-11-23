@@ -7,6 +7,7 @@ import { UserRound } from 'lucide-react'
 // Dashboard card: where the admin's own tracked time goes, per project —
 // this month and overall, and how much of it is marked for invoicing.
 
+interface MyTask { id: string; title: string; project_id: string | null; project: string; color: string | null; column: string | null; column_color: string | null; due_date: string | null }
 interface Row { project_id: string | null; name: string; color: string | null; month: number; month_billable: number; total: number; total_billable: number }
 
 const hours = (s: number) => {
@@ -16,13 +17,14 @@ const hours = (s: number) => {
 
 export default function AdminInvolvement() {
   const [rows, setRows] = useState<Row[] | null>(null)
+  const [mine, setMine] = useState<MyTask[]>([])
   const [nonce, setNonce] = useState(0)
 
   useEffect(() => {
     let alive = true
     fetch('/api/admin-time')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive) setRows(d?.projects ?? []) })
+      .then(d => { if (alive) { setRows(d?.projects ?? []); setMine(d?.my_tasks ?? []) } })
       .catch(() => { if (alive) setRows([]) })
     return () => { alive = false }
   }, [nonce])
@@ -43,7 +45,7 @@ export default function AdminInvolvement() {
       <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
         <div>
           <p className="text-sm font-semibold text-gray-900 flex items-center gap-2"><UserRound size={15} className="text-gray-400" /> Моя залученість</p>
-          <p className="text-xs text-gray-400 mt-0.5">Твій власний затреканий час по проєктах. У зарплату не йде.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Твій власний затреканий час і задачі, які ти взяв на себе. У зарплату не йде.</p>
         </div>
         <div className="flex gap-5 text-right">
           <div><p className="text-[10px] uppercase tracking-wide text-gray-400">Цього місяця</p><p className="text-lg font-bold text-gray-900">{hours(month)}</p></div>
@@ -52,7 +54,7 @@ export default function AdminInvolvement() {
         </div>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-gray-400">Ще нічого не затрекано. Відкрий задачу на дошці й натисни «Старт» у блоці «Мій час».</p>
+        <p className="text-sm text-gray-400">Ще нічого не затрекано. Відкрий задачу на дошці, натисни «+ Я» у виконавцях і «Старт» у блоці «Мій час».</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map(r => (
@@ -70,6 +72,28 @@ export default function AdminInvolvement() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+      {mine.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 mb-2">Мої задачі · {mine.length}</p>
+          <div className="flex flex-col">
+            {mine.map(t => {
+              const overdue = !!t.due_date && t.due_date < new Date().toISOString().slice(0, 10)
+              return (
+                <Link key={t.id} href={t.project_id ? `/board/${t.project_id}?task=${t.id}` : '#'}
+                  className="flex items-center gap-3 py-1.5 -mx-2 px-2 rounded-lg hover:bg-gray-50 transition-colors">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: t.color ?? '#9ca3af' }} />
+                  <span className="text-sm text-gray-800 flex-1 truncate">{t.title}</span>
+                  <span className="text-xs text-gray-400 w-32 truncate hidden sm:block">{t.project}</span>
+                  <span className={`text-xs tabular-nums w-16 text-right ${overdue ? 'text-red-500' : 'text-gray-400'}`}>
+                    {t.due_date ? new Date(t.due_date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' }) : ''}
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide w-36 text-right truncate" style={{ color: t.column_color ?? '#9ca3af' }}>{t.column ?? 'Без колонки'}</span>
+                </Link>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

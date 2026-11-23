@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { requireAdmin } from '@/lib/adminAuth'
+import { isInvoiceColumn } from '@/lib/clientColumns'
 
 // The admin's own time on tasks: a timer, manual entries, a per-task
 // "invoice my time" switch, and a per-project summary for the dashboard.
@@ -27,6 +28,27 @@ async function taskState(taskId: string) {
     entries: list.filter(e => e.ended_at).slice(0, 20),
     billable: !!(task as { admin_time_billable?: boolean } | null)?.admin_time_billable,
   }
+}
+
+// Open tasks the admin took themselves (empty until the migration adds the column)
+async function myTasks() {
+  const { data, error } = await supabaseAdmin.from('pm_tasks').select('*').not('admin_assignee', 'is', null)
+  if (error || !data?.length) return []
+  const mine = data as { id: string; title: string; finance_project_id: string | null; column_id: string | null; due_date: string | null; invoiced_at?: string | null }[]
+  const colIds = [...new Set(mine.map(t => t.column_id).filter(Boolean))] as string[]
+  const projIds = [...new Set(mine.map(t => t.finance_project_id).filter(Boolean))] as string[]
+  const [{ data: cols }, { data: projs }] = await Promise.all([
+    colIds.length ? supabaseAdmin.from('pm_columns').select('id, name, color').in('id', colIds) : Promise.resolve({ data: [] }),
+    projIds.length ? supabaseAdmin.from('projects').select('id, name, color').in('id', projIds) : Promise.resolve({ data: [] }),
+  ])
+  return mine
+    .map(t => {
+      const col = (cols ?? []).find(c => c.id === t.column_id), p = (projs ?? []).find(x => x.id === t.finance_project_id)
+      return { id: t.id, title: t.title, project_id: t.finance_project_id, project: p?.name ?? 'Без проєкту', color: p?.color ?? null,
+        column: col?.name ?? null, column_color: col?.color ?? null, due_date: t.due_date, done: !!t.invoiced_at || isInvoiceColumn(col?.name) }
+    })
+    .filter(t => !t.done)
+    .sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'))
 }
 
 export async function GET(req: NextRequest) {
@@ -69,7 +91,7 @@ export async function GET(req: NextRequest) {
     return { project_id: id === 'none' ? null : id, name: p?.name ?? 'Без проєкту', color: p?.color ?? null, ...r }
   }).sort((a, b) => b.month - a.month || b.total - a.total)
 
-  return NextResponse.json({ month, projects: out })
+  return NextResponse.json({ month, projects: out, my_tasks: await myTasks() })
 }
 
 export async function POST(req: NextRequest) {

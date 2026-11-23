@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser, signOutHere } from '@/lib/supabase'
 import { fetchAssigneesByTask } from '@/lib/assignees'
 import { TeamMember } from '@/types'
 import { PMColumn, PMTask } from '@/types/pm'
@@ -123,7 +123,7 @@ export default function TeamBoardPage() {
   async function fetchAll() {
     setLoading(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthedUser()
     if (!user) { router.replace('/team/login'); return }
 
     const { data: mem } = await supabase
@@ -416,7 +416,7 @@ export default function TeamBoardPage() {
 
   async function handleLogout() {
     if (activeTimer) await stopTimer()
-    await supabase.auth.signOut()
+    await signOutHere()
     router.replace('/team/login')
   }
 

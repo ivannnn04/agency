@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser } from '@/lib/supabase'
 
 export default function TeamLoginPage() {
   const router = useRouter()
@@ -10,6 +10,11 @@ export default function TeamLoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
+
+  // Already signed in (the session is kept until a manual sign-out): go straight in
+  useEffect(() => {
+    getAuthedUser().then(user => { if (user) router.replace('/team/dashboard') })
+  }, [router])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()

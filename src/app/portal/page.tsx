@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { supabase, signOutHere } from '@/lib/supabase'
 import { ArrowUpRight, FolderKanban, LogOut, Mail, Play } from 'lucide-react'
 import { PortalHeader, PortalPreviewBanner } from '@/components/portal/PortalChrome'
 import { PORTAL_TEXT, PortalLang, portalLang } from '@/lib/portalI18n'
@@ -55,7 +55,7 @@ export default function PortalDashboardPage() {
       const data = await res.json()
       if (res.status === 403 && !previewToken) {
         // Signed in, but this email is not on the client list
-        await supabase.auth.signOut()
+        await signOutHere()
         router.replace(`/portal/login?denied=${encodeURIComponent(data.email ?? '')}`)
         return
       }
@@ -73,7 +73,7 @@ export default function PortalDashboardPage() {
   }, [router])
 
   async function logout() {
-    await supabase.auth.signOut()
+    await signOutHere()
     router.replace('/portal/login')
   }
 

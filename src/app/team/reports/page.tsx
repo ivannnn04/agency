@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser, signOutHere } from '@/lib/supabase'
 import { TeamMember, SalaryPayment } from '@/types'
 import { LogOut, Clock, Calendar, ArrowLeft, Wallet } from 'lucide-react'
 import TeamNotificationBell from '@/components/TeamNotificationBell'
@@ -63,7 +63,7 @@ export default function TeamReportsPage() {
   useEffect(() => { if (member && tab === 'salary') fetchSalary(member.id) }, [tab, member])
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthedUser()
     if (!user) { router.replace('/team/login'); return }
 
     const { data: mem } = await supabase
@@ -193,7 +193,7 @@ export default function TeamReportsPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutHere()
     router.replace('/team/login')
   }
 

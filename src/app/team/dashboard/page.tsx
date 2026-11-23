@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser, signOutHere } from '@/lib/supabase'
 import { TeamMember } from '@/types'
 import { LogOut, FolderKanban, Flag, Calendar, BarChart2, Plus, CheckSquare, MessageSquare, Gauge, Play, Square } from 'lucide-react'
 import WorkloadView from '@/components/WorkloadView'
@@ -65,7 +65,7 @@ export default function TeamDashboardPage() {
   async function loadData() {
     setLoading(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthedUser()
     if (!user) { router.replace('/team/login'); return }
 
     const { data: mem } = await supabase
@@ -221,7 +221,7 @@ export default function TeamDashboardPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOutHere()
     router.replace('/team/login')
   }
 

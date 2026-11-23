@@ -12,7 +12,14 @@ function verifyPassword(password: string, stored: string): boolean {
   return computed === hash
 }
 
+// Admin and lead managers stay signed in until they sign out themselves.
+// Browsers cap cookie lifetime at about 400 days; the session renews itself on
+// every visit, so in practice it does not expire while the app is in use.
+const STAY_SIGNED_IN = 400 * 24 * 60 * 60
+
 export const authOptions: NextAuthOptions = {
+  session: { strategy: 'jwt', maxAge: STAY_SIGNED_IN, updateAge: 24 * 60 * 60 },
+  jwt: { maxAge: STAY_SIGNED_IN },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,

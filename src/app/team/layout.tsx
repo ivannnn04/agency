@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser } from '@/lib/supabase'
 import CallListener from '@/components/chat/CallListener'
 
 // Shared shell for all /team/* pages. It stays mounted while the member
@@ -13,7 +13,7 @@ export default function TeamLayout({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getAuthedUser()
       if (!user) return
       const { data: mem } = await supabase
         .from('team_members')

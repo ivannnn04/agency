@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabase, getAuthedUser } from '@/lib/supabase'
 import { ArrowLeft, Camera, Check, Loader2 } from 'lucide-react'
 import PushToggle from '@/components/PushToggle'
 import NotifSoundSettings from '@/components/NotifSoundSettings'
@@ -44,7 +44,7 @@ export default function TeamProfilePage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getAuthedUser()
       if (!user) { router.replace('/team/login'); return }
       const { data: mem } = await supabase
         .from('team_members').select('*').eq('supabase_user_id', user.id).single()

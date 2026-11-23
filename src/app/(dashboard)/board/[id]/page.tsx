@@ -28,6 +28,7 @@ import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
 import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
 import TaskFiles from '@/components/TaskFiles'
+import AdminTaskTime from '@/components/AdminTaskTime'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -1440,6 +1441,11 @@ function TaskDetailPanel({
         {/* Estimate — the same block everyone on the task sees */}
         <div className="px-6 pb-3">
           <TaskEstimateBlock key={task.id} task={task} currency={currency} onUpdate={onUpdate} />
+        </div>
+
+        {/* The admin's own timer on this task */}
+        <div className="px-6 pb-3">
+          <AdminTaskTime key={task.id} taskId={task.id} />
         </div>
 
         {/* Tracked time (who + how much) */}

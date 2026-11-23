@@ -55,6 +55,14 @@ async function load() {
   for (const e of (entries ?? []) as { task_id: string; duration_seconds: number | null }[]) {
     secondsByTask.set(e.task_id, (secondsByTask.get(e.task_id) ?? 0) + (e.duration_seconds ?? 0))
   }
+  // The admin's own time counts on tasks where it is marked for invoicing
+  const billableIds = tasks.filter(t => (t as { admin_time_billable?: boolean }).admin_time_billable).map(t => t.id)
+  if (billableIds.length) {
+    const { data: own } = await supabaseAdmin.from('admin_time_entries').select('task_id, duration_seconds').in('task_id', billableIds).not('ended_at', 'is', null)
+    for (const e of (own ?? []) as { task_id: string; duration_seconds: number | null }[]) {
+      secondsByTask.set(e.task_id, (secondsByTask.get(e.task_id) ?? 0) + (e.duration_seconds ?? 0))
+    }
+  }
   const rateByProject = new Map<string, number>()
   for (const t of (rated ?? []) as TaskRow[]) {
     if (t.finance_project_id && Number(t.estimate_rate) > 0) rateByProject.set(t.finance_project_id, Number(t.estimate_rate))

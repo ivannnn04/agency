@@ -12,6 +12,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import TeamTodayBoard from '@/components/TeamTodayBoard'
+import AdminInvolvement from '@/components/AdminInvolvement'
 
 // CEO overview: the whole agency on one screen — cash, this month's P&L,
 // 6-month cashflow, top projects, the lead funnel, outreach and team load.
@@ -154,6 +155,9 @@ export default function CeoOverviewPage() {
 
           {/* Live: what the team is doing right now */}
           <TeamTodayBoard />
+
+          {/* The admin's own tracked time, per project */}
+          <AdminInvolvement />
 
           {/* Cashflow */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">

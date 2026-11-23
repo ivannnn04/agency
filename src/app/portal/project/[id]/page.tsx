@@ -571,6 +571,8 @@ export default function PortalProjectPage() {
       if (wantView === 'board' || wantView === 'timeline' || wantView === 'invoices') setView(wantView)
       if (params.get('task')) { setFocusTask(params.get('task')); setView('board') }
       if (params.get('chat')) setChatOpen(true)
+      // ?notes=1: a document sent for review opens the project notes
+      else if (params.get('notes')) setNotesOpen(true)
       const previewToken = params.get('preview')
       if (previewToken) {
         setPreview(previewToken)

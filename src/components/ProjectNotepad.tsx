@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { NotebookPen, X, Paperclip, Loader2, Send, Trash2 } from 'lucide-react'
+import { NotebookPen, X, Paperclip, Loader2, Send, Trash2, MailCheck } from 'lucide-react'
+import NoteReviewDialog, { ReviewSent } from '@/components/NoteReviewDialog'
 import {
   Attachment, fileTooBig, safeStoragePath, MAX_FILE_MB,
   useChatWidth, ChatResizeHandle, DropZone,
@@ -77,6 +78,20 @@ export default function ProjectNotepad({ projectId, viewer, portalToken, lang = 
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const { width, startResize } = useChatWidth()
+  // Admin only: send a note to the client for review, and what was already sent
+  const isAdmin = viewer.type === 'admin' && !portalToken
+  const [reviewNote, setReviewNote] = useState<string | null>(null)
+  const [reviewSent, setReviewSent] = useState<Record<string, ReviewSent>>({})
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let alive = true
+    fetch(`/api/projects/note-review?project=${projectId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive && d?.sent) setReviewSent(d.sent) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [isAdmin, projectId])
 
   const t = lang === 'en'
     ? {
@@ -292,10 +307,33 @@ export default function ProjectNotepad({ projectId, viewer, portalToken, lang = 
               {(n.files ?? []).map((f, i) => (
                 <Attachment key={i} url={f.url} name={f.name} mine={false} />
               ))}
+              {isAdmin && n.author_type !== 'client' && (
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <button
+                    onClick={() => setReviewNote(n.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 hover:border-gray-900 rounded-lg px-2.5 py-1.5 transition-colors"
+                  >
+                    <Send size={12} /> {reviewSent[n.id] ? 'Надіслати ще раз' : 'Надіслати клієнту на рев’ю'}
+                  </button>
+                  {reviewSent[n.id] && (
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-700" title={reviewSent[n.id].to.join(', ')}>
+                      <MailCheck size={12} /> Надіслано клієнту · {new Date(reviewSent[n.id].at).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
       </div>
+
+      {reviewNote && (
+        <NoteReviewDialog
+          noteId={reviewNote}
+          onClose={() => setReviewNote(null)}
+          onSent={info => setReviewSent(prev => ({ ...prev, [reviewNote]: info }))}
+        />
+      )}
     </DropZone>
   )
 }

@@ -274,3 +274,172 @@ export function agencyNoticeEmail(o: {
   const text = [o.headline, '', ...o.lines, ...(o.quote?.trim() ? ['', `«${o.quote.trim()}»`] : []), '', `${o.cta.label}: ${o.cta.url}`].join('\n')
   return { subject: o.subject, html, text }
 }
+
+// ── A document sent to the client for review ─────────────────────────────────
+// A light letter: white card on a pale background with a mint brand plaque on
+// top. The letter text is the admin's own (editable before sending); the file
+// travels as a real attachment, so the client can open it without signing in.
+
+export interface MailFile { name: string; url: string; size: number | null; attached: boolean }
+
+export const fileSize = (bytes: number | null) => {
+  if (!bytes || bytes <= 0) return ''
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+const fileKind = (name: string) => {
+  const ext = name.includes('.') ? name.split('.').pop()!.toUpperCase() : ''
+  return ext.length > 0 && ext.length <= 5 ? ext : 'FILE'
+}
+
+// The letter the admin sees prefilled, and may rewrite, before sending
+export function documentLetterDefault(o: {
+  lang: MailLang
+  firstName: string
+  projectName: string
+  senderName: string
+  attached: boolean
+  hasFiles: boolean
+}): string {
+  const sender = o.senderName.trim() || 'Gudrix'
+  if (o.lang === 'uk') {
+    return [
+      o.firstName ? `Вітаю, ${o.firstName}!` : 'Вітаю!',
+      '',
+      `Ми завершили наступну частину роботи над проєктом «${o.projectName}» і хочемо показати її вам. ${!o.hasFiles
+        ? 'Усе, що потрібно для перегляду, — нижче в цьому листі.'
+        : o.attached
+          ? 'Документ прикріплений до цього листа — його можна відкрити одразу, без входу в платформу.'
+          : 'Документ можна завантажити за кнопкою нижче — без входу в платформу.'}`,
+      '',
+      'Перегляньте, будь ласка, коли буде зручно, і напишіть, що думаєте: можна відповісти на цей лист або написати нам у платформі.',
+      '',
+      'Дякую!',
+      `${sender} · Gudrix`,
+    ].join('\n')
+  }
+  return [
+    o.firstName ? `Hi ${o.firstName},` : 'Hi,',
+    '',
+    `We’ve wrapped up the next piece of work on ${o.projectName} and would love your eyes on it. ${!o.hasFiles
+      ? 'Everything you need for the review is right below.'
+      : o.attached
+        ? 'The document is attached to this email, so you can open it right away — no sign-in needed.'
+        : 'You can download the document with the button below — no sign-in needed.'}`,
+    '',
+    'Take a look whenever you have a moment and tell us what you think: reply to this email or message us in the platform, both work.',
+    '',
+    'Thank you,',
+    `${sender} · Gudrix`,
+  ].join('\n')
+}
+
+const linkify = (escaped: string, color: string) =>
+  escaped.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, `<a href="$1" style="color:${color};text-decoration:underline">$1</a>`)
+
+export function clientDocumentEmail(o: {
+  lang: MailLang
+  projectName: string
+  title: string            // the note's own text: what the document is
+  letter: string           // the letter text, as written by the admin
+  files: MailFile[]
+  platformUrl: string
+}): BuiltMail {
+  const uk = o.lang === 'uk'
+  const title = o.title.trim()
+  const shownTitle = title.length > 240 ? title.slice(0, 240).trimEnd() + '…' : title
+  const letter = o.letter.trim()
+  const first = o.files[0]
+  const subjectWhat = (shownTitle.split(/\r?\n/)[0] || first?.name || (uk ? 'документ' : 'a document')).slice(0, 90)
+  const subject = uk ? `На рев’ю: ${subjectWhat} — ${o.projectName}` : `For your review: ${subjectWhat} — ${o.projectName}`
+
+  const paragraphs = letter.split(/\r?\n\s*\r?\n/).map(par =>
+    `<p style="margin:14px 0 0 0;font-family:${FONT};font-size:15px;line-height:24px;color:#3f3f46">${linkify(esc(par), '#09090b').replace(/\r?\n/g, '<br>')}</p>`).join('')
+
+  const fileRows = o.files.map(f => {
+    const meta = [fileKind(f.name), fileSize(f.size), f.attached ? (uk ? 'у вкладенні до листа' : 'attached to this email') : ''].filter(Boolean).join(' · ')
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
+      <td bgcolor="#fafafa" style="background:#fafafa;border:1px solid #e4e4e7;border-radius:14px;padding:14px 16px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td width="44" valign="middle">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="40" height="40" align="center" valign="middle" bgcolor="#d9fff0" style="background:#d9fff0;border-radius:10px;font-family:${FONT};font-size:10px;font-weight:800;letter-spacing:0.4px;color:#047857">${esc(fileKind(f.name))}</td></tr></table>
+          </td>
+          <td valign="middle" style="padding-left:12px">
+            <div style="font-family:${FONT};font-size:15px;line-height:21px;font-weight:600;color:#09090b;word-break:break-word">${esc(f.name)}</div>
+            <div style="font-family:${FONT};font-size:12px;line-height:18px;color:#71717a">${esc(meta)}</div>
+          </td>
+          <td align="right" valign="middle" style="padding-left:12px;white-space:nowrap">
+            <a href="${esc(f.url)}" style="font-family:${FONT};font-size:13px;font-weight:600;color:#09090b;text-decoration:underline">${uk ? 'Завантажити' : 'Download'}</a>
+          </td>
+        </tr></table>
+      </td>
+    </tr></table>`
+  }).join('')
+
+  const docBlock = (shownTitle || o.files.length)
+    ? `<div style="margin-top:26px;font-family:${FONT};font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#71717a">${uk ? 'Документ на рев’ю' : 'For your review'}</div>
+       ${shownTitle ? `<div style="margin-top:6px;font-family:${FONT};font-size:18px;line-height:26px;font-weight:700;letter-spacing:-0.2px;color:#09090b">${linkify(esc(shownTitle), '#09090b').replace(/\r?\n/g, '<br>')}</div>` : ''}
+       ${fileRows}`
+    : ''
+
+  const cta = uk ? 'Відкрити в Gudrix Platform' : 'Open in Gudrix Platform'
+  const html = `<!doctype html>
+<html lang="${o.lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(uk ? `Команда Gudrix надіслала вам документ на рев’ю — ${o.projectName}` : `The Gudrix team sent you a document to review — ${o.projectName}`)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f4f5" style="background:#f4f4f5">
+  <tr>
+    <td align="center" style="padding:32px 16px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e4e4e7;border-radius:24px">
+        <tr>
+          <td bgcolor="#e6fff4" style="background:#e6fff4;border-bottom:1px solid #c8f5e1;border-radius:24px 24px 0 0;padding:18px 32px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td style="font-family:${FONT};font-size:22px;font-weight:800;letter-spacing:-0.5px;color:#09090b">gudrix<span style="color:#00b877">.</span></td>
+              <td align="right" style="font-family:${FONT};font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#047857">Platform</td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px 32px 32px">
+            <div style="font-family:${FONT};font-size:13px;line-height:20px;color:#71717a">${esc(o.projectName)}</div>
+            ${paragraphs}
+            ${docBlock}
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:26px">
+              <tr>
+                <td bgcolor="#2affaa" style="background:#2affaa;border-radius:999px">
+                  <a href="${esc(o.platformUrl)}" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:15px;font-weight:700;color:#09090b;text-decoration:none">${esc(cta)} &rarr;</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+        <tr>
+          <td style="padding:18px 12px 0 12px;font-family:${FONT};font-size:12px;line-height:19px;color:#71717a">${uk
+            ? `Ви отримали цей лист, бо ви клієнт на Gudrix Platform (${esc(o.projectName)}). На нього можна просто відповісти — лист прийде нашій команді.`
+            : `You’re getting this because you’re a client on the Gudrix Platform (${esc(o.projectName)}). You can simply reply to this email — it reaches our team.`}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`
+
+  const text = [
+    letter,
+    ...(shownTitle || o.files.length ? ['', uk ? 'Документ на рев’ю:' : 'For your review:'] : []),
+    ...(shownTitle ? [shownTitle] : []),
+    ...o.files.map(f => `- ${f.name}${fileSize(f.size) ? ` (${fileSize(f.size)})` : ''}: ${f.url}`),
+    '',
+    `${cta}: ${o.platformUrl}`,
+  ].join('\n')
+  return { subject, html, text }
+}

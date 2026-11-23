@@ -28,7 +28,13 @@ export const firstName = (name: string | null) => (name ?? '').trim().split(/\s+
 
 export interface NotifyResult { sent: number; error?: string; skipped?: string }
 
-export async function deliver(to: Recipient[], build: (r: Recipient) => BuiltMail): Promise<NotifyResult> {
+export interface MailAttachment { filename: string; content: Buffer; contentType?: string }
+
+export async function deliver(
+  to: Recipient[],
+  build: (r: Recipient) => BuiltMail,
+  attachments?: MailAttachment[],
+): Promise<NotifyResult> {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return { sent: 0, error: 'SMTP is not configured' }
   if (to.length === 0) return { sent: 0 }
@@ -42,7 +48,10 @@ export async function deliver(to: Recipient[], build: (r: Recipient) => BuiltMai
   await Promise.all(to.map(async r => {
     const m = build(r)
     try {
-      await transporter.sendMail({ from: mailFrom(), to: r.email, subject: m.subject, html: m.html, text: m.text })
+      await transporter.sendMail({
+        from: mailFrom(), to: r.email, subject: m.subject, html: m.html, text: m.text,
+        ...(attachments?.length ? { attachments } : {}),
+      })
       sent++
     } catch (e) {
       error = e instanceof Error ? e.message : 'SMTP error'
@@ -59,6 +68,12 @@ export async function mailAdmins(mail: BuiltMail): Promise<NotifyResult> {
   return deliver(to, () => mail)
 }
 
+// Marks a chat line as already covered by its own letter (see below)
+export const quietKey = (projectId: string) => `client_mail_quiet:${projectId}`
+export async function quietNextChatMail(projectId: string, content: string) {
+  await supabaseAdmin.from('integration_state').upsert({ key: quietKey(projectId), value: { content, at: Date.now() }, updated_at: new Date().toISOString() })
+}
+
 // A row inserted into project_messages. Only what the team writes in the
 // client channel of a project goes out; the client's own messages and the
 // internal channel never do.
@@ -70,6 +85,12 @@ export async function notifyClientMessage(record: Record<string, unknown>, origi
   const files = Array.isArray(record.files) ? (record.files as { name?: string }[]).map(f => f?.name ?? '').filter(Boolean) : []
   if (files.length === 0 && typeof record.file_name === 'string' && record.file_name) files.push(record.file_name)
   if (!content.trim() && files.length === 0) return { sent: 0, skipped: 'empty message' }
+
+  // A chat line that only mirrors a letter the client has just been sent
+  // (a document for review) must not trigger a second email
+  const { data: quiet } = await supabaseAdmin.from('integration_state').select('value').eq('key', quietKey(projectId)).maybeSingle()
+  const q = quiet?.value as { content?: string; at?: number } | null
+  if (q?.content === content && Date.now() - Number(q.at ?? 0) < 10 * 60 * 1000) return { sent: 0, skipped: 'already sent as its own letter' }
 
   const [{ data: project }, to] = await Promise.all([
     supabaseAdmin.from('projects').select('name').eq('id', projectId).maybeSingle(),

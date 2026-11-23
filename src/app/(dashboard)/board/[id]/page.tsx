@@ -27,6 +27,7 @@ import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
 import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
+import TaskFiles from '@/components/TaskFiles'
 
 interface ClientRow { id: string; email: string; name: string | null; invited_at?: string | null }
 interface ChangeRequestRow {
@@ -1007,6 +1008,7 @@ create policy "team_members_all" on team_members for all using (true) with check
         <TaskDetailPanel
           task={selectedTask}
           currency={project?.contract_currency}
+          uploaderName={adminName}
           columns={columns}
           members={members}
           assigneeIds={assigneesByTask[selectedTask.id] ?? []}
@@ -1350,9 +1352,10 @@ function TaskCard({
 // ── Task detail panel ──────────────────────────────────────────────────────────
 
 function TaskDetailPanel({
-  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove, onMoveProject, currency,
+  task, columns, members, assigneeIds, onAddAssignee, onRemoveAssignee, onClose, onUpdate, onDelete, onMove, onMoveProject, currency, uploaderName,
 }: {
   currency?: string | null
+  uploaderName: string
   task: PMTask
   columns: PMColumn[]
   members: TeamMember[]
@@ -1606,6 +1609,12 @@ function TaskDetailPanel({
             </div>
           </>
         )}
+
+        {/* Files: any type, many at once */}
+        <div className="border-t border-gray-100 mx-6" />
+        <div className="px-6 py-4">
+          <TaskFiles key={task.id} taskId={task.id} projectId={task.finance_project_id} uploadedBy={uploaderName} />
+        </div>
 
         {/* Quick actions */}
         <div className="border-t border-gray-100 mx-6" />

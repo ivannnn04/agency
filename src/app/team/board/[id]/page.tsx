@@ -22,6 +22,7 @@ import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
 import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
+import TaskFiles from '@/components/TaskFiles'
 
 interface Project {
   id: string
@@ -1122,6 +1123,11 @@ function TaskPanel({
               }}
             />
           </div>
+        </div>
+
+        {/* Files: any type, many at once */}
+        <div className="px-5 pb-6">
+          <TaskFiles key={task.id} taskId={task.id} projectId={task.finance_project_id} uploadedBy={member?.name ?? 'команда'} />
         </div>
       </div>
     </div>

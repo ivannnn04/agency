@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { isInvoiceColumn } from '@/lib/clientColumns'
+import { billableAdminTime } from '@/lib/adminTime'
 
 // Runs every morning via Vercel Cron. For each active project that has portal
 // clients, Gudrix AI reads the last day of task activity + chat and drafts a
@@ -110,8 +111,11 @@ export async function GET(req: Request) {
 
     const newTasks = taskList.filter(t => t.created_at >= since)
     const upcoming = taskList.filter(t => t.due_date && t.due_date >= today && t.due_date <= weekAhead)
+    // The admin's own invoiced time is work on the project like anyone else's
+    const ownWork = Object.keys(await billableAdminTime(taskIds, since))
     const hasActivity =
       (recentTime?.length ?? 0) > 0 ||
+      ownWork.length > 0 ||
       (recentMsgs?.length ?? 0) > 0 ||
       (recentCRs?.length ?? 0) > 0 ||
       newTasks.length > 0
@@ -119,7 +123,7 @@ export async function GET(req: Request) {
     // Dormant project with nothing due soon → no digest, no noise
     if (!hasActivity && upcoming.length === 0) { skipped.push(project.name); continue }
 
-    const workedTaskIds = new Set((recentTime ?? []).map(e => e.task_id))
+    const workedTaskIds = new Set([...(recentTime ?? []).map(e => e.task_id), ...ownWork])
     const workedTasks = taskList.filter(t => workedTaskIds.has(t.id))
 
     const board = taskList

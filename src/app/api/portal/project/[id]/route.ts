@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
 import { clientBoard } from '@/lib/clientColumns'
+import { adminAssignees, billableAdminTime } from '@/lib/adminTime'
 
 export async function GET(
   req: NextRequest,
@@ -90,6 +91,11 @@ export async function GET(
     }
   }
 
+  // A task the admin took themselves shows the admin among its assignees
+  for (const [taskId, name] of Object.entries(await adminAssignees(taskIds))) {
+    assigneesByTask[taskId] = [name, ...(assigneesByTask[taskId] ?? []).filter(n => n !== name)]
+  }
+
   // Tracked seconds per task — ONLY when the admin enabled it for this project
   let timeByTask: Record<string, number> | null = null
   if (project.show_tracked_hours && taskIds.length > 0) {
@@ -101,6 +107,11 @@ export async function GET(
     timeByTask = {}
     for (const e of entries ?? []) {
       timeByTask[e.task_id] = (timeByTask[e.task_id] ?? 0) + (e.duration_seconds ?? 0)
+    }
+    // The admin's own time counts too, on tasks where it is marked for invoicing
+    const own = await billableAdminTime(taskIds)
+    for (const [taskId, seconds] of Object.entries(own)) {
+      timeByTask[taskId] = (timeByTask[taskId] ?? 0) + seconds
     }
   }
 

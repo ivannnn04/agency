@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { requireAdmin } from '@/lib/adminAuth'
 import { isInvoiceColumn } from '@/lib/clientColumns'
+import { billableAdminTime } from '@/lib/adminTime'
 
 // "To be invoiced", month by month: every task sitting in a project's
 // "To be invoiced" column, grouped by the month it got there, with tracked
@@ -56,12 +57,8 @@ async function load() {
     secondsByTask.set(e.task_id, (secondsByTask.get(e.task_id) ?? 0) + (e.duration_seconds ?? 0))
   }
   // The admin's own time counts on tasks where it is marked for invoicing
-  const billableIds = tasks.filter(t => (t as { admin_time_billable?: boolean }).admin_time_billable).map(t => t.id)
-  if (billableIds.length) {
-    const { data: own } = await supabaseAdmin.from('admin_time_entries').select('task_id, duration_seconds').in('task_id', billableIds).not('ended_at', 'is', null)
-    for (const e of (own ?? []) as { task_id: string; duration_seconds: number | null }[]) {
-      secondsByTask.set(e.task_id, (secondsByTask.get(e.task_id) ?? 0) + (e.duration_seconds ?? 0))
-    }
+  for (const [taskId, seconds] of Object.entries(await billableAdminTime(tasks.map(t => t.id)))) {
+    secondsByTask.set(taskId, (secondsByTask.get(taskId) ?? 0) + seconds)
   }
   const rateByProject = new Map<string, number>()
   for (const t of (rated ?? []) as TaskRow[]) {

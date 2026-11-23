@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, BellRing, ChevronDown, ChevronRight, Gauge, Lightbulb, Loader2, RefreshCw, Rocket, Sparkles, Unlink, Video,
+  AlertTriangle, BellRing, Gauge, Lightbulb, Loader2, RefreshCw, Rocket, Sparkles,
 } from 'lucide-react'
 import { PROJECT_FACTORS, ProjectFactorScore, ProjectMetrics, projectFactorPoints } from '@/lib/projectFactors'
+import ProjectComms from '@/components/ProjectComms'
+import { PMTask } from '@/types/pm'
 
 // The project's overview tab: computed metrics, the AI review of how the
 // project is going, and the calls attached to it. Admin-only data, served
@@ -77,13 +79,14 @@ function Card({ icon, title, tone = 'text-gray-900', children }: { icon: React.R
   )
 }
 
-export default function ProjectOverview({ projectId, onOpenProgram }: { projectId: string; onOpenProgram: () => void }) {
+export default function ProjectOverview({ projectId, onOpenProgram, onTaskCreated }: {
+  projectId: string
+  onOpenProgram: () => void
+  onTaskCreated?: (task: PMTask) => void
+}) {
   const [data, setData] = useState<Payload | null>(null)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [openMeeting, setOpenMeeting] = useState<string | null>(null)
-  const [showTranscript, setShowTranscript] = useState(false)
   const autoFor = useRef<string | null>(null)
 
   const load = useCallback(async () => {
@@ -129,14 +132,6 @@ export default function ProjectOverview({ projectId, onOpenProgram }: { projectI
     } catch (e) {
       setError((e as Error).message)
     }
-  }
-
-  async function syncFellow() {
-    setSyncing(true)
-    setError('')
-    try { await call('/api/fellow/sync', 'POST') } catch (e) { setError((e as Error).message) }
-    setSyncing(false)
-    load()
   }
 
   if (!data) {
@@ -342,74 +337,16 @@ export default function ProjectOverview({ projectId, onOpenProgram }: { projectI
         </Card>
       </div>
 
-      {/* Calls */}
-      <Card icon={<Video size={13} />} title={`Дзвінки проєкту (Fellow) · ${meetings.length}`}>
-        <div className="flex items-center gap-x-3 gap-y-2 flex-wrap mb-3">
-          {fellow.configured ? (
-            <button onClick={syncFellow} disabled={syncing} className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50">
-              <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Синхронізація…' : 'Синхронізувати з Fellow'}
-            </button>
-          ) : (
-            <span className="text-xs text-gray-400">Fellow не підключено</span>
-          )}
-          {candidates.length > 0 && (
-            <select
-              value=""
-              onChange={e => { if (e.target.value) attach(e.target.value, projectId) }}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 max-w-xs focus:outline-none"
-            >
-              <option value="">Додати дзвінок до проєкту…</option>
-              {candidates.map(c => <option key={c.id} value={c.id}>{fmtDate(c.started_at)} · {c.title}</option>)}
-            </select>
-          )}
-        </div>
-        {meetings.length === 0 ? (
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Дзвінків ще немає. Вони привʼязуються самі, коли в учасниках є email клієнта проєкту, коли проєкт виріс із ліда,
-            або коли назва проєкту є в назві зустрічі. Інші можна додати зі списку вище.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {meetings.map(mt => {
-              const open = openMeeting === mt.id
-              return (
-                <div key={mt.id} className="border border-gray-100 rounded-xl overflow-hidden">
-                  <div onClick={() => { setOpenMeeting(open ? null : mt.id); setShowTranscript(false) }} className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-gray-50">
-                    {open ? <ChevronDown size={13} className="text-gray-300 flex-shrink-0" /> : <ChevronRight size={13} className="text-gray-300 flex-shrink-0" />}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-800 truncate">{mt.title}</p>
-                      <p className="text-[11px] text-gray-400 truncate">{fmtDay(mt.started_at)}{mt.attendees.length > 0 ? ` · ${mt.attendees.join(', ')}` : ''}</p>
-                    </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); if (window.confirm('Відвʼязати цей дзвінок від проєкту?')) attach(mt.id, null) }}
-                      className="text-gray-300 hover:text-red-400 p-1 flex-shrink-0" title="Відвʼязати від проєкту"
-                    >
-                      <Unlink size={12} />
-                    </button>
-                  </div>
-                  {open && (
-                    <div className="px-3 pb-3 flex flex-col gap-2">
-                      <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto">
-                        {mt.recap?.trim() || 'Fellow ще не згенерував нотатки для цього дзвінка.'}
-                      </div>
-                      {mt.transcript?.trim() && (
-                        <>
-                          <button onClick={() => setShowTranscript(v => !v)} className="self-start text-xs font-medium text-gray-500 hover:text-gray-900">
-                            {showTranscript ? 'Сховати транскрипт' : 'Показати транскрипт'}
-                          </button>
-                          {showTranscript && (
-                            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">{mt.transcript}</div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
+      {/* Letters and calls with the client, and the action items from calls */}
+      <ProjectComms
+        projectId={projectId}
+        meetings={meetings}
+        candidates={candidates}
+        fellow={fellow}
+        onAttach={attach}
+        onReload={load}
+        onTaskCreated={onTaskCreated}
+      />
     </div>
   )
 }

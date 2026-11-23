@@ -26,6 +26,7 @@ import MoveTaskProject from '@/components/MoveTaskProject'
 import EditableDescription from '@/components/EditableDescription'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
+import ActionItemsColumn from '@/components/ActionItemsColumn'
 import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
 import TaskFiles from '@/components/TaskFiles'
 import AdminTaskTime from '@/components/AdminTaskTime'
@@ -897,6 +898,8 @@ create policy "team_members_all" on team_members for all using (true) with check
               onTaskChange={u => setTasks(prev => prev.map(t => t.id === u.id ? u : t))}
               onTaskRemoved={tid => setTasks(prev => prev.filter(t => t.id !== tid))}
             />
+            {/* Action items from the project's calls, waiting for approval; hidden when empty */}
+            <ActionItemsColumn projectId={id} onTaskCreated={t => setTasks(prev => prev.some(x => x.id === t.id) ? prev : [...prev, t])} />
             {columns.map(col => {
               const colTasks = tasks.filter(t => t.column_id === col.id)
               return (
@@ -971,7 +974,11 @@ create policy "team_members_all" on team_members for all using (true) with check
           </div>
         ) : view === 'overview' ? (
           <div className="flex-1 overflow-y-auto">
-            <ProjectOverview projectId={id} onOpenProgram={() => setView('gantt')} />
+            <ProjectOverview
+              projectId={id}
+              onOpenProgram={() => setView('gantt')}
+              onTaskCreated={t => setTasks(prev => prev.some(x => x.id === t.id) ? prev : [...prev, t])}
+            />
           </div>
         ) : (
           <ClientPreview projectId={id} />

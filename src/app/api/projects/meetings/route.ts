@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
+import { extractMeetingActions } from '@/lib/meetingActions'
 
 // Attach a synced call to a project, or detach it. Admin-only via the
 // NextAuth middleware.
@@ -19,5 +20,7 @@ export async function PATCH(req: NextRequest) {
       : error.message
     return NextResponse.json({ error: msg }, { status: 400 })
   }
+  // A call that joins a project: take out its action items (once)
+  if (projectId) after(async () => { await extractMeetingActions(id).catch(() => {}) })
   return NextResponse.json({ ok: true })
 }

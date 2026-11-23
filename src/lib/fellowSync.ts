@@ -4,6 +4,7 @@ import {
 } from '@/lib/fellow'
 import { generateLeadOverview } from '@/lib/leadInsight'
 import { generateProjectReview } from '@/lib/projectInsight'
+import { extractPendingActions } from '@/lib/meetingActions'
 
 // Pull recordings from Fellow into lead_meetings and attach each one to the
 // CRM lead it belongs to. Meetings nobody could be matched to stay unassigned
@@ -238,6 +239,9 @@ export async function syncFellow(): Promise<SyncResult> {
     }
 
     const touchedProjects = await linkMeetingsToProjects(isInternal).catch(() => [] as string[])
+    // Calls that landed on a project: take out their action items as
+    // proposed cards for the admin to approve
+    await extractPendingActions().catch(() => {})
 
     await patchFellowState({
       last_synced_at: startedAt.toISOString(),

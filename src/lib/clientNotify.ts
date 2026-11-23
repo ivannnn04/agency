@@ -34,6 +34,8 @@ export async function deliver(
   to: Recipient[],
   build: (r: Recipient) => BuiltMail,
   attachments?: MailAttachment[],
+  // false for a letter a person wrote (it belongs in the mail history as such)
+  automated = true,
 ): Promise<NotifyResult> {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return { sent: 0, error: 'SMTP is not configured' }
@@ -50,6 +52,9 @@ export async function deliver(
     try {
       await transporter.sendMail({
         from: mailFrom(), to: r.email, subject: m.subject, html: m.html, text: m.text,
+        // Marks the letter as sent by the platform itself, so the project's
+        // mail history can tell it from letters written by hand
+        ...(automated ? { headers: { 'X-Gudrix-Auto': '1' } } : {}),
         ...(attachments?.length ? { attachments } : {}),
       })
       sent++

@@ -121,7 +121,7 @@ export async function sendReview(noteId: string, message: string | undefined, or
     }
   }
 
-  const result = await deliver(p.to, p.build, attachments)
+  const result = await deliver(p.to, p.build, attachments, false)
   if (result.sent === 0) return { error: result.error ?? 'Лист не надіслано', status: 502 }
 
   // Inside the platform: a line in the client chat, with the document

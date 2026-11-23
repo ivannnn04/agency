@@ -48,6 +48,7 @@ export interface ProjectData {
   messages: { channel: string; sender_type: string; sender_name: string | null; content: string | null; created_at: string }[]
   changeRequests: { content: string | null; status: string; created_at: string }[]
   meetings: { id: string; title: string; started_at: string | null; recap: string | null; transcript: string | null; attendees: string[] }[]
+  emails: { direction: string; subject: string | null; body: string | null; sent_at: string; automated?: boolean }[]
 }
 
 const DAY = 86_400_000
@@ -66,7 +67,7 @@ export async function loadProjectData(projectId: string): Promise<ProjectData | 
   const { data: project } = await supabaseAdmin.from('projects').select('*').eq('id', projectId).maybeSingle()
   if (!project) return null
 
-  const [columns, tasks, phases, income, messages, changeRequests, meetings] = await Promise.all([
+  const [columns, tasks, phases, income, messages, changeRequests, meetings, emails] = await Promise.all([
     rows<ProjectData['columns'][number]>(supabaseAdmin.from('pm_columns').select('id, name, position').eq('project_id', projectId).order('position')),
     rows<TaskRow>(supabaseAdmin.from('pm_tasks').select('id, title, column_id, start_date, due_date, estimate_hours, priority, created_at').eq('finance_project_id', projectId).order('created_at')),
     rows<ProjectData['phases'][number]>(supabaseAdmin.from('project_milestones').select('title, start_date, end_date, done').eq('project_id', projectId).order('position')),
@@ -74,6 +75,7 @@ export async function loadProjectData(projectId: string): Promise<ProjectData | 
     rows<ProjectData['messages'][number]>(supabaseAdmin.from('project_messages').select('channel, sender_type, sender_name, content, created_at').eq('project_id', projectId).order('created_at', { ascending: false }).limit(80)),
     rows<ProjectData['changeRequests'][number]>(supabaseAdmin.from('change_requests').select('content, status, created_at').eq('project_id', projectId).order('created_at', { ascending: false }).limit(30)),
     rows<ProjectData['meetings'][number]>(supabaseAdmin.from('lead_meetings').select('id, title, started_at, recap, transcript, attendees').eq('project_id', projectId).eq('ignored', false).order('started_at', { ascending: true })),
+    rows<ProjectData['emails'][number]>(supabaseAdmin.from('project_emails').select('direction, subject, body, sent_at, automated').eq('project_id', projectId).order('sent_at', { ascending: false }).limit(60)),
   ])
 
   const taskIds = tasks.map(t => t.id)
@@ -105,6 +107,8 @@ export async function loadProjectData(projectId: string): Promise<ProjectData | 
     columns, tasks, assignees, trackedByTask, tracked14d, phases, received,
     messages: [...messages].reverse(),
     changeRequests, meetings,
+    // Letters written by people; the platform's own notifications say nothing new
+    emails: emails.filter(e => !e.automated).reverse(),
   }
 }
 
@@ -229,6 +233,12 @@ function buildContext(d: ProjectData, m: ProjectMetrics): string {
       `- (${c.status}, ${c.created_at.slice(0, 10)}) ${(c.content ?? '').slice(0, 400)}`).join('\n'))
   }
 
+  if (d.emails.length > 0) {
+    parts.push('## Листування з клієнтом (пошта)\n' + d.emails.slice(-40).map(e =>
+      `${e.sent_at.slice(0, 10)} ${e.direction === 'in' ? 'Клієнт → ми' : 'Ми → клієнт'} · ${e.subject ?? '(без теми)'}\n${(e.body ?? '').slice(0, 1500)}`,
+    ).join('\n\n'))
+  }
+
   // Calls: every recap, and full transcripts newest-first while they fit
   let budget = 200_000
   const withTranscript = new Set<number>()
@@ -248,7 +258,7 @@ function buildContext(d: ProjectData, m: ProjectMetrics): string {
   return parts.join('\n\n')
 }
 
-const REVIEWER = `You are the project management analyst for Ivan, the founder of Gudrix, a UX/UI design and development agency. You are given one client project: metrics computed from the task board, time tracking and payments, the task list, the roadmap phases, the project chats, client change requests, and notes and transcripts of calls recorded by the Fellow notetaker. Ivan reads your review on the project page to see whether the project will land on time and what to do today to keep it there.
+const REVIEWER = `You are the project management analyst for Ivan, the founder of Gudrix, a UX/UI design and development agency. You are given one client project: metrics computed from the task board, time tracking and payments, the task list, the roadmap phases, the project chats, the email correspondence with the client, client change requests, and notes and transcripts of calls recorded by the Fellow notetaker. Ivan reads your review on the project page to see whether the project will land on time and what to do today to keep it there.
 
 The numbers under "Метрики" are computed, so treat them as facts and do not recompute them. In the task list the last board column is where finished work lands. The forecast finish date comes from the hours still to do divided by the pace of the last 14 days; say when that basis is weak (few estimates, little tracking).
 
@@ -263,7 +273,7 @@ Then write for a busy founder, every item short and concrete, naming tasks, peop
 - deadline_outlook: one or two sentences answering plainly whether the deadline will be met, by how much it is likely to slip or how much slack there is, and what that rests on. When no deadline is set, say so and state the forecast alone.
 - speed_up: where the project is losing time and what would speed it up, strongest first, up to five. "where" names the task, phase, person or handoff; "action" is the move to make; "why" is the time it wins back or the risk it removes.
 - advice: other management advice for this project, up to five, such as planning gaps to close or scope to renegotiate.
-- reminders: things Ivan or the team must not forget in the coming days, taken from commitments on calls, promises in chat, upcoming due dates and unanswered client messages, up to six. "text" says what to do; "when" is a date or a short time frame.
+- reminders: things Ivan or the team must not forget in the coming days, taken from commitments on calls, promises in chat and in emails, upcoming due dates and unanswered client messages, up to six. "text" says what to do; "when" is a date or a short time frame.
 - risks: up to five things that could derail the project.
 - status: on_track, at_risk or off_track, consistent with your scores.
 - confidence: low when the board has few dates, estimates or tracked hours to go on.

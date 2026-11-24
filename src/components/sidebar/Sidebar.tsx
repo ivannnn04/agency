@@ -9,7 +9,7 @@ import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
   ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
-  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, Send, Headset, Contact, ReceiptText,
+  DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, UsersRound, Send, Headset, Contact, ReceiptText,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
 import { getAdminProfile, AdminProfile } from '@/lib/adminProfile'
@@ -227,6 +227,7 @@ export default function Sidebar() {
   const onLeads = pathname.startsWith('/leads')
   const onSales = pathname.startsWith('/sales-ai')
   const onClients = pathname.startsWith('/clients')
+  const onTeam = pathname.startsWith('/team-admin')
   // Pages with their own full-width layout show only the icon rail
   const railOnly = onDaily || onChats || onProfile || onRecord || onDocs || onOutreach || onOverview || onLeads || onSales || onClients
   const unreadTotal = Object.values(chatUnread).reduce((s, u) => s + u.teamCount + u.clientCount, 0)
@@ -248,7 +249,7 @@ export default function Sidebar() {
     },
     {
       key: 'projects', label: 'Проєкти', icon: FolderKanban,
-      active: section === 'projects' && !onChats && !onClients,
+      active: section === 'projects' && !onChats && !onClients && !onTeam,
       go: () => { setSection('projects'); router.push('/board') },
     },
     {
@@ -256,6 +257,12 @@ export default function Sidebar() {
       key: 'clients', label: 'Клієнти', icon: Contact,
       active: onClients,
       go: () => router.push('/clients'),
+    },
+    {
+      // Team members: add a person, invite them, set their role and pay
+      key: 'team', label: 'Команда', icon: UsersRound,
+      active: onTeam,
+      go: () => { setSection('projects'); router.push('/team-admin') },
     },
     {
       key: 'chats', label: 'Чати', icon: MessageSquare,

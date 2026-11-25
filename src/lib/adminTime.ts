@@ -5,21 +5,28 @@ import supabaseAdmin from '@/lib/supabaseAdmin'
 // on the invoice report and in what the client sees as hours logged.
 // Both helpers return nothing until the admin-time migration has been run.
 
-// Finished billable seconds per task; `since` limits it to recent work
-export async function billableAdminTime(taskIds: string[], since?: string): Promise<Record<string, number>> {
-  const out: Record<string, number> = {}
-  if (taskIds.length === 0) return out
+export interface AdminEntry { task_id: string; started_at: string; duration_seconds: number | null }
+
+// Finished billable entries; `since` limits them to recent work
+export async function billableAdminEntries(taskIds: string[], since?: string): Promise<AdminEntry[]> {
+  if (taskIds.length === 0) return []
   const { data: flagged, error } = await supabaseAdmin
     .from('pm_tasks').select('id').in('id', taskIds).eq('admin_time_billable', true)
-  if (error || !flagged?.length) return out
+  if (error || !flagged?.length) return []
   let q = supabaseAdmin
     .from('admin_time_entries')
-    .select('task_id, duration_seconds')
+    .select('task_id, started_at, duration_seconds')
     .in('task_id', flagged.map(t => t.id as string))
     .not('ended_at', 'is', null)
   if (since) q = q.gte('ended_at', since)
   const { data } = await q
-  for (const e of (data ?? []) as { task_id: string; duration_seconds: number | null }[]) {
+  return (data ?? []) as AdminEntry[]
+}
+
+// Finished billable seconds per task
+export async function billableAdminTime(taskIds: string[], since?: string): Promise<Record<string, number>> {
+  const out: Record<string, number> = {}
+  for (const e of await billableAdminEntries(taskIds, since)) {
     out[e.task_id] = (out[e.task_id] ?? 0) + (e.duration_seconds ?? 0)
   }
   return out

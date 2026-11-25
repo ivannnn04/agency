@@ -14,6 +14,7 @@ import {
 } from '@/components/chat/shared'
 import GanttView from '@/components/GanttView'
 import ProjectNotepad from '@/components/ProjectNotepad'
+import PortalHours, { TrackedDay } from '@/components/portal/PortalHours'
 import { PortalHeader, PortalPreviewBanner } from '@/components/portal/PortalChrome'
 import { PORTAL_TEXT, PortalLang, PortalText, portalLang, portalLocale } from '@/lib/portalI18n'
 
@@ -56,6 +57,8 @@ interface PortalProjectData {
   tasks: PortalTask[]
   assigneesByTask: Record<string, string[]>
   timeByTask: Record<string, number> | null
+  // Tracked time per day and task (dates only), when hours are shown
+  timeByDay?: TrackedDay[] | null
   // Amounts behind the hours, when the team shows them
   billing?: {
     rate: number
@@ -569,7 +572,7 @@ function PortalInvoices({ projectId, token, t, lang }: { projectId: string; toke
   )
 }
 
-type PortalView = 'overview' | 'board' | 'timeline' | 'invoices'
+type PortalView = 'overview' | 'board' | 'timeline' | 'hours' | 'invoices'
 
 // Sign-in link that returns the visitor to the page they came for (email links)
 const loginHref = () => `/portal/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
@@ -608,7 +611,7 @@ export default function PortalProjectPage() {
       const params = new URLSearchParams(window.location.search)
       // Links from emails: ?chat=1 opens the chat, ?view=board&task=… the task
       const wantView = params.get('view')
-      if (wantView === 'board' || wantView === 'timeline' || wantView === 'invoices') setView(wantView)
+      if (wantView === 'board' || wantView === 'timeline' || wantView === 'hours' || wantView === 'invoices') setView(wantView)
       if (params.get('task')) { setFocusTask(params.get('task')); setView('board') }
       if (params.get('chat')) setChatOpen(true)
       // ?notes=1: a document sent for review opens the project notes
@@ -671,6 +674,8 @@ export default function PortalProjectPage() {
     { key: 'overview', label: t.overview },
     { key: 'board', label: t.board },
     { key: 'timeline', label: t.timeline },
+    // Only when the team shows tracked hours to the client
+    ...(data.timeByDay ? [{ key: 'hours' as const, label: t.trackedHours }] : []),
     { key: 'invoices', label: t.invoices },
   ]
   const ghost = 'flex items-center gap-2 border border-gray-200 hover:border-gray-900 text-gray-700 hover:text-gray-900 px-4 py-2 rounded-full text-sm font-medium transition-colors'
@@ -742,6 +747,13 @@ export default function PortalProjectPage() {
           lang={lang}
           onOpenBoard={() => setView('board')}
           onOpenChat={() => { setNotesOpen(false); setChatOpen(true) }}
+        />
+      ) : view === 'hours' && data.timeByDay ? (
+        <PortalHours
+          days={data.timeByDay}
+          titles={Object.fromEntries(data.tasks.map(x => [x.id, x.title]))}
+          t={t}
+          lang={lang}
         />
       ) : view === 'invoices' ? (
         token && <PortalInvoices projectId={project.id} token={token} t={t} lang={lang} />

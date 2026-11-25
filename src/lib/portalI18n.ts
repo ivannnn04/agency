@@ -30,6 +30,9 @@ const en = {
   backToProjects: 'Back to your projects',
 
   overview: 'Overview', board: 'Board', timeline: 'Timeline', invoices: 'Invoices', notes: 'Notes',
+  trackedHours: 'Tracked hours', hoursTotal: 'Total tracked', hoursWeek: 'This week', hoursDays: 'Days with work',
+  hoursToday: 'Today', hoursYesterday: 'Yesterday', hoursMore: 'Show earlier days',
+  hoursEmpty: 'No tracked time yet. It will show up here day by day as the team works on your project.',
   addTask: 'Add task', addTaskHint: 'Ask the team for something new', messageTeam: 'Message the team', teamChat: 'Team chat',
 
   progress: 'Project progress',
@@ -98,6 +101,9 @@ const uk: typeof en = {
   backToProjects: 'До ваших проєктів',
 
   overview: 'Огляд', board: 'Дошка', timeline: 'Таймлайн', invoices: 'Рахунки', notes: 'Нотатки',
+  trackedHours: 'Затрекані години', hoursTotal: 'Усього затрекано', hoursWeek: 'Цього тижня', hoursDays: 'Днів із роботою',
+  hoursToday: 'Сьогодні', hoursYesterday: 'Вчора', hoursMore: 'Показати попередні дні',
+  hoursEmpty: 'Затреканого часу ще немає. Він зʼявлятиметься тут день за днем, поки команда працює над проєктом.',
   addTask: 'Додати задачу', addTaskHint: 'Попросити команду про щось нове', messageTeam: 'Написати команді', teamChat: 'Чат з командою',
 
   progress: 'Прогрес проєкту',

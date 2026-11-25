@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
 import { clientBoard } from '@/lib/clientColumns'
-import { adminAssignees, billableAdminTime } from '@/lib/adminTime'
+import { adminAssignees, billableAdminEntries } from '@/lib/adminTime'
 import { clientBilling } from '@/lib/clientBilling'
 
 export async function GET(
@@ -98,22 +98,42 @@ export async function GET(
   }
 
   // Tracked seconds per task — ONLY when the admin enabled it for this project
+  // and per day (the date only — never the hours of the day work was done)
   let timeByTask: Record<string, number> | null = null
-  if (project.show_tracked_hours && taskIds.length > 0) {
+  let timeByDay: { day: string; tasks: { task_id: string; seconds: number }[] }[] | null = null
+  if (project.show_tracked_hours) {
+    timeByTask = {}
+    timeByDay = []
+  }
+  if (timeByTask && timeByDay && taskIds.length > 0) {
     const { data: entries } = await supabaseAdmin
       .from('time_entries')
-      .select('task_id, duration_seconds')
+      .select('task_id, started_at, duration_seconds')
       .in('task_id', taskIds)
       .not('ended_at', 'is', null)
-    timeByTask = {}
-    for (const e of entries ?? []) {
-      timeByTask[e.task_id] = (timeByTask[e.task_id] ?? 0) + (e.duration_seconds ?? 0)
-    }
     // The admin's own time counts too, on tasks where it is marked for invoicing
-    const own = await billableAdminTime(taskIds)
-    for (const [taskId, seconds] of Object.entries(own)) {
-      timeByTask[taskId] = (timeByTask[taskId] ?? 0) + seconds
+    const all = [
+      ...((entries ?? []) as { task_id: string; started_at: string | null; duration_seconds: number | null }[]),
+      ...(await billableAdminEntries(taskIds)),
+    ]
+    const kyivDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' })
+    const byDay = new Map<string, Map<string, number>>()
+    for (const e of all) {
+      const sec = e.duration_seconds ?? 0
+      if (sec <= 0) continue
+      timeByTask[e.task_id] = (timeByTask[e.task_id] ?? 0) + sec
+      if (!e.started_at) continue
+      const day = kyivDay.format(new Date(e.started_at))
+      const tasksOfDay = byDay.get(day) ?? new Map<string, number>()
+      tasksOfDay.set(e.task_id, (tasksOfDay.get(e.task_id) ?? 0) + sec)
+      byDay.set(day, tasksOfDay)
     }
+    timeByDay = [...byDay.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([day, m]) => ({
+        day,
+        tasks: [...m.entries()].map(([task_id, seconds]) => ({ task_id, seconds })).sort((a, b) => b.seconds - a.seconds),
+      }))
   }
 
   // Money behind the hours — only when the admin also turned amounts on.
@@ -139,6 +159,7 @@ export async function GET(
     ...clientBoard(columns ?? [], tasksOut),
     assigneesByTask,
     timeByTask,
+    timeByDay,
     billing,
     people,
     changeRequests: changeRequests ?? [],

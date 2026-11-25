@@ -15,8 +15,9 @@ const SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
 
 export const isEstimatePending = (t: { estimate_status?: string | null }) => PENDING.includes(t.estimate_status ?? '')
 
-export default function EstimateColumn({ tasks, columns, currency, byName, canApprove, onTaskChange, onTaskRemoved }: {
+export default function EstimateColumn({ tasks, columns, currency, byName, canApprove, onTaskChange, onTaskRemoved, projectRate }: {
   tasks: PMTask[]
+  projectRate?: number | null
   columns: PMColumn[]
   currency?: string | null
   byName: string
@@ -27,7 +28,9 @@ export default function EstimateColumn({ tasks, columns, currency, byName, canAp
   const pending = tasks.filter(isEstimatePending)
   if (pending.length === 0) return null
   // A new estimate starts from the rate last used on this project
-  const lastRate = [...tasks].reverse().find(t => Number(t.estimate_rate) > 0)?.estimate_rate ?? null
+  // The project's own rate when set, else the rate on its latest estimate
+  const lastRate = (Number(projectRate) > 0 ? Number(projectRate) : null)
+    ?? [...tasks].reverse().find(t => Number(t.estimate_rate) > 0)?.estimate_rate ?? null
 
   return (
     <div className="flex-shrink-0 w-[300px] flex flex-col rounded-xl bg-violet-50/60 border border-violet-100 p-2.5">

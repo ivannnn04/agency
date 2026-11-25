@@ -3,6 +3,7 @@ import supabaseAdmin from '@/lib/supabaseAdmin'
 import { getPortalUser, clientHasProject } from '@/lib/portalAuth'
 import { clientBoard } from '@/lib/clientColumns'
 import { adminAssignees, billableAdminTime } from '@/lib/adminTime'
+import { clientBilling } from '@/lib/clientBilling'
 
 export async function GET(
   req: NextRequest,
@@ -115,6 +116,13 @@ export async function GET(
     }
   }
 
+  // Money behind the hours — only when the admin also turned amounts on.
+  // Read on its own: the settings arrive with a later migration.
+  const { data: billingSettings } = await supabaseAdmin.from('projects').select('*').eq('id', id).maybeSingle()
+  const billing = project.show_tracked_hours && timeByTask
+    ? await clientBilling({ projectId: id, settings: billingSettings, columns: columns ?? [], timeByTask }).catch(() => null)
+    : null
+
   // People the client can @mention in chat: admin + team members on the project
   const people = [
     'Ivan',
@@ -131,6 +139,7 @@ export async function GET(
     ...clientBoard(columns ?? [], tasksOut),
     assigneesByTask,
     timeByTask,
+    billing,
     people,
     changeRequests: changeRequests ?? [],
   })

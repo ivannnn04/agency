@@ -513,6 +513,18 @@ export default function BoardPage() {
     setProject(prev => prev ? { ...prev, show_tracked_hours: next } : prev)
   }
 
+  // What the client sees of the money behind the hours
+  async function saveBilling(patch: { show_tracked_amounts?: boolean; client_hourly_rate?: number | null }) {
+    const { error } = await supabase.from('projects').update(patch).eq('id', id)
+    if (error) {
+      alert(/client_hourly_rate|show_tracked_amounts|schema cache/i.test(error.message)
+        ? 'Запусти міграцію supabase/client_billing_migration.sql у Supabase SQL Editor'
+        : error.message)
+      return
+    }
+    setProject(prev => prev ? { ...prev, ...patch } : prev)
+  }
+
   async function updateCrLimit(limit: number) {
     const value = Math.max(0, Math.min(99, limit))
     await supabase.from('projects').update({ change_request_limit: value }).eq('id', id)
@@ -786,6 +798,52 @@ create policy "team_members_all" on team_members for all using (true) with check
                   </button>
                 </div>
 
+                {/* Amounts behind the hours: rate, per-task sums, pending payment */}
+                {(() => {
+                  const symbol = ({ USD: '$', EUR: '€', UAH: '₴' } as Record<string, string>)[project?.contract_currency ?? 'USD'] ?? ''
+                  const inferred = [...tasks].reverse().find(t => Number(t.estimate_rate) > 0)?.estimate_rate ?? null
+                  const own = Number(project?.client_hourly_rate) > 0 ? Number(project?.client_hourly_rate) : null
+                  const hoursOn = !!project?.show_tracked_hours
+                  const amountsOn = !!project?.show_tracked_amounts
+                  return (
+                    <div className={`mb-3 ${hoursOn ? '' : 'opacity-50'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-600 pl-[18px]">Показувати суму клієнту</span>
+                        <button
+                          onClick={() => saveBilling({ show_tracked_amounts: !amountsOn })}
+                          disabled={!hoursOn}
+                          className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 disabled:cursor-not-allowed ${amountsOn && hoursOn ? 'bg-teal-500' : 'bg-gray-200'}`}
+                          title={!hoursOn ? 'Спершу увімкни години' : amountsOn ? 'Клієнт бачить ставку, суму по задачах і що очікує оплати' : 'Суми приховані від клієнта'}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${amountsOn && hoursOn ? 'left-[18px]' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600 pl-[18px]">Ставка для клієнта</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-400">{symbol}</span>
+                          <input
+                            key={`${id}-${project?.client_hourly_rate ?? ''}`}
+                            type="number" min={0} step="any" inputMode="decimal"
+                            defaultValue={own ?? ''}
+                            placeholder={inferred ? String(inferred) : '0'}
+                            onBlur={e => {
+                              const v = e.target.value.trim() === '' ? null : Math.max(0, Number(e.target.value))
+                              if (v !== own && !(v === 0 && own === null)) saveBilling({ client_hourly_rate: v || null })
+                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            className="w-16 text-xs border border-gray-200 rounded-lg px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-teal-400"
+                            aria-label="Ставка для клієнта за годину"
+                          />
+                          <span className="text-xs text-gray-400">/год</span>
+                        </div>
+                      </div>
+                      {!own && inferred && <p className="text-[10px] text-gray-400 mt-1 pl-[18px]">Поки порожньо — береться ставка з останньої оцінки: {symbol}{inferred}/год</p>}
+                      {amountsOn && hoursOn && !own && !inferred && <p className="text-[10px] text-amber-600 mt-1 pl-[18px]">Вкажи ставку — без неї суми клієнту не показуються</p>}
+                    </div>
+                  )
+                })()}
+
                 {/* Change request limit */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs text-gray-600">Ліміт change requests / задачу</span>
@@ -895,6 +953,7 @@ create policy "team_members_all" on team_members for all using (true) with check
               currency={project?.contract_currency}
               byName={adminName}
               canApprove
+              projectRate={project?.client_hourly_rate}
               onTaskChange={u => setTasks(prev => prev.map(t => t.id === u.id ? u : t))}
               onTaskRemoved={tid => setTasks(prev => prev.filter(t => t.id !== tid))}
             />

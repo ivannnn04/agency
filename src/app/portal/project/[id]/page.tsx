@@ -56,6 +56,14 @@ interface PortalProjectData {
   tasks: PortalTask[]
   assigneesByTask: Record<string, string[]>
   timeByTask: Record<string, number> | null
+  // Amounts behind the hours, when the team shows them
+  billing?: {
+    rate: number
+    currency: string
+    amountByTask: Record<string, number>
+    tracked_total: number
+    pending: { not_invoiced: number; invoiced_unpaid: number; total: number }
+  } | null
   people: string[]
   changeRequests: ChangeRequest[]
 }
@@ -81,6 +89,9 @@ function formatHours(seconds: number, lang: PortalLang): string {
   return m > 0 ? `${h}${hh} ${m}${mm}` : `${h}${hh}`
 }
 
+const money = (sym: string, n: number) =>
+  `${sym}${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
+
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <section className={`border border-gray-100 rounded-3xl bg-white p-6 lg:p-8 ${className}`}>{children}</section>
 }
@@ -100,6 +111,7 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
   onOpenChat: () => void
 }) {
   const { project, columns, assigneesByTask, timeByTask, people, changeRequests } = data
+  const billing = data.billing ?? null
   // Tasks still being estimated are not part of the plan yet
   const tasks = data.tasks.filter(x => !isEstimatePending(x))
   const toApprove = data.tasks.filter(x => x.estimate_status === 'sent').length
@@ -224,6 +236,34 @@ function OverviewDashboard({ data, sym, t, lang, onOpenBoard, onOpenChat }: {
           </Card>
         ))}
       </div>
+
+      {/* Money behind the hours */}
+      {billing && (
+        <Card className="col-span-12">
+          <Eyebrow>{t.billing}</Eyebrow>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-0 md:divide-x divide-gray-100 mt-5">
+            <div className="md:pr-8">
+              <p className="text-xs text-gray-400">{t.billRate}</p>
+              <p className="text-3xl font-semibold tracking-tight text-gray-900 mt-2">
+                {money(sym, billing.rate)}<span className="text-base text-gray-400 font-normal">{t.estPerHour}</span>
+              </p>
+            </div>
+            <div className="md:px-8">
+              <p className="text-xs text-gray-400">{t.billTracked}</p>
+              <p className="text-3xl font-semibold tracking-tight text-gray-900 mt-2">{money(sym, billing.tracked_total)}</p>
+              {trackedTotal != null && trackedTotal > 0 && <p className="text-xs text-gray-400 mt-1">{t.billHours(formatHours(trackedTotal, lang))}</p>}
+            </div>
+            <div className="md:pl-8">
+              <p className="text-xs text-gray-400">{t.billPending}</p>
+              <p className={`text-3xl font-semibold tracking-tight mt-2 ${billing.pending.total > 0 ? 'text-gray-900' : 'text-gray-300'}`}>{money(sym, billing.pending.total)}</p>
+              {billing.pending.total > 0 && (
+                <p className="text-xs text-gray-400 mt-1">{t.billPendingSplit(money(sym, billing.pending.invoiced_unpaid), money(sym, billing.pending.not_invoiced))}</p>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-5">{t.billNote}</p>
+        </Card>
+      )}
 
       {/* Roadmap */}
       <Card className="col-span-12 xl:col-span-7">
@@ -769,6 +809,11 @@ export default function PortalProjectPage() {
                             </span>
                             {timeByTask && secs != null && secs > 0 && (
                               <span className="flex items-center gap-1 text-gray-600 font-medium"><Clock size={12} /> {formatHours(secs, lang)}</span>
+                            )}
+                            {data.billing?.amountByTask[task.id] != null && (
+                              <span className="text-gray-900 font-semibold tabular-nums" title={`${money(sym, data.billing.rate)}${t.estPerHour}`}>
+                                {money(sym, data.billing.amountByTask[task.id])}
+                              </span>
                             )}
                           </div>
                           {!preview && (

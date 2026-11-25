@@ -43,7 +43,7 @@ async function load() {
     projectIds.length ? supabaseAdmin.from('projects').select('id, name, color, contract_currency').in('id', projectIds) : Promise.resolve({ data: [] }),
     projectIds.length ? supabaseAdmin.from('project_clients').select('project_id, clients(name, email)').in('project_id', projectIds) : Promise.resolve({ data: [] }),
     taskIds.length ? supabaseAdmin.from('time_entries').select('task_id, duration_seconds').in('task_id', taskIds).not('ended_at', 'is', null) : Promise.resolve({ data: [] }),
-    // The project's hourly rate: the one used on its latest estimate
+    // The project's hourly rate: set on the project, else the one used on its latest estimate
     projectIds.length ? supabaseAdmin.from('pm_tasks').select('*').in('finance_project_id', projectIds).order('created_at') : Promise.resolve({ data: [] }),
   ])
 
@@ -63,6 +63,13 @@ async function load() {
   const rateByProject = new Map<string, number>()
   for (const t of (rated ?? []) as TaskRow[]) {
     if (t.finance_project_id && Number(t.estimate_rate) > 0) rateByProject.set(t.finance_project_id, Number(t.estimate_rate))
+  }
+  // A rate set on the project wins over the one inferred from estimates
+  if (projectIds.length) {
+    const { data: settings } = await supabaseAdmin.from('projects').select('*').in('id', projectIds)
+    for (const p of (settings ?? []) as { id: string; client_hourly_rate?: number | string | null }[]) {
+      if (Number(p.client_hourly_rate) > 0) rateByProject.set(p.id, Number(p.client_hourly_rate))
+    }
   }
   return { tasks, projects: projects ?? [], clientsByProject, secondsByTask, rateByProject }
 }

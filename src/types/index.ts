@@ -66,6 +66,9 @@ export interface Project {
   archived_at?: string | null
   client_access_token?: string | null
   show_tracked_hours?: boolean
+  // The client also sees amounts: hours × this rate per task, the total, what is pending payment
+  show_tracked_amounts?: boolean
+  client_hourly_rate?: number | null
   change_request_limit?: number
   notes?: string | null
   start_date?: string | null

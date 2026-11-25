@@ -256,3 +256,6 @@ body {
 .rich-text ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
 .rich-text ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--color-gray-400); text-decoration: line-through; }
 .rich-text p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--color-gray-300); float: left; height: 0; pointer-events: none; }
+/* Read-only (client view): checklist boxes show state but cannot be clicked */
+.rich-text[contenteditable="false"] ul[data-type="taskList"] li > label { pointer-events: none; }
+.rich-text[contenteditable="false"] ul[data-type="taskList"] li > label input { cursor: default; }

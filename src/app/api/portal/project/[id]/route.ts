@@ -50,15 +50,18 @@ export async function GET(
       .order('position'),
   ])
 
-  // Estimates for client-requested tasks; the columns come with a later migration
-  const { data: estimates } = await supabaseAdmin
+  // Estimates for client-requested tasks and the formatted descriptions:
+  // their columns come with later migrations, so they are read with '*'
+  const { data: fullRows } = await supabaseAdmin
     .from('pm_tasks')
     .select('*')
     .eq('finance_project_id', id)
-    .not('estimate_status', 'is', null)
-  const estimateById = new Map((estimates ?? []).map(e => [e.id as string, e]))
-  const tasksOut = (tasks ?? []).map(t => {
-    const e = estimateById.get(t.id)
+  const full = (fullRows ?? []) as Record<string, unknown>[]
+  const estimateById = new Map(full.filter(e => e.estimate_status != null).map(e => [e.id as string, e]))
+  const htmlById = new Map(full.filter(e => typeof e.description_html === 'string' && e.description_html).map(e => [e.id as string, e.description_html as string]))
+  const tasksOut = (tasks ?? []).map(base => {
+    const t = { ...base, description_html: htmlById.get(base.id) ?? null }
+    const e = estimateById.get(t.id) as Record<string, unknown> | undefined
     if (!e) return t
     const waiting = e.estimate_status === 'sent'
     return {
@@ -74,6 +77,16 @@ export async function GET(
   })
 
   const taskIds = (tasks ?? []).map(t => t.id)
+
+  // Subtasks, read-only for the client: what they are and which are done
+  const subtasksByTask: Record<string, { title: string; done: boolean }[]> = {}
+  if (taskIds.length > 0) {
+    const { data: subs } = await supabaseAdmin
+      .from('pm_subtasks').select('task_id, title, done, position').in('task_id', taskIds).order('position')
+    for (const s of (subs ?? []) as { task_id: string; title: string; done: boolean }[]) {
+      ;(subtasksByTask[s.task_id] ??= []).push({ title: s.title, done: !!s.done })
+    }
+  }
 
   // Assignee display names per task
   const assigneesByTask: Record<string, string[]> = {}
@@ -160,6 +173,7 @@ export async function GET(
     assigneesByTask,
     timeByTask,
     timeByDay,
+    subtasksByTask,
     billing,
     people,
     changeRequests: changeRequests ?? [],

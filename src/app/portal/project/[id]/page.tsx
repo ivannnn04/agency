@@ -15,12 +15,15 @@ import {
 import GanttView from '@/components/GanttView'
 import ProjectNotepad from '@/components/ProjectNotepad'
 import PortalHours, { TrackedDay } from '@/components/portal/PortalHours'
+import PortalTaskDrawer from '@/components/portal/PortalTaskDrawer'
 import { PortalHeader, PortalPreviewBanner } from '@/components/portal/PortalChrome'
 import { PORTAL_TEXT, PortalLang, PortalText, portalLang, portalLocale } from '@/lib/portalI18n'
 
 interface PortalColumn { id: string; name: string; color: string; position: number }
 interface PortalTask {
   id: string; title: string; description: string | null
+  // The description with its formatting, shown read-only
+  description_html?: string | null
   column_id: string | null; priority: string | null
   start_date: string | null; due_date: string | null
   // A task the client asked for, on its way through estimate → approval
@@ -59,6 +62,8 @@ interface PortalProjectData {
   timeByTask: Record<string, number> | null
   // Tracked time per day and task (dates only), when hours are shown
   timeByDay?: TrackedDay[] | null
+  // Subtasks per task, read-only: what they are and which are done
+  subtasksByTask?: Record<string, { title: string; done: boolean }[]>
   // Amounts behind the hours, when the team shows them
   billing?: {
     rate: number
@@ -594,6 +599,8 @@ export default function PortalProjectPage() {
   const [savedLang, setSavedLang] = useState<PortalLang>('en')
   // Task an email link points at (?task=…): shown with a ring on the board
   const [focusTask, setFocusTask] = useState<string | null>(null)
+  // The task the client opened to read
+  const [openTask, setOpenTask] = useState<string | null>(null)
 
   const refetch = useCallback(async (accessToken: string) => {
     const res = await fetch(`/api/portal/project/${id}`, {
@@ -612,7 +619,7 @@ export default function PortalProjectPage() {
       // Links from emails: ?chat=1 opens the chat, ?view=board&task=… the task
       const wantView = params.get('view')
       if (wantView === 'board' || wantView === 'timeline' || wantView === 'hours' || wantView === 'invoices') setView(wantView)
-      if (params.get('task')) { setFocusTask(params.get('task')); setView('board') }
+      if (params.get('task')) { setFocusTask(params.get('task')); setOpenTask(params.get('task')); setView('board') }
       if (params.get('chat')) setChatOpen(true)
       // ?notes=1: a document sent for review opens the project notes
       else if (params.get('notes')) setNotesOpen(true)
@@ -804,7 +811,12 @@ export default function PortalProjectPage() {
                         <div
                           key={task.id}
                           id={`task-${task.id}`}
-                          className={`border rounded-2xl p-4 bg-white transition-shadow ${task.id === focusTask ? 'border-[#2affaa] shadow-[0_0_0_4px_rgba(42,255,170,0.25)]' : 'border-gray-100'}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${t.tdOpen}: ${task.title}`}
+                          onClick={() => setOpenTask(task.id)}
+                          onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setOpenTask(task.id) } }}
+                          className={`border rounded-2xl p-4 bg-white transition-shadow cursor-pointer hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 ${task.id === focusTask ? 'border-[#2affaa] shadow-[0_0_0_4px_rgba(42,255,170,0.25)]' : 'border-gray-100'}`}
                         >
                           <p className="text-[15px] text-gray-900 leading-snug font-medium">{task.title}</p>
                           {task.description && <p className="text-sm text-gray-400 mt-1.5 line-clamp-2">{task.description}</p>}
@@ -830,7 +842,8 @@ export default function PortalProjectPage() {
                           </div>
                           {!preview && (
                             <button
-                              onClick={() => setCrTask(task)}
+                              onClick={e => { e.stopPropagation(); setCrTask(task) }}
+                              onKeyDown={e => e.stopPropagation()}
                               disabled={used >= crLimit}
                               className="mt-3.5 w-full flex items-center justify-center gap-1.5 text-xs font-medium border border-gray-200 rounded-full py-2 text-gray-600 hover:text-gray-900 hover:border-gray-900 disabled:opacity-40 disabled:hover:text-gray-600 disabled:hover:border-gray-200 transition-colors"
                               title={used >= crLimit ? t.crLimit : t.crTitle}
@@ -849,6 +862,33 @@ export default function PortalProjectPage() {
           </div>
         </div>
       )}
+
+      {/* A task opened by the client: read only */}
+      {(() => {
+        const task = openTask ? data.tasks.find(x => x.id === openTask) : null
+        if (!task) return null
+        const col = columns.find(c => c.id === task.column_id)
+        const used = crCountByTask[task.id] ?? 0
+        const amount = data.billing?.amountByTask[task.id]
+        return (
+          <PortalTaskDrawer
+            task={task}
+            column={col ? { name: col.name, color: col.color } : null}
+            people={assigneesByTask[task.id] ?? []}
+            seconds={timeByTask ? timeByTask[task.id] ?? 0 : null}
+            amount={amount != null ? money(sym, amount) : null}
+            money={n => money(sym, n)}
+            subtasks={data.subtasksByTask?.[task.id] ?? []}
+            requests={(changeRequests ?? []).filter(c => c.task_id === task.id)}
+            t={t}
+            lang={lang}
+            canRequest={!preview && used < crLimit}
+            requestLabel={`${t.requestChanges} (${used}/${crLimit})`}
+            onRequestChanges={() => { setOpenTask(null); setCrTask(task) }}
+            onClose={() => setOpenTask(null)}
+          />
+        )
+      })()}
 
       {crTask && token && (
         <ChangeRequestModal

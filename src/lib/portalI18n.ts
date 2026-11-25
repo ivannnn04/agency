@@ -30,6 +30,9 @@ const en = {
   backToProjects: 'Back to your projects',
 
   overview: 'Overview', board: 'Board', timeline: 'Timeline', invoices: 'Invoices', notes: 'Notes',
+  tdStatus: 'Status', tdTeam: 'Team', tdDates: 'Dates', tdTime: 'Time tracked', tdAmount: 'Amount', tdEstimate: 'Agreed estimate',
+  tdDescription: 'Description', tdNoDescription: 'No description yet.', tdSubtasks: 'Subtasks', tdRequests: 'Your change requests', tdClose: 'Close',
+  tdOpen: 'Open the task',
   trackedHours: 'Tracked hours', hoursTotal: 'Total tracked', hoursWeek: 'This week', hoursDays: 'Days with work',
   hoursToday: 'Today', hoursYesterday: 'Yesterday', hoursMore: 'Show earlier days',
   hoursEmpty: 'No tracked time yet. It will show up here day by day as the team works on your project.',
@@ -101,6 +104,9 @@ const uk: typeof en = {
   backToProjects: 'До ваших проєктів',
 
   overview: 'Огляд', board: 'Дошка', timeline: 'Таймлайн', invoices: 'Рахунки', notes: 'Нотатки',
+  tdStatus: 'Статус', tdTeam: 'Команда', tdDates: 'Дати', tdTime: 'Затрекано', tdAmount: 'Сума', tdEstimate: 'Погоджена оцінка',
+  tdDescription: 'Опис', tdNoDescription: 'Опису поки немає.', tdSubtasks: 'Сабтаски', tdRequests: 'Ваші запити на зміни', tdClose: 'Закрити',
+  tdOpen: 'Відкрити задачу',
   trackedHours: 'Затрекані години', hoursTotal: 'Усього затрекано', hoursWeek: 'Цього тижня', hoursDays: 'Днів із роботою',
   hoursToday: 'Сьогодні', hoursYesterday: 'Вчора', hoursMore: 'Показати попередні дні',
   hoursEmpty: 'Затреканого часу ще немає. Він зʼявлятиметься тут день за днем, поки команда працює над проєктом.',

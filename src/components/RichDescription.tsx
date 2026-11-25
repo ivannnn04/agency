@@ -121,11 +121,13 @@ function Toolbar({ editor }: { editor: Editor }) {
   )
 }
 
-export default function RichDescription({ html, text, placeholder, onSave }: {
+export default function RichDescription({ html, text, placeholder = '', onSave, readOnly = false }: {
   html: string | null | undefined
   text: string | null | undefined
-  placeholder: string
-  onSave: (value: DescriptionValue) => void
+  placeholder?: string
+  onSave?: (value: DescriptionValue) => void
+  // For the client: shown with its formatting, nothing can be changed
+  readOnly?: boolean
 }) {
   const saved = useRef<string>('')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -137,6 +139,7 @@ export default function RichDescription({ html, text, placeholder, onSave }: {
   const editor = useEditor({
     // Rendered on the client only: no server markup to match
     immediatelyRender: false,
+    editable: !readOnly,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
@@ -149,11 +152,11 @@ export default function RichDescription({ html, text, placeholder, onSave }: {
     ],
     content: initial,
     editorProps: {
-      attributes: { class: 'rich-text focus:outline-none min-h-[64px] px-3 py-2.5 text-sm text-gray-700 leading-relaxed' },
-      // Ctrl/Cmd-click opens a link while editing
+      attributes: { class: readOnly ? 'rich-text text-[15px] text-gray-700 leading-relaxed' : 'rich-text focus:outline-none min-h-[64px] px-3 py-2.5 text-sm text-gray-700 leading-relaxed' },
+      // Ctrl/Cmd-click opens a link while editing; a plain click when reading
       handleClick: (_view, _pos, event) => {
         const a = (event.target as HTMLElement).closest('a')
-        if (a && (event.metaKey || event.ctrlKey)) { window.open(a.href, '_blank', 'noopener'); return true }
+        if (a && (readOnly || event.metaKey || event.ctrlKey)) { window.open(a.href, '_blank', 'noopener'); return true }
         return false
       },
     },
@@ -168,16 +171,17 @@ export default function RichDescription({ html, text, placeholder, onSave }: {
   function flush(e: Editor) {
     if (timer.current) { clearTimeout(timer.current); timer.current = null }
     const nextHtml = e.isEmpty ? '' : e.getHTML()
-    if (nextHtml === saved.current) return
+    if (readOnly || nextHtml === saved.current) return
     saved.current = nextHtml
     const plain = docToPlain(e.getJSON() as DocNode)
-    saveRef.current({ html: nextHtml || null, text: plain || null })
+    saveRef.current?.({ html: nextHtml || null, text: plain || null })
   }
 
   // Leaving the task (or closing the panel) saves what was typed
   useEffect(() => () => { if (editor && !editor.isDestroyed) flush(editor) }, [editor])
 
-  if (!editor) return <div className="min-h-[96px] rounded-xl bg-gray-50" />
+  if (!editor) return <div className={readOnly ? 'min-h-[24px]' : 'min-h-[96px] rounded-xl bg-gray-50'} />
+  if (readOnly) return <EditorContent editor={editor} />
   return (
     <div className="rounded-xl bg-gray-50 border border-transparent focus-within:border-gray-200 focus-within:bg-white transition-colors">
       <Toolbar editor={editor} />

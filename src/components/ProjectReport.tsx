@@ -26,6 +26,27 @@ function fmtDur(seconds: number): string {
 const fmtEUR = (n: number) =>
   '€' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
+const SYMBOL: Record<string, string> = { USD: '$', EUR: '€', UAH: '₴' }
+const fmtMoney = (n: number, currency: string) =>
+  (SYMBOL[currency] ?? '') + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })
+
+// The admin's own time is kept apart from the team's; in the report it is one more person
+const ADMIN = 'admin'
+
+interface ReportBilling {
+  adminName: string
+  adminByTask: Record<string, number>
+  billableTasks: string[]
+  rate: number | null
+  rateIsSet: boolean
+  currency: string
+  billing: {
+    amountByTask: Record<string, number>
+    tracked_total: number
+    pending: { not_invoiced: number; invoiced_unpaid: number; total: number }
+  } | null
+}
+
 export default function ProjectReport({ project, members, onClose, onBudgetChange }: {
   project: Project
   members: TeamMember[]
@@ -37,6 +58,7 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
   const [income, setIncome] = useState(0)
   const [expense, setExpense] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [extra, setExtra] = useState<ReportBilling | null>(null)
   const { toEUR, loading: ratesLoading } = useRates()
   const { width, startResize } = useChatWidth()
 
@@ -59,7 +81,7 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
         tx = res2.data as TaskRow[] | null
       }
       const taskIds = (tx ?? []).map(t => t.id)
-      const [{ data: ents }, { data: txs }] = await Promise.all([
+      const [{ data: ents }, { data: txs }, extraData] = await Promise.all([
         taskIds.length > 0
           ? supabase.from('time_entries')
               .select('task_id, team_member_id, duration_seconds')
@@ -70,7 +92,12 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
           .select('type, amount, currency, is_planned')
           .eq('project_id', project.id)
           .eq('is_planned', false),
+        // My own time and the amount at the client's rate (admin API)
+        fetch(`/api/projects/report-billing?project=${project.id}`)
+          .then(r => (r.ok ? r.json() as Promise<ReportBilling> : null))
+          .catch(() => null),
       ])
+      setExtra(extraData)
       setTasks((tx ?? []) as TaskRow[])
       setEntries((ents ?? []) as EntryRow[])
       setIncome((txs ?? []).filter(t => t.type === 'income').reduce((s, t) => s + toEUR(t.amount, t.currency), 0))
@@ -80,7 +107,8 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, ratesLoading])
 
-  const memberById = new Map(members.map(m => [m.id, m]))
+  const memberById = new Map<string, Pick<TeamMember, 'name' | 'color' | 'salary_type' | 'hourly_rate_usd'>>(members.map(m => [m.id, m]))
+  if (extra) memberById.set(ADMIN, { name: extra.adminName, color: '#09090b', salary_type: 'monthly', hourly_rate_usd: 0 })
 
   // Per task: seconds per member
   const byTask = new Map<string, Map<string, number>>()
@@ -94,12 +122,24 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
     tm.set(e.team_member_id, (tm.get(e.team_member_id) ?? 0) + secs)
     byMember.set(e.team_member_id, (byMember.get(e.team_member_id) ?? 0) + secs)
   }
+  // My own time, as one more person (never part of payroll)
+  for (const [taskId, secs] of Object.entries(extra?.adminByTask ?? {})) {
+    if (!secs) continue
+    totalSeconds += secs
+    if (!byTask.has(taskId)) byTask.set(taskId, new Map())
+    byTask.get(taskId)!.set(ADMIN, secs)
+    byMember.set(ADMIN, (byMember.get(ADMIN) ?? 0) + secs)
+  }
+  const billing = extra?.billing ?? null
+  const currency = extra?.currency ?? project.contract_currency ?? 'USD'
+  const money = (n: number) => fmtMoney(n, currency)
+  const adminNotBilled = (taskId: string) => !(extra?.billableTasks ?? []).includes(taskId)
 
   // Labor cost by hourly rates ($/год → EUR base); fixed-salary members
   // are counted as hours only
   function costOf(memberId: string, seconds: number) {
     const m = memberById.get(memberId)
-    if (!m || m.salary_type === 'monthly') return 0
+    if (memberId === ADMIN || !m || m.salary_type === 'monthly') return 0
     return toEUR((seconds / 3600) * (m.hourly_rate_usd ?? 0), 'USD')
   }
   let laborCost = 0
@@ -179,11 +219,30 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
               <p className="text-lg font-bold text-gray-900 flex items-center gap-1.5">
                 <Clock size={14} className="text-gray-400" />{fmtDur(totalSeconds)}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">робота по рейтах: {fmtEUR(laborCost)}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">собівартість команди: {fmtEUR(laborCost)}</p>
             </div>
             <div className="bg-red-50 rounded-xl p-3">
               <p className="text-[10px] text-red-400 uppercase tracking-wide mb-0.5">Витрати (факт)</p>
               <p className="text-lg font-bold text-red-500">{fmtEUR(expense)}</p>
+            </div>
+
+            {/* What the tracked work comes to at the client's rate */}
+            <div className="col-span-2 bg-gray-900 on-dark text-white rounded-xl p-3">
+              <p className="text-[10px] text-white/50 uppercase tracking-wide mb-0.5">Натрекано на суму · ставка клієнта</p>
+              {billing && extra?.rate ? (
+                <>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <p className="text-2xl font-bold">{money(billing.tracked_total)}</p>
+                    <p className="text-xs text-white/60 pb-1">{money(extra.rate)}/год{extra.rateIsSet ? '' : ' (з останньої оцінки)'}</p>
+                  </div>
+                  <p className="text-[11px] text-white/60 mt-1">
+                    Очікує оплати {money(billing.pending.total)}
+                    {billing.pending.total > 0 && ` · ${money(billing.pending.invoiced_unpaid)} у рахунках, ${money(billing.pending.not_invoiced)} ще не виставлено`}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-white/60 mt-1">Вкажи ставку для клієнта: «Доступ для клієнта» на дошці → «Ставка для клієнта». Тоді тут буде сума за години.</p>
+              )}
             </div>
           </div>
 
@@ -203,10 +262,10 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
                       >
                         {(m?.name ?? '?').charAt(0)}
                       </div>
-                      <span className="text-sm text-gray-800 font-medium truncate">{m?.name ?? 'Невідомо'}</span>
+                      <span className="text-sm text-gray-800 font-medium truncate">{m?.name ?? 'Невідомо'}{mid === ADMIN ? ' (я)' : ''}</span>
                       <span className="ml-auto text-xs text-gray-500">{fmtDur(secs)}</span>
                       <span className="text-xs font-semibold text-gray-800 w-16 text-right">
-                        {m?.salary_type === 'monthly' ? 'фікс' : fmtEUR(cost)}
+                        {mid === ADMIN ? <span className="text-gray-400 font-normal">не в ЗП</span> : m?.salary_type === 'monthly' ? 'фікс' : fmtEUR(cost)}
                       </span>
                     </div>
                   )
@@ -291,21 +350,25 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
                 const tm = byTask.get(t.id)
                 const secs = [...(tm?.values() ?? [])].reduce((x, y) => x + y, 0)
                 const cost = [...(tm?.entries() ?? [])].reduce((x, [mid, s]) => x + costOf(mid, s), 0)
+                const billed = billing?.amountByTask[t.id]
                 return (
                   <div key={t.id} className="bg-white border border-gray-100 rounded-xl px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-800 truncate flex-1">{t.title}</span>
                       <span className="text-xs text-gray-500 flex-shrink-0">{fmtDur(secs)}</span>
-                      <span className="text-xs font-semibold text-gray-800 w-14 text-right flex-shrink-0">
-                        {secs > 0 && cost > 0 ? fmtEUR(cost) : secs > 0 ? '' : '—'}
+                      <span className="text-xs font-semibold text-gray-800 w-16 text-right flex-shrink-0" title={billing ? 'Сума за ставкою клієнта' : 'Собівартість за рейтами команди'}>
+                        {billing
+                          ? billed != null ? money(billed) : secs > 0 ? '' : '—'
+                          : secs > 0 && cost > 0 ? fmtEUR(cost) : secs > 0 ? '' : '—'}
                       </span>
                     </div>
                     {tm && tm.size > 0 && (
                       <p className="text-[10px] text-gray-400 mt-1">
                         {[...tm.entries()]
                           .sort((a, b) => b[1] - a[1])
-                          .map(([mid, s]) => `${memberById.get(mid)?.name ?? '?'} · ${fmtDur(s)}`)
+                          .map(([mid, s]) => `${memberById.get(mid)?.name ?? '?'}${mid === ADMIN && adminNotBilled(t.id) ? ' (не інвойсимо)' : ''} · ${fmtDur(s)}`)
                           .join('  ·  ')}
+                        {billing && cost > 0 ? `  ·  собівартість ${fmtEUR(cost)}` : ''}
                       </p>
                     )}
                   </div>
@@ -315,8 +378,9 @@ export default function ProjectReport({ project, members, onClose, onBudgetChang
           </div>
 
           <p className="text-[10px] text-gray-300">
-            Вартість роботи рахується за погодинними рейтами; учасники з фіксованою ЗП показуються
-            годинами без вартості. Цей звіт бачите тільки ви.
+            Сума по задачах — за ставкою клієнта (задача з погодженою оцінкою не рахується вище за неї);
+            твій час іде в суму лише там, де стоїть «Інвойсити мій час». Собівартість — за рейтами команди;
+            учасники з фіксованою ЗП показуються годинами без вартості. Цей звіт бачите тільки ви.
           </p>
         </div>
       )}

@@ -61,10 +61,21 @@ export async function clientBilling(o: {
   columns: { id: string; name: string }[]
   timeByTask: Record<string, number>
 }): Promise<ClientBilling | null> {
+  // The client sees amounts only when the admin turned them on
   if (!o.settings?.show_tracked_amounts) return null
+  return computeBilling(o)
+}
+
+// The same numbers for the admin's own report, whatever the client is shown
+export async function computeBilling(o: {
+  projectId: string
+  settings: ProjectSettings | null
+  columns: { id: string; name: string }[]
+  timeByTask: Record<string, number>
+}): Promise<ClientBilling | null> {
   const rate = await projectRate(o.projectId, o.settings)
   if (!rate) return null
-  const currency = o.settings.contract_currency || 'USD'
+  const currency = o.settings?.contract_currency || 'USD'
 
   const [{ data: taskRows }, { data: invoices }] = await Promise.all([
     supabaseAdmin.from('pm_tasks').select('*').eq('finance_project_id', o.projectId),

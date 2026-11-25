@@ -24,6 +24,14 @@ export default function AdminTaskTime({ taskId }: { taskId: string }) {
   const [manual, setManual] = useState('')
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [nonce, setNonce] = useState(0)
+
+  // A timer started or stopped on a subtask is the admin's time on this task too
+  useEffect(() => {
+    const refresh = () => setNonce(n => n + 1)
+    window.addEventListener('gudrix:admin-time-changed', refresh)
+    return () => window.removeEventListener('gudrix:admin-time-changed', refresh)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -31,7 +39,7 @@ export default function AdminTaskTime({ taskId }: { taskId: string }) {
       .then(async r => { const d = await r.json().catch(() => ({})); if (!alive) return; if (r.ok) setState(d); else setError(d.error ?? `HTTP ${r.status}`) })
       .catch(() => {})
     return () => { alive = false }
-  }, [taskId])
+  }, [taskId, nonce])
 
   // Tick while the timer runs
   const runningSince = state?.running?.started_at ?? null

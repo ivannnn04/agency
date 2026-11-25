@@ -230,3 +230,29 @@ body {
 .dark .border-white\/10 { border-color: rgb(255 255 255 / 0.1); }
 .dark .border-white\/20 { border-color: rgb(255 255 255 / 0.2); }
 .dark .border-white\/30 { border-color: rgb(255 255 255 / 0.3); }
+
+/* ── Task description (RichDescription) ─────────────────────────────────── */
+.rich-text > * + * { margin-top: 0.4em; }
+.rich-text h2 { font-size: 1.05rem; font-weight: 600; color: var(--color-gray-900); margin-top: 0.8em; }
+.rich-text h3 { font-size: 0.95rem; font-weight: 600; color: var(--color-gray-900); margin-top: 0.7em; }
+.rich-text strong { font-weight: 600; color: var(--color-gray-900); }
+.rich-text a { color: var(--color-gray-900); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.rich-text mark { background: #fff3a3; color: inherit; border-radius: 3px; padding: 0 2px; }
+.dark .rich-text mark { background: #6b5d00; }
+.rich-text code { font-size: 0.85em; background: var(--color-gray-100); border-radius: 4px; padding: 1px 4px; }
+.rich-text pre { background: var(--color-gray-100); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+.rich-text pre code { background: none; padding: 0; }
+.rich-text blockquote { border-left: 3px solid var(--color-gray-300); padding-left: 10px; color: var(--color-gray-500); }
+.rich-text ul:not([data-type="taskList"]) { list-style: disc; padding-left: 1.3em; }
+.rich-text ol { list-style: decimal; padding-left: 1.4em; }
+.rich-text li > p { margin: 0; }
+.rich-text li + li { margin-top: 0.15em; }
+.rich-text hr { border-color: var(--color-gray-200); margin: 0.8em 0; }
+.rich-text ul[data-type="taskList"] { list-style: none; padding-left: 0.1em; }
+.rich-text ul[data-type="taskList"] ul[data-type="taskList"] { padding-left: 1.4em; }
+.rich-text ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.rich-text ul[data-type="taskList"] li > label { flex: 0 0 auto; margin-top: 0.22em; user-select: none; }
+.rich-text ul[data-type="taskList"] li > label input { width: 15px; height: 15px; accent-color: #09090b; cursor: pointer; }
+.rich-text ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.rich-text ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--color-gray-400); text-decoration: line-through; }
+.rich-text p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--color-gray-300); float: left; height: 0; pointer-events: none; }

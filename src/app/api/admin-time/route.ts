@@ -10,10 +10,11 @@ import { isInvoiceColumn } from '@/lib/clientColumns'
 export const dynamic = 'force-dynamic'
 
 const HINT = 'Запусти міграцію supabase/admin_time_migration.sql у Supabase SQL Editor'
+const SUBTASK_HINT = 'Запусти міграцію supabase/subtasks_migration.sql у Supabase SQL Editor'
 const fail = (msg: string, status = 400) =>
-  NextResponse.json({ error: /admin_time|schema cache|does not exist/i.test(msg) ? HINT : msg }, { status })
+  NextResponse.json({ error: /subtask/i.test(msg) ? SUBTASK_HINT : /admin_time|schema cache|does not exist/i.test(msg) ? HINT : msg }, { status })
 
-interface Entry { id: string; task_id: string; project_id: string | null; started_at: string; ended_at: string | null; duration_seconds: number | null }
+interface Entry { id: string; task_id: string; subtask_id?: string | null; project_id: string | null; started_at: string; ended_at: string | null; duration_seconds: number | null }
 
 async function taskState(taskId: string) {
   const [{ data: entries, error }, { data: task }] = await Promise.all([
@@ -22,7 +23,11 @@ async function taskState(taskId: string) {
   ])
   if (error) return { error: error.message }
   const list = (entries ?? []) as Entry[]
+  // My time on each subtask of this task
+  const by_subtask: Record<string, number> = {}
+  for (const e of list) if (e.ended_at && e.subtask_id) by_subtask[e.subtask_id] = (by_subtask[e.subtask_id] ?? 0) + (e.duration_seconds ?? 0)
   return {
+    by_subtask,
     total_seconds: list.filter(e => e.ended_at).reduce((s, e) => s + (e.duration_seconds ?? 0), 0),
     running: list.find(e => !e.ended_at) ?? null,
     entries: list.filter(e => e.ended_at).slice(0, 20),
@@ -103,6 +108,13 @@ export async function POST(req: NextRequest) {
 
   const { data: task } = await supabaseAdmin.from('pm_tasks').select('id, finance_project_id').eq('id', taskId).maybeSingle()
   if (!task) return fail('Задачу не знайдено', 404)
+  // Optional: the time goes on one subtask of this task
+  const subtaskId = typeof body.subtaskId === 'string' && body.subtaskId ? body.subtaskId : null
+  if (subtaskId) {
+    const { data: sub, error: subErr } = await supabaseAdmin.from('pm_subtasks').select('id').eq('id', subtaskId).eq('task_id', taskId).maybeSingle()
+    if (subErr) return fail('subtask: ' + subErr.message)
+    if (!sub) return fail('Сабтаску не знайдено', 404)
+  }
   const now = new Date()
 
   // Stopping closes whatever is running; starting does that first, so only one timer runs at a time
@@ -116,14 +128,16 @@ export async function POST(req: NextRequest) {
     }
   }
   if (action === 'start') {
-    const { error } = await supabaseAdmin.from('admin_time_entries').insert({ task_id: taskId, project_id: task.finance_project_id, started_at: now.toISOString() })
+    const { error } = await supabaseAdmin.from('admin_time_entries').insert({
+      task_id: taskId, project_id: task.finance_project_id, started_at: now.toISOString(), ...(subtaskId ? { subtask_id: subtaskId } : {}),
+    })
     if (error) return fail(error.message)
   }
   if (action === 'add') {
     const seconds = Math.round(Number(body.seconds))
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 24 * 3600) return fail('Вкажи час від хвилини до 24 годин')
     const { error } = await supabaseAdmin.from('admin_time_entries').insert({
-      task_id: taskId, project_id: task.finance_project_id,
+      task_id: taskId, project_id: task.finance_project_id, ...(subtaskId ? { subtask_id: subtaskId } : {}),
       started_at: new Date(now.getTime() - seconds * 1000).toISOString(), ended_at: now.toISOString(), duration_seconds: seconds,
     })
     if (error) return fail(error.message)

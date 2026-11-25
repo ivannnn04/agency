@@ -23,7 +23,8 @@ import { useChatUnread } from '@/lib/chatUnread'
 import { suggestEstimate } from '@/lib/preEstimate'
 import { getAdminProfile } from '@/lib/adminProfile'
 import MoveTaskProject from '@/components/MoveTaskProject'
-import EditableDescription from '@/components/EditableDescription'
+import RichDescription from '@/components/RichDescription'
+import TaskSubtasks, { SubtaskChip, useSubtaskCounts } from '@/components/TaskSubtasks'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
 import ActionItemsColumn from '@/components/ActionItemsColumn'
@@ -142,6 +143,7 @@ export default function BoardPage() {
   // Badge only — the Sidebar already plays the notification sound app-wide
   const chatUnread = useChatUnread({ self: 'admin', projectId: id, sound: false, intervalMs: 8000 })
   const [adminName, setAdminName] = useState('Ivan')
+  useSubtaskCounts(tasks.map(t => t.id))
   useEffect(() => { getAdminProfile().then(p => setAdminName(p.name)) }, [])
   const clientRef = useRef<HTMLDivElement>(null)
   const menuRef    = useRef<HTMLDivElement>(null)
@@ -396,6 +398,14 @@ export default function BoardPage() {
   async function updateTask(taskId: string, patch: Partial<PMTask>) {
     if ('estimate_hours' in patch) patch = { ...patch, estimate_by: 'Адмін' }
     let { error: upErr } = await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    // Formatting is stored once the subtasks migration is in; until then the plain text is
+    if (upErr && 'description_html' in patch && /description_html/.test(upErr.message)) {
+      const { description_html: _html, ...plain } = patch
+      void _html
+      patch = plain
+      ;({ error: upErr } = await supabase.from('pm_tasks').update(patch).eq('id', taskId))
+      alert('Форматування опису збережеться після міграції supabase/subtasks_migration.sql — поки збережено як простий текст.')
+    }
     if (upErr && 'admin_assignee' in patch) {
       alert('Щоб призначати себе, запусти міграцію supabase/admin_time_migration.sql у Supabase SQL Editor.')
       return
@@ -1397,6 +1407,7 @@ function TaskCard({
           <AvatarStack memberIds={assigneeIds} members={members} admin={task.admin_assignee} />
 
           <TaskEstimateChip task={task} currency={currency} />
+          <SubtaskChip taskId={task.id} />
 
           {/* Due date */}
           <button
@@ -1678,16 +1689,20 @@ function TaskDetailPanel({
 
         <div className="border-t border-gray-100 mx-6" />
 
-        {/* Description — links are clickable, click elsewhere to edit */}
+        {/* Description with formatting: lists, checklists, highlights */}
         <div className="px-6 py-4">
-          <EditableDescription
-            value={task.description ?? ''}
-            placeholder="Add description..."
-            onSave={d => {
-              const t = d.trim()
-              if (t !== (task.description ?? '')) onUpdate({ description: t || null })
-            }}
+          <RichDescription
+            key={task.id}
+            html={task.description_html}
+            text={task.description}
+            placeholder="Опис задачі: текст, списки, чекліст…"
+            onSave={v => onUpdate({ description: v.text, description_html: v.html })}
           />
+        </div>
+
+        {/* Subtasks, each with its own tracked time */}
+        <div className="px-6 pb-4">
+          <TaskSubtasks key={task.id} taskId={task.id} mode="admin" />
         </div>
 
         {/* Change requests from the client */}

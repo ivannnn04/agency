@@ -18,7 +18,8 @@ import ProjectNotepad from '@/components/ProjectNotepad'
 import { useChatUnread } from '@/lib/chatUnread'
 import { DEFAULT_COLUMNS } from '@/lib/defaultColumns'
 import MoveTaskProject from '@/components/MoveTaskProject'
-import EditableDescription from '@/components/EditableDescription'
+import RichDescription from '@/components/RichDescription'
+import TaskSubtasks, { SubtaskChip, SubtaskTimer, useSubtaskCounts } from '@/components/TaskSubtasks'
 import { isClientReviewColumn } from '@/lib/reviewColumn'
 import EstimateColumn from '@/components/EstimateColumn'
 import { TaskEstimateBlock, TaskEstimateChip } from '@/components/TaskEstimate'
@@ -36,6 +37,8 @@ interface Project {
 interface ActiveTimer {
   entryId: string
   taskId: string
+  // Set when the time goes on one subtask of the task
+  subtaskId?: string | null
   startedAt: Date
 }
 
@@ -82,7 +85,10 @@ export default function TeamBoardPage() {
   const [view, setView] = useState<'board' | 'gantt'>('board')
 
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null)
+  useSubtaskCounts(tasks.map(t => t.id))
   const [elapsed, setElapsed] = useState(0)
+  // Bumped when a timer stops, so subtask totals reload
+  const [timeNonce, setTimeNonce] = useState(0)
 
   const [selectedTask, setSelectedTask] = useState<PMTask | null>(null)
   const [deepLinkDone, setDeepLinkDone] = useState(false)
@@ -169,7 +175,7 @@ export default function TeamBoardPage() {
     // Restore any open timer for this member
     const { data: openEntry } = await supabase
       .from('time_entries')
-      .select('id, task_id, started_at')
+      .select('*')
       .eq('team_member_id', mem.id)
       .is('ended_at', null)
       .order('started_at', { ascending: false })
@@ -180,6 +186,7 @@ export default function TeamBoardPage() {
       setActiveTimer({
         entryId: openEntry.id,
         taskId: openEntry.task_id,
+        subtaskId: (openEntry as { subtask_id?: string | null }).subtask_id ?? null,
         startedAt: new Date(openEntry.started_at),
       })
       setElapsed(Math.floor((Date.now() - new Date(openEntry.started_at).getTime()) / 1000))
@@ -245,7 +252,7 @@ export default function TeamBoardPage() {
     setTimeByTask(prev => ({ ...prev, [taskId]: sum }))
   }
 
-  async function startTimer(taskId: string) {
+  async function startTimer(taskId: string, subtaskId?: string) {
     // Hard rule: tracking requires an estimate on the task
     const target = tasks.find(t => t.id === taskId)
     if (target && target.estimate_hours == null) {
@@ -254,18 +261,24 @@ export default function TeamBoardPage() {
     }
     if (activeTimer) await stopTimer()
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('time_entries')
       .insert({
         task_id: taskId,
         team_member_id: member!.id,
         started_at: new Date().toISOString(),
+        // Time on a subtask stays on the task, marked with the subtask
+        ...(subtaskId ? { subtask_id: subtaskId } : {}),
       })
       .select()
       .single()
+    if (error && subtaskId && /subtask/i.test(error.message)) {
+      window.alert('Трекінг на сабтасках запрацює після міграції supabase/subtasks_migration.sql')
+      return
+    }
 
     if (data) {
-      setActiveTimer({ entryId: data.id, taskId, startedAt: new Date(data.started_at) })
+      setActiveTimer({ entryId: data.id, taskId, subtaskId: subtaskId ?? null, startedAt: new Date(data.started_at) })
     }
     setElapsed(0)
   }
@@ -284,6 +297,7 @@ export default function TeamBoardPage() {
     }))
     setActiveTimer(null)
     setElapsed(0)
+    setTimeNonce(n => n + 1)
   }
 
   async function createTask(columnId: string) {
@@ -395,6 +409,14 @@ export default function TeamBoardPage() {
     // Hard estimate rule: remember WHO set/changed the estimate
     if ('estimate_hours' in patch && member) patch = { ...patch, estimate_by: member.name }
     let { error } = await supabase.from('pm_tasks').update(patch).eq('id', taskId)
+    // Formatting is stored once the subtasks migration is in; until then the plain text is
+    if (error && 'description_html' in patch && /description_html/.test(error.message)) {
+      const { description_html: _html, ...plain } = patch
+      void _html
+      patch = plain
+      ;({ error } = await supabase.from('pm_tasks').update(patch).eq('id', taskId))
+      window.alert('Форматування опису збережеться після міграції supabase/subtasks_migration.sql — поки збережено як простий текст.')
+    }
     if (error && error.message.includes('estimate_by')) {
       const { estimate_by: _skip, ...rest } = patch
       void _skip
@@ -632,6 +654,7 @@ export default function TeamBoardPage() {
                               )}
 
                               <TaskEstimateChip task={task} currency={project?.contract_currency} />
+                              <SubtaskChip taskId={task.id} />
 
                               {/* Tracked time */}
                               {tracked > 0 && (
@@ -770,7 +793,14 @@ export default function TeamBoardPage() {
             elapsed={elapsed}
             onStartTimer={() => startTimer(selectedTask.id)}
             onStopTimer={stopTimer}
-            onTimeChanged={() => refreshTaskTime(selectedTask.id)}
+            onTimeChanged={() => { refreshTaskTime(selectedTask.id); setTimeNonce(n => n + 1) }}
+            subtaskTimer={{
+              activeSubtaskId: activeTimer?.taskId === selectedTask.id ? activeTimer.subtaskId ?? null : null,
+              elapsed,
+              start: subId => startTimer(selectedTask.id, subId),
+              stop: stopTimer,
+            }}
+            timeNonce={timeNonce}
             onClose={() => setSelectedTask(null)}
             onUpdate={patch => updateTask(selectedTask.id, patch)}
             onMove={colId => moveTask(selectedTask.id, colId)}
@@ -855,8 +885,10 @@ function TaskPanel({
   task, columns, member, allMembers, assigneeIds, onAddSelf, onRemoveSelf,
   canAssignOthers, onAssignMember, onRemoveMember,
   trackedSeconds, isTimerActive, otherTimerActive, elapsed,
-  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove, onMoveProject, currency,
+  onStartTimer, onStopTimer, onTimeChanged, onClose, onUpdate, onMove, onMoveProject, currency, subtaskTimer, timeNonce,
 }: {
+  subtaskTimer: SubtaskTimer
+  timeNonce: number
   currency?: string | null
   task: PMTask
   columns: PMColumn[]
@@ -1122,19 +1154,21 @@ function TaskPanel({
           )}
         </div>
 
-        {/* Description — links are clickable, click elsewhere to edit */}
+        {/* Description with formatting: lists, checklists, highlights */}
         <div className="px-5 pb-6">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Опис</p>
-          <div className="bg-gray-50 rounded-xl p-3">
-            <EditableDescription
-              value={task.description ?? ''}
-              placeholder="Додайте опис..."
-              onSave={d => {
-                const t = d.trim()
-                if (t !== (task.description ?? '')) onUpdate({ description: t || null })
-              }}
-            />
-          </div>
+          <RichDescription
+            key={task.id}
+            html={task.description_html}
+            text={task.description}
+            placeholder="Опис задачі: текст, списки, чекліст…"
+            onSave={v => onUpdate({ description: v.text, description_html: v.html })}
+          />
+        </div>
+
+        {/* Subtasks, each with its own timer */}
+        <div className="px-5 pb-6">
+          <TaskSubtasks key={task.id} taskId={task.id} mode="team" timer={subtaskTimer} reloadKey={timeNonce} />
         </div>
 
         {/* Files: any type, many at once */}

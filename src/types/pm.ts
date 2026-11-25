@@ -43,6 +43,8 @@ export interface PMTask {
   column_id: string | null;
   title: string;
   description: string | null;
+  // The description with its formatting (HTML from the editor); description stays as plain text
+  description_html?: string | null;
   status: PMTaskStatus;
   priority: PMTaskPriority;
   assignee_id: string | null;

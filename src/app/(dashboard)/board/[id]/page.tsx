@@ -525,6 +525,19 @@ export default function BoardPage() {
     setProject(prev => prev ? { ...prev, ...patch } : prev)
   }
 
+  // The project's currency: budget, invoices and what the client sees
+  async function setCurrency(currency: string) {
+    if (currency === (project?.contract_currency ?? 'USD')) return
+    const res = await fetch('/api/projects/budget', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: id, currency }),
+    })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error ?? 'Не вдалося змінити валюту'); return }
+    setProject(prev => prev ? { ...prev, contract_currency: currency } : prev)
+    window.dispatchEvent(new Event('gudrix:projects-changed'))
+  }
+
   async function updateCrLimit(limit: number) {
     const value = Math.max(0, Math.min(99, limit))
     await supabase.from('projects').update({ change_request_limit: value }).eq('id', id)
@@ -817,6 +830,24 @@ create policy "team_members_all" on team_members for all using (true) with check
                         >
                           <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${amountsOn && hoursOn ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>
+                      </div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-600 pl-[18px]">Валюта проєкту</span>
+                        <div className="flex items-center gap-1">
+                          {(['USD', 'EUR', 'UAH'] as const).map(c => {
+                            const active = (project?.contract_currency ?? 'USD') === c
+                            return (
+                              <button
+                                key={c}
+                                onClick={() => setCurrency(c)}
+                                title={{ USD: 'Долар', EUR: 'Євро', UAH: 'Гривня' }[c]}
+                                className={`text-[11px] font-medium px-2 py-0.5 rounded-md transition-colors ${active ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 bg-white border border-gray-200'}`}
+                              >
+                                {{ USD: '$ USD', EUR: '€ EUR', UAH: '₴ UAH' }[c]}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-600 pl-[18px]">Ставка для клієнта</span>

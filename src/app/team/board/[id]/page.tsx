@@ -918,20 +918,14 @@ function TaskPanel({
     .map(mid => allMembers.find(m => m.id === mid))
     .filter((m): m is Pick<TeamMember, 'id' | 'name' | 'color'> => !!m)
   const [title, setTitle] = useState(task.title)
-  const [desc, setDesc] = useState(task.description ?? '')
 
   useEffect(() => {
     setTitle(task.title)
-    setDesc(task.description ?? '')
   }, [task.id])
 
   function saveTitle() {
     const t = title.trim()
     if (t && t !== task.title) onUpdate({ title: t })
-  }
-  function saveDesc() {
-    const d = desc.trim()
-    if (d !== (task.description ?? '')) onUpdate({ description: d || null })
   }
 
   const currentCol = columns.find(c => c.id === task.column_id)

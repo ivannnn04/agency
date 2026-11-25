@@ -1490,10 +1490,9 @@ function TaskDetailPanel({
 }) {
   const { width: panelWidth, startResize } = usePanelWidth('taskPanelWidth', 480, 380)
   const [title, setTitle] = useState(task.title)
-  const [desc, setDesc]   = useState(task.description ?? '')
   const [changeRequests, setChangeRequests] = useState<ChangeRequestRow[]>([])
 
-  useEffect(() => { setTitle(task.title); setDesc(task.description ?? '') }, [task.id])
+  useEffect(() => { setTitle(task.title) }, [task.id])
 
   useEffect(() => {
     supabase.from('change_requests')
@@ -1510,7 +1509,6 @@ function TaskDetailPanel({
   }
 
   function saveTitle() { const t = title.trim(); if (t && t !== task.title) onUpdate({ title: t }) }
-  function saveDesc()  { const d = desc.trim(); if (d !== (task.description ?? '')) onUpdate({ description: d || null }) }
 
   const currentCol       = columns.find(c => c.id === task.column_id)
   const assignedMembers  = assigneeIds

@@ -11,11 +11,13 @@ interface Props {
   open: boolean
   defaultType?: TransactionType
   transaction?: Transaction | null
+  // New operations start as planned (e.g. from the expected-income page)
+  defaultPlanned?: boolean
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function AddTransactionModal({ open, defaultType = 'income', transaction, onClose, onSuccess }: Props) {
+export default function AddTransactionModal({ open, defaultType = 'income', transaction, defaultPlanned = false, onClose, onSuccess }: Props) {
   const isEdit = !!transaction
   const [type, setType] = useState<TransactionType>(defaultType)
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -63,10 +65,11 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
       } else {
         setType(defaultType)
         resetForm()
+        setIsPlanned(defaultPlanned)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultType, transaction])
+  }, [open, defaultType, transaction, defaultPlanned])
 
   async function fetchData() {
     const [acc, cat, proj, cpart, mems] = await Promise.all([

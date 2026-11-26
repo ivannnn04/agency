@@ -8,7 +8,7 @@ import { useChatUnread } from '@/lib/chatUnread'
 import { Account, Project } from '@/types'
 import {
   Plus, Trash2, RefreshCw, TrendingUp, FolderKanban,
-  ArrowLeftRight, BarChart2, FileText, Users, CheckSquare,
+  ArrowLeftRight, BarChart2, FileText, Users, CheckSquare, CalendarClock,
   DollarSign, Circle, Pencil, Hash, ChevronDown, ChevronRight, MessageSquare, Gauge, Clapperboard, UserRound, UsersRound, Send, Headset, Contact, ReceiptText,
 } from 'lucide-react'
 import GeneralChat, { GeneralChatInfo } from '@/components/GeneralChat'
@@ -25,6 +25,7 @@ function currencySymbol(currency: string) {
 
 const financeNav = [
   { label: 'Платежі',   href: '/',            icon: ArrowLeftRight },
+  { label: 'Очікувані', href: '/expected',    icon: CalendarClock },
   { label: 'Аналітика', href: '/analytics',   icon: BarChart2 },
   { label: 'Дебіторка', href: '/receivables', icon: FileText },
   { label: 'До інвойсу', href: '/invoicing',  icon: ReceiptText },
@@ -502,6 +503,9 @@ export default function Sidebar() {
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Планові платежі</p>
                   <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">30 днів</span>
                 </div>
+                <button onClick={() => router.push('/expected')} className="text-[11px] text-gray-500 hover:text-white mb-1.5 transition-colors">
+                  Усі очікувані надходження →
+                </button>
                 <div className="flex flex-col gap-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Доходи</span>

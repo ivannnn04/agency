@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import TeamTodayBoard from '@/components/TeamTodayBoard'
 import AdminInvolvement from '@/components/AdminInvolvement'
+import ExpectedIncomeCard from '@/components/ExpectedIncomeCard'
 
 // CEO overview: the whole agency on one screen — cash, this month's P&L,
 // 6-month cashflow, top projects, the lead funnel, outreach and team load.
@@ -152,6 +153,9 @@ export default function CeoOverviewPage() {
             {kpi(<PiggyBank size={14} />, 'Прибуток за місяць', fmt(profit), profit >= 0 ? 'text-gray-900' : 'text-red-500')}
             {kpi(<Percent size={14} />, 'Маржа', `${margin}%`)}
           </div>
+
+          {/* Money expected from projects, not tied to a 30-day window */}
+          <ExpectedIncomeCard />
 
           {/* Live: what the team is doing right now */}
           <TeamTodayBoard />

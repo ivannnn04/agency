@@ -156,6 +156,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
           type, amount: txAmount, account_id: accountId,
           to_account_id: type === 'transfer' ? toAccountId || null : null,
           to_amount: type === 'transfer' ? toTxAmount : null,
+          is_planned: isPlanned,
         }, 1)
       } else {
         const { error: insErr } = await supabase.from('transactions').insert(payload)
@@ -164,6 +165,7 @@ export default function AddTransactionModal({ open, defaultType = 'income', tran
           type, amount: txAmount, account_id: accountId,
           to_account_id: type === 'transfer' ? toAccountId || null : null,
           to_amount: type === 'transfer' ? toTxAmount : null,
+          is_planned: isPlanned,
         }, 1)
       }
 
